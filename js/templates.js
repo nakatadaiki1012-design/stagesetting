@@ -16,25 +16,34 @@ window.SS = window.SS || {};
 
   // 「かんたん編成」と同じしくみで作る（ひな壇は平台の実寸・全段同じ幅）
   function auto(type, stage, set, counts) {
-    return () => {
+    // 配置を作らずに、ひな形の編成（人数・設定）だけを取り出す（AI・読み取りで使う）
+    const ensemble = () => {
       const st = Object.assign(SS.auto.defaultState(type), set || {});
       if (counts) Object.assign(st.counts, counts);
       if (set && set.hina) st.hina = Object.assign(SS.auto.defaultState(type).hina, set.hina);
+      return st;
+    };
+    const make = () => {
+      const st = ensemble();
       const sg = Object.assign({}, stage);
       const r = SS.auto.build(st, sg);
       return { stage: sg, items: r.items, ensemble: st };
     };
+    make.ensemble = ensemble;
+    return make;
   }
 
   SS.TEMPLATES = [
     {
       id: 'band-std',
+      words: ['吹奏楽の標準', '標準編成', '45人編成'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽（標準・約45人）',
       desc: '前列Fl・Cl、2列目Sax〜Cl、ひな壇1段目Hr、2段目Tp・Tb。低音は上手の外側',
       make: auto('band', SHELL, { layout: 'std' }),
     },
     {
       id: 'band-contest',
+      words: ['コンクールA', 'A編成', 'A部門', '大編成'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽コンクールA（55人）',
       desc: '大きめの舞台（20×12.5m）。ひな壇2段＋打楽器段。ティンパニ・鍵盤は最上段、太鼓類は下手',
       make: auto('band', SHELL_L, { layout: 'std', percPlace: 'both' },
@@ -60,6 +69,7 @@ window.SS = window.SS || {};
     },
     {
       id: 'band-small',
+      words: ['小編成', 'コンクールB', 'B編成', 'B部門'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽（小編成・約25人）',
       desc: 'コンクール小編成向け。ひな壇2段、打楽器は下手',
       make: auto('band', SHELL_S, { layout: 'std', percPlace: 'left', hina: { steps: 2 } },
@@ -67,6 +77,7 @@ window.SS = window.SS || {};
     },
     {
       id: 'orch-normal',
+      words: ['2管編成', '二管編成', '2管', '二管'], // AI・読み取りで、このひな形を指すことば
       name: 'オーケストラ（通常配置）',
       desc: '左からVn1・Vn2・Va・Vc。2管編成、管楽器はひな壇3段（4×6尺）、ティンパニはその後ろ',
       make: auto('orch', SHELL_L, { percPlace: 'back' }),
@@ -79,6 +90,7 @@ window.SS = window.SS || {};
     },
     {
       id: 'strings',
+      words: ['弦楽合奏'], // AI・読み取りで、このひな形を指すことば
       name: '弦楽合奏',
       desc: '弦楽器だけの小さめ編成',
       make: auto('strings', SHELL_S, {}),

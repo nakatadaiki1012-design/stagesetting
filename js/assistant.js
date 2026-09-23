@@ -50,6 +50,50 @@ window.SS = window.SS || {};
   };
   const N = '([0-9０-９.．]+|[一二三四五六七八九十]+)';
 
+  // 文章の中の、ひな形の名前・よびかた（長いことばから先に探す）
+  AI.findTemplate = function (t) {
+    const list = [];
+    (SS.TEMPLATES || []).forEach(tp => {
+      if (!tp.make || !tp.make.ensemble) return;
+      (tp.words || []).forEach(w => { if (w && w.length >= 2) list.push({ w, tp }); });
+    });
+    list.sort((a, b) => b.w.length - a.w.length);
+    const hit = list.find(x => t.includes(x.w));
+    return hit ? hit.tp : null;
+  };
+  // 全体の人数（パート名のすぐ後ろの「〇人」は除く）
+  AI.findTotal = function (t) {
+    const re = new RegExp('(合計|総勢|全部で|全体で|みんなで)?\\s*' + N + '\\s*(人|名)\\s*(くらい|ぐらい|程度|ほど|前後|規模|編成|の編成)?', 'g');
+    let m, found = 0;
+    while ((m = re.exec(t))) {
+      if (!m[1] && !m[4]) continue; // 「フルート6人」のようなパートの人数
+      const before = t.slice(Math.max(0, m.index - 12), m.index);
+      if (!m[1] && PART_WORDS.some(([pr]) => new RegExp('(?:' + pr.source + ')\\s*(?:を|は|が)?\\s*$', 'i').test(before))) continue;
+      const v = num(m[2]);
+      if (v >= 5 && v <= 150) found = v;
+    }
+    return found;
+  };
+  // 人数の割合を保ったまま、合計を total にする（fixed のパートはその人数のまま）
+  AI.scaleCounts = function (counts, total, fixed) {
+    fixed = fixed || {};
+    const keys = Object.keys(counts).filter(k => !(k in fixed));
+    const fixedSum = Object.values(fixed).reduce((a, v) => a + v, 0);
+    const cur = keys.reduce((a, k) => a + (counts[k] || 0), 0);
+    const want = Math.max(0, total - fixedSum);
+    const out = Object.assign({}, fixed);
+    if (!cur) { keys.forEach(k => { out[k] = counts[k] || 0; }); return out; }
+    const raw = keys.map(k => ({ k, v: ((counts[k] || 0) * want) / cur }));
+    raw.forEach(r => { out[r.k] = (counts[r.k] || 0) > 0 ? Math.max(1, Math.floor(r.v)) : 0; });
+    let sum = keys.reduce((a, k) => a + out[k], 0);
+    // 端数：小数部分の大きいパートから1人ずつ足す（多すぎるときは人数の多いパートから減らす）
+    const byFrac = raw.filter(r => (counts[r.k] || 0) > 0).sort((a, b) => (b.v - Math.floor(b.v)) - (a.v - Math.floor(a.v)));
+    for (let i = 0; sum < want && byFrac.length; i = (i + 1) % byFrac.length) { out[byFrac[i].k]++; sum++; }
+    const byBig = keys.slice().sort((a, b) => out[b] - out[a]);
+    for (let i = 0; sum > want && byBig.length; i = (i + 1) % byBig.length) { if (out[byBig[i]] > 1) { out[byBig[i]]--; sum--; } if (byBig.every(k => out[k] <= 1)) break; }
+    return out;
+  };
+
   /**
    * よくある言い方を読み取る（AIが使えないとき）。
    * 戻り値 { changes, said: [何をしたか], unknown: 読み取れなかったか }
@@ -62,6 +106,19 @@ window.SS = window.SS || {};
     if (/オーケストラ|オケ/.test(t)) { ch.type = 'orch'; said.push('オーケストラに'); }
     else if (/弦楽/.test(t)) { ch.type = 'strings'; said.push('弦楽合奏に'); }
     else if (/吹奏楽|ブラス/.test(t)) { ch.type = 'band'; said.push('吹奏楽に'); }
+    // ひな形の名前（「コンクールA」「小編成」「2管編成」など）→ その編成の人数と設定
+    let base = null;
+    const tpl = AI.findTemplate(t);
+    if (tpl) {
+      base = tpl.make.ensemble();
+      if (!ch.type || ch.type === base.type) {
+        ch.type = base.type;
+        ch.counts = Object.assign({}, base.counts);
+        (base.type === 'band' ? ['layout', 'percPlace', 'lowOuter', 'hornBox'] : ['percPlace', 'antiphonal']).forEach(k => { if (base[k] !== undefined) ch[k] = base[k]; });
+        ch.hina = Object.assign({}, base.hina);
+        said.push(`ひな形「${tpl.name}」の編成`);
+      } else base = null;
+    }
     const type = ch.type || (st && st.type) || 'band';
     const allParts = SS.auto.ENSEMBLES[type].parts.map(p => p[0]);
     // 人数：「フルート6人」「Tp 5」「ホルンを4人に」「クラを2人増やす／減らす」
@@ -84,15 +141,25 @@ window.SS = window.SS || {};
         k.forEach((p, i) => { counts[p] = base + (i < extra ? 1 : 0); });
       }
     });
+    // 全体の人数（「55人くらい」「合計40人」「総勢30名」）：パートの割合はそのままで合計を合わせる
+    const total = AI.findTotal(t);
+    if (total) {
+      const from = Object.assign({}, (base && base.counts) || (ch.type && ch.type !== (st && st.type) ? SS.auto.defaultState(type).counts : (st && st.counts) || SS.auto.defaultState(type).counts));
+      const fixed = Object.assign({}, counts);
+      const scaled = AI.scaleCounts(from, total, fixed);
+      ch.counts = Object.assign(ch.counts || {}, scaled);
+      said.push(`合計 ${Object.values(scaled).reduce((a, v) => a + v, 0)}人に合わせる`);
+    }
     if (/(?:ハープ|hp)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Hp == null) counts.Hp = 1;
     if (/(?:ピアノ|pf)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Pf == null) counts.Pf = 1;
-    if (Object.keys(counts).length) { ch.counts = counts; said.push('人数：' + Object.entries(counts).map(([k, v]) => `${k} ${v}人`).join('、')); }
+    if (Object.keys(counts).length) { ch.counts = Object.assign(ch.counts || {}, counts); said.push('人数：' + Object.entries(counts).map(([k, v]) => `${k} ${v}人`).join('、')); }
     // 並び方
-    if (/ドイツ/.test(t)) ch.layout = 'german';
-    else if (/昔|クラシック|伝統/.test(t)) ch.layout = 'classic';
-    else if (/クラ[^。、]*下手|サックス[^。、]*上手/.test(t)) ch.layout = 'clLeft';
-    else if (/標準|ふつう|一般/.test(t) && /並び|配置/.test(t)) ch.layout = 'std';
-    if (ch.layout) said.push('並び方：' + SS.auto.BAND_LAYOUTS[ch.layout].name);
+    let lay = '';
+    if (/ドイツ/.test(t)) lay = 'german';
+    else if (/昔|クラシック|伝統/.test(t)) lay = 'classic';
+    else if (/クラ[^。、]*下手|サックス[^。、]*上手/.test(t)) lay = 'clLeft';
+    else if (/標準|ふつう|一般/.test(t) && /並び|配置/.test(t)) lay = 'std';
+    if (lay) { ch.layout = lay; said.push('並び方：' + SS.auto.BAND_LAYOUTS[lay].name); }
     // 打楽器の場所
     if (/打楽器|パーカッション|ティンパニ/.test(t)) {
       if (/両方|最上段.*下手|下手.*最上段/.test(t)) ch.percPlace = 'both';
