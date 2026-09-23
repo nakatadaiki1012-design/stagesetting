@@ -170,6 +170,18 @@ window.SS = window.SS || {};
     }
   }
 
+  // 譜面台の3本脚（開いたときの直径 約54cm＝オーケストラ用譜面台の台座 約21インチ）。
+  // (0,0) が支柱。1本は奏者の方（-y）、残り2本は向こう側へ120°ずつ
+  SS.standLegsSVG = function (color) {
+    const c = color || '#5b6472';
+    let s = '';
+    [180, 60, -60].forEach(a => {
+      const t = a * Math.PI / 180, x = Math.sin(t) * 27, y = Math.cos(t) * 27;
+      s += line(0, 0, x, y, c, 1.6) + circ(x, y, 1.6, c);
+    });
+    return s + circ(0, 0, 2.2, c);
+  };
+
   // 奏者（人の形）。大人の目安：肩幅 約44cm、胸の厚み 約24cm、頭 幅16×奥行20cm、
   // 座ると ひざは体の中心から約45cm前。椅子の座面 45×44cm、譜面台（机）幅50cm
   const TROUSERS = '#4a5160', TROUSERS_D = '#2f3540', SHOE = '#1d1d22';
@@ -185,7 +197,9 @@ window.SS = window.SS || {};
     // 譜面台（机 50cm、支柱）
     if (opts.showStands !== false && !ins.noStand) {
       const st = ins.stand || [0, 64];
-      s += `<g transform="translate(${st[0]} ${st[1]})"><rect x="-25" y="-3" width="50" height="6" rx="1.5" fill="#5b6472"/><rect x="-24" y="-3" width="48" height="2" fill="#f4f1e8"/>${line(0, 3, 0, 12, '#5b6472', 2)}${circ(0, 13, 2, '#5b6472')}</g>`;
+      // 机（幅50cm）と、その下の支柱・3本脚（直径 約54cm）
+      const legs = opts.standLegs !== false ? `<g transform="translate(0 4)" opacity=".75">${SS.standLegsSVG()}</g>` : line(0, 3, 0, 12, '#5b6472', 2) + circ(0, 13, 2, '#5b6472');
+      s += `<g transform="translate(${st[0]} ${st[1]})">${legs}<rect x="-25" y="-3" width="50" height="6" rx="1.5" fill="#5b6472"/><rect x="-24" y="-3" width="48" height="2" fill="#f4f1e8"/></g>`;
     }
     // 脚：座っている人は太もも〜ひざ、立っている人は靴だけ見える
     if (ins.standing) {

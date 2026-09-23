@@ -321,6 +321,24 @@ window.SS = window.SS || {};
   }
   const cloneList = list => list.map(it => Object.assign({}, it));
 
+  // 打楽器をのせる平台の段（打楽器のまわりを平台の枚数単位で囲む。うしろは反射板まで）
+  function percPlatform(list, stage, H, hgt, yLimit, step) {
+    const C = SS.CATALOG, P = SS.panelSize(H);
+    let x0 = Infinity, x1 = -Infinity, y1 = 0;
+    list.forEach(it => {
+      const w = it.type === 'player' ? 50 : (it.w || C[it.type].w), h = it.type === 'player' ? 50 : (it.h || C[it.type].h);
+      x0 = Math.min(x0, it.x - w / 2); x1 = Math.max(x1, it.x + w / 2); y1 = Math.max(y1, it.y + h / 2);
+    });
+    const cx = (x0 + x1) / 2;
+    const [bl, br] = R().xRange(stage, 0);
+    let W = Math.ceil((x1 - x0 + 40) / P.w) * P.w;
+    W = Math.min(W, Math.floor((br - bl) / P.w) * P.w);
+    let D = Math.ceil((y1 + 15) / P.d) * P.d;
+    if (D > yLimit) D = Math.max(P.d, Math.floor(yLimit / P.d) * P.d);
+    const x = Math.max(bl + W / 2, Math.min(br - W / 2, cx));
+    return { type: 'hina', x, y: D / 2, w: W, h: D, hgt: hgt || 42.4, panel: H.panel || '36', orient: H.orient || 'h', step, rot: 0, perc: true };
+  }
+
   /**
    * ひな壇の段と打楽器をまとめて配置する
    * rows: [{ depth, want, hgt, place(cx, yFront, depth, W) → items }]（前の段から）
@@ -430,7 +448,16 @@ window.SS = window.SS || {};
       yFront -= percD;
     }
     out.yBack = yFront;
-    if (parts.back.length) { out.backDepth = A.arrangePerc(parts.back, stage, { yTop: 25 }); out.items.push(...parts.back); }
+    if (parts.back.length) {
+      out.backDepth = A.arrangePerc(parts.back, stage, { yTop: 25 });
+      out.items.push(...parts.back);
+      // ひな壇があるときは、奥の打楽器も床に落ちないよう、最上段と同じ高さの「打楽器の段」に乗せる
+      if (out.tiers.length) {
+        const top = Math.max(...out.tiers.map(t => t.hgt || 0));
+        const next = [21.2, 42.4, 63.6, 84.8].find(v => v > top + 1) || top; // 最上段より1段高く
+        out.tiers.push(percPlatform(parts.back, stage, H, next, yFront, out.tiers.length + 1));
+      }
+    }
     return out;
   }
 
@@ -758,7 +785,7 @@ window.SS = window.SS || {};
       }
       const r = f(s3, stage, tune);
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
-      const hinaOut = r.items.filter(it => it.type === 'hina' && it.y - it.h / 2 < 5).length;
+      const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < 5).length;
       const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
       if (!best || score < best.score) best = Object.assign(r, { score, outside });

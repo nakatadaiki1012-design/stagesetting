@@ -430,8 +430,9 @@ window.SS = window.SS || {};
     // 譜面台（楽譜つき）
     const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
     if (!noStand && V.showStands) {
-      const sz = kind === 'tb' || kind === 'btb' ? [-0.28, 0.6] : kind === 'vc' ? [0, 0.7] : kind === 'cb' ? [-0.12, 0.74] : [0, 0.58];
-      [0, 2.1, 4.2].forEach(a => tube(g, [sz[0], 0.3, sz[1]], [sz[0] + Math.sin(a) * 0.22, 0.0, sz[1] + Math.cos(a) * 0.22], 0.008, '#222'));
+      const sz = kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
+      // 3本脚：開くと直径 約54cm。1本は奏者の方へ
+      [Math.PI, Math.PI / 3, -Math.PI / 3].forEach(a => tube(g, [sz[0], 0.3, sz[1] + 0.04], [sz[0] + Math.sin(a) * 0.27, 0.0, sz[1] + 0.04 + Math.cos(a) * 0.27], 0.008, '#222'));
       cyl(g, 0.009, 0.009, 0.86, '#222', sz[0], 0.55, sz[1]);
       // 楽譜は奏者の方を向く（上が奥に倒れる）
       const desk = new T.Group();
@@ -759,7 +760,9 @@ window.SS = window.SS || {};
     const shellH = 7.5;
     const wallTex = panelTexture('#b98550', false);
     const wallMat = () => { const m = new T.MeshStandardMaterial({ map: wallTex.clone(), roughness: 0.5 }); m.map.needsUpdate = true; return m; };
-    const bl = poly[0], br = poly[1], fr = [W, D], fl = [0, D];
+    const bl = poly[0], br = poly[1];
+    const yc = st.shape === 'arc' ? (st.d - SS.render.arcSag(st)) / 100 : D;
+    const fr = [W, yc], fl = [0, yc];
     const wall = (a, b, depthOff) => {
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const m = wallMat();
@@ -794,7 +797,7 @@ window.SS = window.SS || {};
       scene.add(glow);
     };
     wall(bl, br, -0.13);
-    if (st.shape !== 'apron') {
+    if (st.shape !== 'apron' && st.shape !== 'round') {
       wall(fl, bl, -0.13);
       wall(br, fr, -0.13);
     }

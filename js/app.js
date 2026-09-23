@@ -26,7 +26,7 @@
 
   // ------------------------------------------------------------ 文書
   function defaultOptions() {
-    return { showNames: true, showStands: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true };
+    return { showNames: true, showStands: true, standLegs: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true };
   }
   function normalize(doc) {
     doc = doc || {};
@@ -92,7 +92,7 @@
   // ------------------------------------------------------------ 描画
   function renderOpts() {
     const o = opts();
-    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure, contest: o.contest, dims: o.dims };
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure, contest: o.contest, dims: o.dims };
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
@@ -118,14 +118,30 @@
     const bw = SS.render.backWidth(st), cx = st.w / 2;
     const r = 11 / k, hit = 24 / k;
     const knob = (kind, x, y, arrow, title) =>
-      `<g data-handle="${kind}" style="cursor:${arrow === '↕' ? 'ns-resize' : 'ew-resize'}"><title>${title}</title>` +
+      `<g data-handle="${kind}" style="cursor:${arrow === '↔' ? 'ew-resize' : 'ns-resize'}"><title>${title}</title>` +
       `<circle cx="${x}" cy="${y}" r="${hit}" fill="transparent"/>` +
       `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#3b6bb5" stroke-width="${2.5 / k}"/>` +
       `<text x="${x}" y="${y}" dy="0.36em" text-anchor="middle" font-size="${14 / k}" font-weight="700" fill="#3b6bb5" pointer-events="none">${arrow}</text></g>`;
     let s = '';
-    s += knob('stageW', 0, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
-    s += knob('stageW', st.w, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
-    s += knob('stageD', cx + Math.min(260, st.w * 0.2), st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    const R = SS.render;
+    if (st.shape === 'round') {
+      // 丸い舞台：いちばん広い所の幅と、中央の奥行
+      const yMid = R.stagePoly(st).reduce((a, p) => (p[0] > a[0] ? p : a), [0, 0])[1];
+      s += knob('stageW', 0, yMid, '↔', 'ドラッグで舞台の幅を変える');
+      s += knob('stageW', st.w, yMid, '↔', 'ドラッグで舞台の幅を変える');
+      s += knob('stageD', cx, st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    } else if (st.shape === 'arc') {
+      // 弧の舞台：前の角（幅）、角の奥行、真ん中のふくらみ
+      const yc = st.d - R.arcSag(st);
+      s += knob('stageW', 0, yc, '↔', 'ドラッグで舞台の幅を変える');
+      s += knob('stageW', st.w, yc, '↔', 'ドラッグで舞台の幅を変える');
+      s += knob('stageD', st.w * 0.08, yc, '↕', 'ドラッグで舞台の奥行（角の所）を変える');
+      s += knob('stageSag', cx, st.d, '◠', 'ドラッグで弧のふくらみを変える');
+    } else {
+      s += knob('stageW', 0, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+      s += knob('stageW', st.w, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+      s += knob('stageD', cx + Math.min(260, st.w * 0.2), st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    }
     if (bw < st.w - 1) {
       s += knob('stageBW', cx - bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
       s += knob('stageBW', cx + bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
@@ -556,10 +572,20 @@
       if (st.bw) st.bw = Math.min(st.bw, st.w);
     } else if (dr.kind === 'stageBW') {
       st.bw = Math.max(200, Math.min(st.w, r10(Math.abs(w.x - cx) * 2)));
+    } else if (dr.kind === 'stageSag') {
+      // 真ん中のふくらみ：角の位置はそのまま、中央の奥行だけ変える
+      const yc = st.d - SS.render.arcSag(st);
+      st.d = Math.max(yc, Math.min(yc + st.w * 0.3, r10(w.y)));
+      st.sag = st.d - yc;
+    } else if (st.shape === 'arc') {
+      // 角の所の奥行を変える（ふくらみはそのまま）
+      const sg = SS.render.arcSag(st);
+      st.d = Math.max(300, Math.min(5000, r10(w.y) + sg));
+      st.sag = sg;
     } else {
       st.d = Math.max(300, Math.min(5000, r10(w.y)));
     }
-    if (st.w === oldW && st.d === oldD && dr.kind !== 'stageBW') return;
+    if (st.w === oldW && st.d === oldD && dr.kind !== 'stageBW' && dr.kind !== 'stageSag') return;
     doc().hall = '';
     const dx = (st.w - oldW) / 2, dy = st.d - oldD;
     if (dr.auto) {
@@ -1109,10 +1135,13 @@
     if (document.activeElement !== $('stageW')) $('stageW').value = d.stage.w / 100;
     if (document.activeElement !== $('stageD')) $('stageD').value = d.stage.d / 100;
     $('stageShape').value = d.stage.shape || 'rect';
-    $('stageBWWrap').hidden = d.stage.shape !== 'shell';
+    $('stageBWWrap').hidden = !['shell', 'arc', 'round'].includes(d.stage.shape);
+    $('stageSagWrap').hidden = d.stage.shape !== 'arc';
+    if (document.activeElement !== $('stageSag')) $('stageSag').value = Math.round(SS.render.arcSag(d.stage)) / 100;
     if (document.activeElement !== $('stageBW')) $('stageBW').value = Math.round(SS.render.backWidth(d.stage)) / 100;
     $('optNames').checked = o.showNames;
     $('optStands').checked = o.showStands;
+    $('optStandLegs').checked = o.standLegs !== false;
     $('optNumbers').checked = o.showNumbers;
     $('optGrid').value = o.grid ? String(o.gridSize || 50) : '0';
     $('optStyle').value = o.contest ? 'contest' : o.figure ? 'figure' : 'circle';
@@ -1132,10 +1161,18 @@
   bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
   bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
-  bindSetting('stageShape', 'change', el => { doc().stage.shape = el.value; if (el.value === 'shell' && !doc().stage.bw) doc().stage.bw = Math.round(doc().stage.w * 0.7); renderSettings(); });
+  bindSetting('stageShape', 'change', el => {
+    const st = doc().stage;
+    st.shape = el.value;
+    if (['shell', 'arc', 'round'].includes(el.value) && !st.bw) st.bw = Math.round(st.w * 0.7);
+    if (el.value === 'arc' && st.sag == null) st.sag = Math.round(st.w * 0.08);
+    renderSettings();
+  });
+  bindSetting('stageSag', 'change', el => { const v = +el.value; if (v >= 0) { const st = doc().stage, yc = st.d - SS.render.arcSag(st); st.sag = Math.round(v * 100); st.d = Math.round(yc + st.sag); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageBW', 'change', el => { const v = +el.value; if (v >= 2) { doc().stage.bw = Math.min(doc().stage.w, Math.round(v * 100)); doc().hall = ''; updateHallNote(); } });
   bindSetting('optNames', 'change', el => { opts().showNames = el.checked; });
   bindSetting('optStands', 'change', el => { opts().showStands = el.checked; });
+  bindSetting('optStandLegs', 'change', el => { opts().standLegs = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
   bindSetting('optGrid', 'change', el => { const v = +el.value; opts().grid = v > 0; if (v) opts().gridSize = v; });
   bindSetting('optStyle', 'change', el => { opts().contest = el.value === 'contest'; opts().figure = el.value === 'figure'; renderSettings(); });
@@ -1996,6 +2033,8 @@
     openModal(`
       <h2>🎼 使い方</h2>
       <ol>
+        <li><b>🤖 AIにお願いする</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。claude.ai で開いたときは Claude が文章を読んで考えます（使うときに確認が出ます）。ダウンロード版では、よくある言い方を読み取って並べます。</li>
+        <li><b>弧・円形の舞台</b>：「設定」の舞台の形で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。サントリーホール・ミューザ・みなとみらいもホール一覧にあります（寸法は目安なので図面で確認を）。</li>
         <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
         <li><b>ひな壇</b>：段数と<b>平台の置き方</b>（3×6の横置き・縦置き、4×6、6×6…を図で選ぶ）を決めると、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。置いた平台を選んでも、図から置き方を変えられます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
         <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
@@ -2169,23 +2208,29 @@
   function buildHallSelect() {
     const sel = $('hallSelect');
     const groups = {};
-    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${h.q === 'est' ? '△ ' : '◎ '}${SS.esc(h.name)}（${h.fw}×${h.d}m）</option>`); });
+    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${h.q === 'est' || h.q === 'approx' ? '△ ' : '◎ '}${SS.esc(h.name)}（${h.fw}×${h.d}m${h.shape === 'arc' ? '・前が弧' : ''}）</option>`); });
     sel.innerHTML = '<option value="">いまの大きさのまま／手動で設定</option>' +
       Object.keys(groups).map(g => `<optgroup label="${g === '東京' ? '東京都' : g + '県'}">${groups[g].join('')}</optgroup>`).join('');
     sel.onchange = () => {
       const h = SS.HALLS[+sel.value];
       if (!h) { doc().hall = ''; updateHallNote(); return; }
       pushHistory();
+      setHall(h);
+    };
+  }
+  function setHall(h, quiet) {
+    {
       doc().stage.w = Math.round(h.fw * 100);
       doc().stage.bw = Math.round(h.bw * 100);
       doc().stage.d = Math.round(h.d * 100);
-      doc().stage.shape = 'shell';
+      doc().stage.shape = h.shape || 'shell';
+      if (h.sag != null) doc().stage.sag = Math.round(h.sag * 100); else delete doc().stage.sag;
       doc().hall = h.name;
       updateHallNote();
       if (doc().items.some(it => it.auto)) applyAuto({ fit: true });
       else { renderAll(); fitView(); }
-      toast(`${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
-    };
+      if (!quiet) toast(h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
+    }
   }
   function updateHallNote() {
     const h = SS.HALLS.find(x => x.name === doc().hall);
@@ -2193,7 +2238,7 @@
     sel.value = h ? String(SS.HALLS.indexOf(h)) : '';
     const st = doc().stage;
     $('hallNote').innerHTML = h
-      ? `<b class="${h.q === 'est' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら「設定」タブで直してください。`
+      ? `<b class="${h.q === 'est' || h.q === 'approx' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>${h.shape === 'arc' ? `幅${h.fw}m／奥の幅${h.bw}m／奥行（中央）${h.d}m、前のふちは弧` : `反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m`}。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら「設定」タブで直してください。`
       : `いまのステージ：前の幅${st.w / 100}m／奥の幅${Math.round(SS.render.backWidth(st)) / 100}m／奥行${st.d / 100}m`;
   }
   $('btn3d').onclick = () => SS.view3d.open(null);
@@ -2237,5 +2282,81 @@
     let resizeTimer = null;
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(fitView, 150); });
   }
+  // ------------------------------------------------------------ AIにお願いする
+  let aiSample = null, aiCtl = null;
+  if (window.claude && typeof window.claude.use === 'function') {
+    window.claude.use('sample').then(fn => { aiSample = fn || null; }).catch(() => { aiSample = null; });
+  }
+  document.querySelectorAll('#aiExamples [data-ex]').forEach(b => { b.onclick = () => { $('aiText').value = b.getAttribute('data-ex'); $('aiText').focus(); }; });
+  function aiShow(msg, err) {
+    const o = $('aiOut');
+    o.hidden = !msg; o.textContent = msg || ''; o.classList.toggle('err', !!err);
+  }
+  // AI・読み取りの結果（changes）を、かんたん編成の設定に反映して並べ直す
+  function applyAIChanges(ch) {
+    pushHistory();
+    lastAutoPush = Date.now();
+    if (ch.type && ch.type !== ens().type) doc().ensemble = Object.assign(SS.auto.defaultState(ch.type), { percInst: ens().percInst });
+    const st = ens();
+    if (ch.counts) Object.entries(ch.counts).forEach(([k, v]) => { if (k in st.counts) st.counts[k] = v; });
+    ['layout', 'percPlace', 'percInst', 'hornBox', 'lowOuter', 'antiphonal'].forEach(k => { if (ch[k] !== undefined) st[k] = ch[k]; });
+    if (ch.hina) {
+      st.hina = Object.assign({}, st.hina, ch.hina);
+      if (ch.hina.panel && !ch.hina.deep) {
+        const t = SS.HINA_TYPES.find(x => x.panel === st.hina.panel && x.orient === (st.hina.orient || 'h'));
+        if (t) st.hina.deep = t.deep;
+      }
+    }
+    if (ch.stage) {
+      const sg = doc().stage;
+      const h = ch.stage.hall && SS.HALLS.find(x => x.name === ch.stage.hall);
+      if (h) setHall(h, true);
+      if (ch.stage.shape) { sg.shape = ch.stage.shape; if (['shell', 'arc', 'round'].includes(sg.shape) && !sg.bw) sg.bw = Math.round(sg.w * 0.7); }
+      if (ch.stage.w) sg.w = Math.round(ch.stage.w * 100);
+      if (ch.stage.d) sg.d = Math.round(ch.stage.d * 100);
+      if (ch.stage.bw) sg.bw = Math.min(sg.w, Math.round(ch.stage.bw * 100));
+      if (ch.stage.sag != null) sg.sag = Math.round(ch.stage.sag * 100);
+      if (!h && (ch.stage.w || ch.stage.d || ch.stage.shape)) doc().hall = '';
+    }
+    renderSteppers();
+    applyAuto({ fit: true, noHistory: true });
+    updateHallNote();
+    renderSettings();
+  }
+  function aiLocal(text, note) {
+    const r = SS.assistant.parseLocal(text, ens());
+    if (r.unknown) {
+      aiShow((note ? note + '\n' : '') + '読み取れませんでした。「フルート6人」「打楽器は下手」「ひな壇2段」「ホルンをボックス型に」「ミューザで」のように書いてみてください。', true);
+      return;
+    }
+    applyAIChanges(r.changes);
+    aiShow((note ? note + '\n' : '') + '✔ ' + r.said.join('／'));
+  }
+  $('aiGo').onclick = async () => {
+    const text = $('aiText').value.trim();
+    if (!text) { $('aiText').focus(); return; }
+    if (!aiSample) { aiLocal(text, 'かんたん読み取りで並べました（AIは claude.ai で開いたときに使えます）'); return; }
+    aiCtl = new AbortController();
+    $('aiGo').disabled = true; $('aiStop').hidden = false;
+    aiShow('AIが考えています…（10〜60秒ほどかかることがあります）');
+    try {
+      const raw = await aiSample.json(SS.assistant.buildPrompt(text, ens(), doc().stage, doc().hall), { signal: aiCtl.signal, cache: false });
+      const ch = SS.assistant.sanitize(raw);
+      const keys = Object.keys(ch).filter(k => k !== 'message');
+      if (!keys.length) { aiShow('🤖 ' + (ch.message || '変えるところが見つかりませんでした。もう少し具体的に書いてみてください。')); return; }
+      applyAIChanges(ch);
+      aiShow('🤖 ' + (ch.message || '要望に合わせて並べ直しました。') + '\n（気に入らなければ「戻す」で元に戻せます）');
+    } catch (e) {
+      const code = e && e.code;
+      if (code === 'cancelled') aiShow('止めました。');
+      else if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(code)) { aiSample = null; aiLocal(text, 'AIが使えないので、かんたん読み取りで並べました'); }
+      else if (code === 'rate_limited') aiShow('AIへのお願いが多すぎるようです。少し待ってからもう一度どうぞ。', true);
+      else aiLocal(text, 'AIの答えを受け取れなかったので、かんたん読み取りで並べました');
+    } finally {
+      $('aiGo').disabled = false; $('aiStop').hidden = true; aiCtl = null;
+    }
+  };
+  $('aiStop').onclick = () => { if (aiCtl) aiCtl.abort(); };
+
   init();
 })(window.SS);

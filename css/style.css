@@ -315,3 +315,12 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 #traceTab { overflow-x: hidden; }
 #traceControls .btn { white-space: normal; line-height: 1.25; }
 .tidy-bar[hidden] { display: none; }
+
+/* AIにお願いする */
+.ai-box { border: 1.5px solid #c9d8f5; background: linear-gradient(180deg, #f3f7ff, #fff); border-radius: 12px; padding: 8px 10px 10px; margin: 0 0 10px; }
+.ai-box h4 { margin: 0 0 6px; }
+.ai-box textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; resize: vertical; }
+.ai-examples { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.ai-examples button { font: inherit; font-size: 11px; border: 1px solid #c9d8f5; background: #fff; color: #2f6fde; border-radius: 12px; padding: 3px 8px; cursor: pointer; }
+.ai-out { font-size: 12.5px; line-height: 1.6; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 6px 0 0; white-space: pre-wrap; }
+.ai-out.err { border-color: #f0b6b6; background: #fff6f6; }

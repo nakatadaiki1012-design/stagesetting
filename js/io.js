@@ -4,11 +4,47 @@ window.SS = window.SS || {};
 (function (SS) {
   const R = {};
 
-  // 奥（y=0）の幅。反射板の形（shell）では stage.bw、台形は幅の80%
+  // 舞台の形
+  //  rect：四角／apron：前が丸い張り出し／trapezoid：台形／shell：音響反射板（奥の幅 bw）
+  //  arc：前のふちが弧（サントリーホール・ミューザ・みなとみらいなど）。d＝中心の奥行、sag＝弧のふくらみ、bw＝奥の幅
+  //  round：奥の直線から横〜前まで一続きの丸い形（円形・楕円形の舞台）
+  const CURVED = new Set(['arc', 'round']);
+  R.isCurved = stage => CURVED.has(stage.shape);
   R.backWidth = function (stage) {
-    if (stage.shape === 'shell') return Math.min(stage.w, stage.bw || stage.w * 0.7);
+    if (stage.shape === 'shell' || CURVED.has(stage.shape)) return Math.min(stage.w, stage.bw || stage.w * 0.7);
     if (stage.shape === 'trapezoid') return stage.w * 0.8;
     return stage.w;
+  };
+  R.arcSag = stage => Math.max(0, Math.min(stage.d * 0.6, stage.sag == null ? Math.round(stage.w * 0.08) : stage.sag));
+  R.stagePoly = function (stage) {
+    const w = stage.w, d = stage.d, b = R.backWidth(stage);
+    if (stage.shape === 'apron') {
+      const pts = [[0, 0], [w, 0], [w, d]];
+      for (let i = 1; i < 24; i++) { const t = i / 24; pts.push([w * (1 - t), d + 2 * t * (1 - t) * d * 0.28]); }
+      pts.push([0, d]);
+      return pts;
+    }
+    if (stage.shape === 'arc') {
+      // 前の角 (0, d−sag)・(w, d−sag) を通り、中心で d になる円弧
+      const sg = R.arcSag(stage), yc = d - sg;
+      const pts = [[(w - b) / 2, 0], [(w + b) / 2, 0], [w, yc]];
+      if (sg > 0.5) {
+        const r = (w * w / 4 + sg * sg) / (2 * sg), cy = d - r;
+        const a0 = Math.asin(Math.min(1, (w / 2) / r));
+        for (let i = 1; i < 32; i++) { const t = a0 - (2 * a0 * i) / 32; pts.push([w / 2 + r * Math.sin(t), cy + r * Math.cos(t)]); }
+      }
+      pts.push([0, yc]);
+      return pts;
+    }
+    if (stage.shape === 'round') {
+      // 奥の直線の両端を通り、横幅 w・奥行 d になる楕円
+      const u = Math.min(0.999, b / w), ry = d / (1 + Math.sqrt(1 - u * u)), rx = w / 2, cy = d - ry;
+      const t0 = Math.atan2(u, -Math.sqrt(1 - u * u)); // 奥の右端
+      const pts = [[(w - b) / 2, 0], [(w + b) / 2, 0]];
+      for (let i = 1; i < 48; i++) { const t = t0 - (2 * t0 * i) / 48; pts.push([w / 2 + rx * Math.sin(t), cy - ry * Math.cos(t)]); }
+      return pts;
+    }
+    return [[(w - b) / 2, 0], [(w + b) / 2, 0], [w, d], [0, d]];
   };
   R.stagePath = function (stage) {
     const w = stage.w, d = stage.d;
@@ -18,36 +54,52 @@ window.SS = window.SS || {};
         const b = R.backWidth(stage);
         return `M${(w - b) / 2} 0H${(w + b) / 2}L${w} ${d}H0Z`;
       }
+      case 'arc': case 'round': return 'M' + R.stagePoly(stage).map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z';
       default: return `M0 0H${w}V${d}H0Z`;
     }
   };
   // 奥行 y の位置で使える左右の範囲 [左, 右]
   R.xRange = function (stage, y) {
+    if (CURVED.has(stage.shape)) {
+      const poly = R.stagePoly(stage), yy = Math.max(0.01, Math.min(R.frontY(stage) - 0.01, y));
+      let l = Infinity, r = -Infinity;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], c = poly[(i + 1) % poly.length];
+        if ((a[1] <= yy && c[1] >= yy) || (c[1] <= yy && a[1] >= yy)) {
+          const x = Math.abs(c[1] - a[1]) < 1e-6 ? a[0] : a[0] + ((yy - a[1]) / (c[1] - a[1])) * (c[0] - a[0]);
+          l = Math.min(l, x); r = Math.max(r, x);
+        }
+      }
+      return l <= r ? [l, r] : [stage.w / 2, stage.w / 2];
+    }
     const b = R.backWidth(stage);
     const t = Math.max(0, Math.min(1, y / stage.d));
     const half = (b + (stage.w - b) * t) / 2;
     return [stage.w / 2 - half, stage.w / 2 + half];
   };
+  // 左右の位置 x での、舞台の前のふち（客席側）の y
+  R.frontAt = function (stage, x) {
+    if (!CURVED.has(stage.shape)) return stage.d;
+    const poly = R.stagePoly(stage);
+    let best = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], c = poly[(i + 1) % poly.length];
+      if ((a[0] - x) * (c[0] - x) <= 0 && Math.abs(c[0] - a[0]) > 1e-6) best = Math.max(best, a[1] + ((x - a[0]) / (c[0] - a[0])) * (c[1] - a[1]));
+    }
+    return best || stage.d;
+  };
   // 点がステージの内側（margin だけ内側）に入るように寄せる
   R.clampToStage = function (stage, p, margin) {
     margin = margin || 0;
-    const y = Math.max(margin, Math.min(stage.d - margin, p.y));
-    const [l, r] = R.xRange(stage, y);
+    let y = Math.max(margin, Math.min(R.frontY(stage) - margin, p.y));
+    if (CURVED.has(stage.shape)) y = Math.min(y, R.frontAt(stage, Math.max(0, Math.min(stage.w, p.x))) - margin);
+    let [l, r] = R.xRange(stage, y);
+    if (r - l < margin * 2) { const m = (l + r) / 2; l = m - margin; r = m + margin; }
     return { x: Math.max(l + margin, Math.min(r - margin, p.x)), y };
   };
   R.insideStage = function (stage, p, margin) {
     const q = R.clampToStage(stage, p, margin || 0);
     return Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5;
-  };
-  R.stagePoly = function (stage) {
-    const w = stage.w, d = stage.d, b = R.backWidth(stage);
-    if (stage.shape === 'apron') {
-      const pts = [[0, 0], [w, 0], [w, d]];
-      for (let i = 1; i < 24; i++) { const t = i / 24; pts.push([w * (1 - t), d + 2 * t * (1 - t) * d * 0.28]); }
-      pts.push([0, d]);
-      return pts;
-    }
-    return [[(w - b) / 2, 0], [(w + b) / 2, 0], [w, d], [0, d]];
   };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
 
@@ -150,10 +202,10 @@ window.SS = window.SS || {};
     let s = '';
     const b = R.backWidth(st);
     const shaped = b < st.w - 1;
-    s += dimLine(0, st.d + 34, st.w, st.d + 34, `${shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
+    s += dimLine(0, st.d + 34, st.w, st.d + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
     if (shaped) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
-    s += dimLine(-42, 0, -42, st.d, `奥行 ${fmtM(st.d)}`, C1, k, 1, 0.1);
+    s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
     const pod = doc.items.find(it => it.type === 'podium');
     if (pod) {
       const pb = bboxOf(pod);
@@ -164,7 +216,8 @@ window.SS = window.SS || {};
       const cy = sel.y;
       const [xl, xr] = R.xRange(st, cy);
       // 舞台際（客席側）まで
-      if (st.d - bb.y1 > 3) s += dimLine(bb.x1 - 30, bb.y1, bb.x1 - 30, st.d, `舞台際まで ${fmtM(st.d - bb.y1)}`, C2, k, 1);
+      const fe = R.frontAt(st, bb.x1 - 30);
+      if (fe - bb.y1 > 3) s += dimLine(bb.x1 - 30, bb.y1, bb.x1 - 30, fe, `舞台際まで ${fmtM(fe - bb.y1)}`, C2, k, 1);
       // 奥（反射板）まで
       if (bb.y0 > 3) s += dimLine(sel.x, 0, sel.x, bb.y0, `奥まで ${fmtM(bb.y0)}`, C2, k, 1);
       // 下手・上手の端まで

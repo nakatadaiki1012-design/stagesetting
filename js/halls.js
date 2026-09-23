@@ -16,7 +16,8 @@ window.SS = window.SS || {};
 (function (SS) {
   const raw = [
     // ---------------- 神奈川県 ----------------
-    { pref: '神奈川', name: 'ミューザ川崎シンフォニーホール', fw: 22, bw: 22, d: 14, q: 'concert', note: 'コンサート専用（ヴィンヤード型）のオープンステージ', src: 'https://www.kawasaki-sym-hall.jp/about/muza/' },
+    { pref: '神奈川', name: 'ミューザ川崎シンフォニーホール', fw: 22, bw: 17, d: 14, shape: 'arc', sag: 1.5, q: 'concert', note: 'ヴィンヤード型のオープンステージ（間口22m×奥行14m）。前のふちの弧・奥の幅は図面を見て調整してください', src: 'https://www.kawasaki-sym-hall.jp/about/muza/' },
+    { pref: '神奈川', name: '横浜みなとみらいホール 大ホール', fw: 19, bw: 15, d: 13, shape: 'arc', sag: 1.2, q: 'approx', note: 'オープンステージ。公開の寸法が見つからないため目安です（ホールの「大ホール寸法図」で確認を）', src: 'https://yokohama-minatomiraihall.jp/guide/download.html' },
     { pref: '神奈川', name: '神奈川県立音楽堂', fw: 19.4, bw: 19.4, d: 8.6, q: 'concert', note: 'コンサート専用。奥行7.4m（張り出し舞台使用時8.6m）', src: 'https://www.kanagawa-ongakudo.com/about' },
     { pref: '神奈川', name: 'やまと芸術文化ホール メインホール', fw: 18, d: 11, q: 'shell', note: '音響反射板使用時 最大間口18m・奥行11m（奥の幅は推定）', src: 'https://yamato-bunka.jp/hall/' },
     { pref: '神奈川', name: '港南区民文化センター ひまわりの郷', fw: 12.8, bw: 12.8, d: 8.8, q: 'concert', note: 'シューボックス型', src: 'https://himawari-sato.com/facility/hall' },
@@ -51,6 +52,7 @@ window.SS = window.SS || {};
     { pref: '東京', name: '町田市民ホール 大ホール', stage: [16, 13.4], q: 'est', src: 'https://www.m-shimin-hall.jp/' },
     { pref: '東京', name: 'たましんRISURUホール 大ホール（立川）', stage: [18, 13], q: 'est', src: 'https://risuru.hall-info.jp/service/bighall.html' },
     { pref: '東京', name: '狛江エコルマホール', stage: [15, 12.8], q: 'est', src: 'https://ecorma-hall.jp/?p=109' },
+    { pref: '東京', name: 'サントリーホール 大ホール', fw: 20, bw: 14, d: 12.5, shape: 'arc', sag: 1.8, q: 'approx', note: 'ヴィンヤード型。ステージの前は弧、うしろ（P席側）もせまくなる形。公開の寸法が見つからないため目安です（貸しホール資料の平面図で確認を）', src: 'https://www.suntory.co.jp/suntoryhall/rental/' },
   ];
 
   const r1 = v => Math.round(v * 10) / 10;
@@ -66,5 +68,5 @@ window.SS = window.SS || {};
     if (!o.bw) o.bw = r1(o.fw * 0.72);
     return o;
   });
-  SS.HALL_Q = { shell: '反射板寸法（公開値）', concert: 'コンサート形式（公開値）', est: '推定値・要確認' };
+  SS.HALL_Q = { shell: '反射板寸法（公開値）', concert: 'コンサート形式（公開値）', est: '推定値・要確認', approx: '目安（公開寸法なし）・要確認' };
 })(window.SS);

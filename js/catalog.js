@@ -56,7 +56,7 @@ window.SS = window.SS || {};
     podium:  { name: '指揮台', cat: '基本', w: 100, h: 76, shape: 'podium', fill: '#b08a5a', label: '指揮', note: '1000×755mm（ホール常設品の例）' },
     cstand:  { name: '指揮者用譜面台', cat: '基本', w: 60, h: 40, shape: 'rect', fill: '#5b6472', label: '' },
     chair:   { name: '椅子だけ', cat: '基本', w: 46, h: 46, shape: 'chair', fill: '#e1e5ea', label: '' },
-    stand:   { name: '譜面台', cat: '基本', w: 50, h: 12, shape: 'rect', fill: '#5b6472', label: '' },
+    stand:   { name: '譜面台', cat: '基本', w: 50, h: 12, note: '机 約50cm・3本脚を開くと直径 約54cm', shape: 'rect', fill: '#5b6472', label: '' },
     riser:   { name: '平台 3×6尺', cat: '基本', w: 182, h: 91, shape: 'riser', fill: '#efe3cc', label: '', note: 'サブロク 910×1820mm' },
     riser46: { name: '平台 4×6尺', cat: '基本', w: 182, h: 121, shape: 'riser', fill: '#efe3cc', label: '', note: 'ヨンロク 1212×1820mm' },
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
@@ -159,6 +159,7 @@ window.SS = window.SS || {};
     } else if (it.type === 'player') {
       const r = opts.seatR || SS.PLAYER_R;
       if (opts.showStands !== false) {
+        if (opts.standLegs !== false && SS.standLegsSVG) body += `<g transform="translate(0 ${r + 16})" opacity=".6">${SS.standLegsSVG()}</g>`;
         body += `<rect x="${-r * 1.05}" y="${r + 9}" width="${r * 2.1}" height="7" rx="2" fill="#5b6472"/>`;
       }
       body += `<circle r="${r}" fill="${fill}" stroke="#39414d" stroke-width="2"/>`;
@@ -241,7 +242,7 @@ window.SS = window.SS || {};
           for (let xx = -w / 2 + pn.w; xx < w / 2 - 5; xx += pn.w) p += `M${xx.toFixed(1)} ${-h / 2}V${h / 2}`;
           for (let yy = -h / 2 + pn.d; yy < h / 2 - 5; yy += pn.d) p += `M${-w / 2} ${yy.toFixed(1)}H${w / 2}`;
           body += `<path d="${p}" stroke="#b39463" stroke-width="1.5" stroke-dasharray="8 5"/>`;
-          const tag = `${it.step ? it.step + '段 ' : ''}${Math.round(hv)}cm`;
+          const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : ''}${Math.round(hv)}cm`;
           text += `<text x="${(x - w / 2 + 10).toFixed(1)}" y="${(y + h / 2 - 12).toFixed(1)}" font-size="22" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}</text>`;
           break;
         }
@@ -310,6 +311,7 @@ window.SS = window.SS || {};
         case 'text':
           break;
         default:
+          if ((it.type === 'stand' || it.type === 'cstand') && opts.standLegs !== false && SS.standLegsSVG) body += `<g transform="translate(0 ${h / 2 + 2})" opacity=".75">${SS.standLegsSVG()}</g>`;
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
       }
       const lab = it.label != null ? it.label : c.label;
