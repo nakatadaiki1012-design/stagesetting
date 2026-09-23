@@ -106,6 +106,10 @@ window.SS = window.SS || {};
     return (0.299 * r + 0.587 * g + 0.114 * b) < 120 ? '#ffffff' : '#1f2733';
   }
 
+  // 文字の幅（字の大きさ1あたり）。日本語は1、英数字は0.6
+  const labelWidth = label => Math.max(1, [...String(label)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1.0 : 0.62), 0));
+  const labelText = (lb, p) => `<text x="${p.x}" y="${p.y}" dy="0.35em" text-anchor="middle" font-size="${lb.fs.toFixed(1)}" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="${(lb.fs * 0.28).toFixed(1)}" stroke-linejoin="round" paint-order="stroke">${esc(lb.text)}</text>`;
+  SS.labelText = labelText;
   function fitFont(label, maxW, base) {
     const len = Math.max(1, [...String(label)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1.0 : 0.6), 0));
     return Math.max(7, Math.min(base, maxW / len));
@@ -123,7 +127,7 @@ window.SS = window.SS || {};
     opts = opts || {};
     const x = +it.x.toFixed(1), y = +it.y.toFixed(1), rot = +(it.rot || 0).toFixed(1);
     const fill = SS.itemColor(it, opts);
-    let body = '', text = '';
+    let body = '', text = '', label = null;
     if (it.type === 'player' && opts.contest) {
       // コンクール用の配置図：椅子は○、譜面台は×（指揮者側）。色は付けない
       const kind = SS.instrumentKind ? SS.instrumentKind(it.label) : '';
@@ -147,10 +151,16 @@ window.SS = window.SS || {};
       const a = rot * Math.PI / 180;
       const at = off => ({ x: +(x + Math.sin(a) * off).toFixed(1), y: +(y - Math.cos(a) * off).toFixed(1) });
       const lab = it.label || '';
-      const lp = at(fig.standing ? 24 : 38);
-      if (lab) text += `<text x="${lp.x}" y="${lp.y}" dy="0.35em" text-anchor="middle" font-size="${fitFont(lab, 50, 17).toFixed(1)}" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="4" paint-order="stroke">${esc(lab)}</text>`;
+      // パート名：椅子の上（体のすぐ後ろ）に大きめの字で。となりと重なるときは itemsSVG が別の候補へずらす
+      if (lab) {
+        const fs = fitFont(lab, 74, 28);
+        const side = off => ({ x: +(x + Math.cos(a) * off).toFixed(1), y: +(y + Math.sin(a) * off).toFixed(1) });
+        const cands = fig.standing ? [at(24), at(40), side(-40), side(40)] : [at(20), at(36), side(-40), side(40), at(52)];
+        label = { text: lab, fs, w: labelWidth(lab) * fs + 8, h: fs * 1.15, cands };
+        if (!opts.deferLabels) text += labelText(label, cands[0]);
+      }
       if (opts.showNames !== false && it.name) {
-        const np = at(fig.standing ? 42 : 56);
+        const np = at(fig.standing ? 44 : 58);
         text += `<text x="${np.x}" y="${np.y}" dy="0.35em" text-anchor="middle" font-size="14" fill="#1f2733" stroke="#fff" stroke-width="3.5" paint-order="stroke">${esc(it.name)}</text>`;
       }
       if (opts.showNumbers && opts.number) {
@@ -326,7 +336,7 @@ window.SS = window.SS || {};
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${tc}">${esc(lab)}</text>`;
       }
     }
-    return { body: `<g transform="translate(${x} ${y}) rotate(${rot})">${body}</g>`, text };
+    return { body: `<g transform="translate(${x} ${y}) rotate(${rot})">${body}</g>`, text, label };
   };
 
   // アイテムのおおよその半径（重なり判定・選択枠用）

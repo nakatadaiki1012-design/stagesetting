@@ -314,13 +314,44 @@ window.SS = window.SS || {};
   R.itemsSVG = function (doc, opts, conductor, withIds) {
     const nums = opts.showNumbers ? R.seatNumbers(doc, conductor) : null;
     let bodies = '', texts = '';
+    const labels = [];
     R.sortedItems(doc.items).forEach(it => {
-      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0 }));
+      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true }));
       if (withIds) bodies += `<g class="item" data-id="${it.id}">${d.body}</g>`;
       else bodies += d.body;
       texts += d.text;
+      if (d.label) labels.push(Object.assign({ it }, d.label));
     });
-    return bodies + `<g pointer-events="none">${texts}</g>`;
+    return bodies + `<g pointer-events="none">${texts}${R.placeLabels(labels, doc)}</g>`;
+  };
+
+  // パート名を、となりのパート名・人の頭・譜面台と重ならない候補の場所に置く
+  R.placeLabels = function (labels, doc) {
+    const boxes = [];
+    const box = (lb, p) => ({ x0: p.x - lb.w / 2, x1: p.x + lb.w / 2, y0: p.y - lb.h / 2, y1: p.y + lb.h / 2 });
+    const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    // 人の頭（体の中心）と譜面台（体の前 約64cm・幅50cm）はふさがないようにする
+    const ps = doc.items.filter(it => it.type === 'player');
+    const heads = ps.map(it => ({ it, x0: it.x - 11, x1: it.x + 11, y0: it.y - 11, y1: it.y + 11 }));
+    ps.forEach(it => {
+      if (['perc', 'drs', 'pf', 'hp'].includes(SS.instrumentKind(it.label))) return;
+      const a = ((it.rot || 0) * Math.PI) / 180, sx = it.x - Math.sin(a) * 64, sy = it.y + Math.cos(a) * 64;
+      heads.push({ it, x0: sx - 25, x1: sx + 25, y0: sy - 6, y1: sy + 6 });
+    });
+    // 数の多い列から先に置くより、前（客席側）の人から順に置くほうが自然
+    const order = labels.slice().sort((a, b) => b.it.y - a.it.y);
+    let out = '';
+    order.forEach(lb => {
+      let best = null, bestScore = Infinity;
+      lb.cands.forEach((p, i) => {
+        const bx = box(lb, p);
+        const score = boxes.filter(b => hit(bx, b)).length * 10 + heads.filter(h => h.it !== lb.it && hit(bx, h)).length * 3 + i * 0.5;
+        if (score < bestScore) { bestScore = score; best = p; }
+      });
+      boxes.push(box(lb, best));
+      out += SS.labelText(lb, best);
+    });
+    return out;
   };
 
   // パートごとの人数
