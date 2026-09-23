@@ -205,6 +205,13 @@
     $('modal').classList.remove('hidden');
   }
   function closeModal() { $('modal').classList.add('hidden'); }
+  // 画面内で確認する（ブラウザの確認ダイアログが使えない環境でも動くように）
+  function askConfirm(msg, yesLabel, onYes) {
+    openModal(`<h2>確認</h2><p style="line-height:1.7">${SS.esc(msg).replace(/\n/g, '<br>')}</p>
+      <div class="btn-row"><button class="btn primary" id="cfYes">${SS.esc(yesLabel)}</button><button class="btn" id="cfNo">やめる</button></div>`);
+    $('cfYes').onclick = () => { closeModal(); onYes(); };
+    $('cfNo').onclick = closeModal;
+  }
   $('modalClose').onclick = closeModal;
   $('modal').addEventListener('pointerdown', e => { if (e.target === $('modal')) closeModal(); });
 
@@ -786,9 +793,12 @@
     return `<svg viewBox="-20 -20 ${st.w + 40} ${st.d + 40}" preserveAspectRatio="xMidYMid meet">${SS.render.stageSVG(tmp, false).replace(/<text[\s\S]*?<\/text>/g, '')}${SS.render.itemsSVG(tmp, { colorBy: true, showStands: false, showNames: false, seatR: 26 }, c, false).replace(/<g pointer-events="none">[\s\S]*<\/g>$/, '')}</svg>`;
   }
 
-  function loadTemplate(t) {
+  function loadTemplate(t, force) {
     const hasWork = players().length > 0 && S.undo.length > 0;
-    if (hasWork && !confirm('いまの配置図を「' + t.name + '」に置き換えます。よろしいですか？\n（あとで「戻す」で元に戻せます）')) return;
+    if (hasWork && !force) {
+      askConfirm('いまの配置図を「' + t.name + '」に置き換えます。\n（あとで「戻す」で元に戻せます）', '置き換える', () => loadTemplate(t, true));
+      return;
+    }
     pushHistory();
     const made = t.make();
     const keep = doc();
@@ -1122,7 +1132,10 @@
       b.onclick = () => { const x = SS.render.savedList().find(s => s.id === b.getAttribute('data-load')); if (x) { loadDoc(x.doc, '「' + x.name + '」を開きました'); closeModal(); } };
     });
     document.querySelectorAll('[data-del]').forEach(b => {
-      b.onclick = () => { if (confirm('削除しますか？')) { SS.render.deleteFromList(b.getAttribute('data-del')); $('btnFile').onclick(); } };
+      b.onclick = () => {
+        const id = b.getAttribute('data-del');
+        askConfirm('この配置図を削除しますか？', '削除する', () => { try { SS.render.deleteFromList(id); } catch (e) { /* ignore */ } $('btnFile').onclick(); });
+      };
     });
     $('saveFile').onclick = () => {
       const blob = new Blob([JSON.stringify(doc(), null, 1)], { type: 'application/json' });
@@ -1147,6 +1160,7 @@
         <button class="btn" id="exSvg">SVG（拡大しても荒れない形式）</button>
       </div>
       <p class="hint small">スマホでは保存した画像が「ファイル」アプリや「ダウンロード」に入ります。</p>
+      <div id="exResult"></div>
     `);
     const build = () => SS.render.fullSVG(doc(), renderOpts(), conductor(), {
       legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: $('exUnderlay') && $('exUnderlay').checked, pxPerCm: +$('exScale').value,
@@ -1155,7 +1169,10 @@
       try {
         const blob = await SS.render.svgToPng(build());
         SS.render.download(blob, SS.render.safeName(doc().title || '配置図') + '.png');
-        toast('画像を保存しました');
+        // ダウンロードできない環境（アプリ内ブラウザなど）でも保存できるよう画像を表示する
+        const url = URL.createObjectURL(blob);
+        $('exResult').innerHTML = `<p class="hint">保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
+        toast('画像を作りました');
       } catch (e) { toast(e.message); }
     };
     $('exSvg').onclick = () => {
