@@ -58,7 +58,10 @@
   // ------------------------------------------------------------ 元に戻す
   function snapshot() {
     const d = doc();
-    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall });
+    // 舞台図（下絵）は、画像そのものは入れず、位置・大きさ・回転などだけを記録する
+    const ul = d.underlay ? Object.assign({}, d.underlay, { src: undefined }) : null;
+    if (d.underlay) S.ulSrc = d.underlay.src;
+    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, ul });
   }
   function pushHistory() {
     S.undo.push(snapshot());
@@ -68,8 +71,12 @@
   }
   function restore(snap) {
     const u = doc().underlay;
-    S.doc = normalize(JSON.parse(snap));
-    S.doc.underlay = u;
+    const p = JSON.parse(snap);
+    S.doc = normalize(p);
+    const src = (u && u.src) || S.ulSrc;
+    S.doc.underlay = p.ul && src ? Object.assign({ src }, p.ul) : p.ul === undefined ? u : null;
+    $('overlayControls').classList.toggle('hidden', !S.doc.underlay);
+    if (S.doc.underlay) syncOverlayUI();
     S.sel = new Set([...S.sel].filter(id => byId(id)));
     renderAll();
     renderSteppers();
@@ -88,14 +95,17 @@
     return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure, contest: o.contest, dims: o.dims };
   }
 
+  const layerDimsEl = () => document.getElementById('layerDims');
   function render() {
     const d = doc();
     layerStage.innerHTML = SS.render.stageSVG(d, opts().grid ? (opts().gridSize || 50) : 0);
     const u = d.underlay;
-    layerUnderlay.innerHTML = u
-      ? `<image href="${u.src}" x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" opacity="${u.opacity}" preserveAspectRatio="none" pointer-events="none"/>` +
-        (S.underlayEdit ? `<rect x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" fill="none" stroke="#2f6fde" stroke-width="${3 / S.view.k}" stroke-dasharray="${10 / S.view.k}"/>` : '')
-      : '';
+    layerUnderlay.innerHTML = u ? SS.render.underlaySVG(u, { edit: S.underlayEdit, k: S.view.k, id: 'main' }) : '';
+    // 「図を奏者より上に」：下絵の層を部品の層の後ろ（上）に移す
+    const onTop = !!(u && u.onTop);
+    if (onTop !== (layerUnderlay.nextElementSibling === layerDimsEl())) {
+      if (onTop) layerItems.after(layerUnderlay); else layerItems.before(layerUnderlay);
+    }
     layerItems.innerHTML = SS.render.itemsSVG(d, renderOpts(), conductor(), true);
     renderOverlay();
     scheduleSave();
@@ -103,7 +113,7 @@
 
   // 舞台の大きさをドラッグで変えるつまみ（前の幅・奥の幅・奥行）
   function stageHandlesSVG(k) {
-    if (S.underlayEdit || S.placing) return '';
+    if (S.underlayEdit || S.placing || S.pick) return '';
     const st = doc().stage;
     const bw = SS.render.backWidth(st), cx = st.w / 2;
     const r = 11 / k, hit = 24 / k;
@@ -151,6 +161,11 @@
       s += '</g>';
     }
     s += stageHandlesSVG(k);
+    if (S.pick) {
+      const tg = pickTargets(S.pick.kind);
+      if (tg) tg.forEach((q, i) => { s += `<circle cx="${q.x}" cy="${q.y}" r="${14 / k}" fill="none" stroke="#e8467c" stroke-width="${3 / k}" stroke-dasharray="${5 / k}"/><text x="${q.x}" y="${q.y - 22 / k}" text-anchor="middle" font-size="${13 / k}" font-weight="700" fill="#e8467c">${i + 1}</text>`; });
+      S.pick.pts.forEach((q, i) => { s += `<circle cx="${q.x}" cy="${q.y}" r="${9 / k}" fill="#2f6fde" stroke="#fff" stroke-width="${2.5 / k}"/><text x="${q.x}" y="${q.y - 16 / k}" text-anchor="middle" font-size="${13 / k}" font-weight="700" fill="#2f6fde" stroke="#fff" stroke-width="${3 / k}" paint-order="stroke">${i + 1}</text>`; });
+    }
     if (drag && drag.guides) {
       const gs = `stroke="#e8467c" stroke-width="${1.6 / k}" stroke-dasharray="${8 / k} ${5 / k}" fill="none"`;
       drag.guides.forEach(g => {
@@ -177,12 +192,13 @@
     vp.setAttribute('transform', `translate(${v.tx} ${v.ty}) scale(${v.k})`);
   }
 
-  function fitView() {
+  function fitView(extra) {
     const r = svg.getBoundingClientRect();
     if (!r.width || !r.height) return;
     const st = doc().stage;
     const mx = opts().dims ? 110 : 80;
-    const x0 = -mx, y0 = -95, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
+    let x0 = -mx, y0 = -95, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
+    if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
     S.view.tx = (r.width - (x1 - x0) * k) / 2 - x0 * k;
@@ -284,6 +300,11 @@
     const itemEl = e.target.closest && e.target.closest('.item');
     const start = { sx: e.clientX, sy: e.clientY, w };
 
+    if (S.pick) {
+      // 舞台図の2点をタップ（ドラッグしたときは画面を動かす）
+      drag = { kind: 'pick', start, last: { x: e.clientX, y: e.clientY } };
+      return;
+    }
     if (S.placing && !handle) {
       const type = S.placing;
       setPlacing(null);
@@ -367,7 +388,9 @@
     const moved = Math.hypot(e.clientX - drag.start.sx, e.clientY - drag.start.sy) > 4;
 
     switch (drag.kind) {
+      case 'pick':
       case 'pan': {
+        if (drag.kind === 'pick' && !moved && !drag.didMove) break;
         S.view.tx += e.clientX - drag.last.x;
         S.view.ty += e.clientY - drag.last.y;
         drag.last = { x: e.clientX, y: e.clientY };
@@ -466,6 +489,13 @@
     if (!drag) return;
     if (drag.kind === 'pinch') {
       if (pointers.size < 2) drag = null;
+      return;
+    }
+    if (drag.kind === 'pick' && !drag.didMove && S.pick) {
+      S.pick.pts.push(drag.start.w);
+      drag = null;
+      pickStep();
+      renderOverlay();
       return;
     }
     if (/^stage/.test(drag.kind)) {
@@ -687,7 +717,7 @@
   document.addEventListener('keydown', e => {
     const tag = (document.activeElement && document.activeElement.tagName) || '';
     const typing = /INPUT|TEXTAREA|SELECT/.test(tag);
-    if (e.key === 'Escape') { setPlacing(null); closeModal(); if (!typing) { S.sel.clear(); renderOverlay(); renderProps(); } return; }
+    if (e.key === 'Escape') { setPlacing(null); if (S.pick) endPick(); closeModal(); if (!typing) { S.sel.clear(); renderOverlay(); renderProps(); } return; }
     if (typing) return;
     const mod = e.ctrlKey || e.metaKey;
     if (e.code === 'Space') { spaceDown = true; svg.classList.add('panning'); e.preventDefault(); return; }
@@ -1307,23 +1337,262 @@
     toast(missing ? `${placed}人を入れました（${missing}人は空いている席がありません）` : `${placed}人の名前を入れました`);
   };
 
-  // ------------------------------------------------------------ トレース
-  async function handleImageFile(file) {
-    if (!file || !/^image\//.test(file.type)) return toast('画像ファイルを選んでください');
+  // ------------------------------------------------------------ 舞台図（画像・PDF）の読み込みと重ね合わせ
+  async function handleImageFile(file, pageNo) {
+    if (!file) return;
+    const pdf = SS.trace.isPdf(file);
+    if (!pdf && !/^image\//.test(file.type)) return toast('画像かPDFを選んでください');
     try {
-      toast('画像を読み込んでいます…');
-      const { img } = await SS.trace.loadImageFromFile(file);
-      S.traceSrc = { img, rot: 0 };
-      setTraceImage(SS.trace.toCanvas(img, 2400, 0), false);
-      $('traceControls').classList.remove('hidden');
+      toast(pdf ? 'PDFを読み込んでいます…' : '画像を読み込んでいます…');
+      let canvas, cmPerPx = 0;
+      if (pdf) {
+        const r = await SS.trace.loadPdf(S.pdfData && pageNo ? S.pdfData.slice(0) : file, pageNo || 1, 3000);
+        if (!pageNo) S.pdfData = r.data;
+        canvas = r.canvas; cmPerPx = r.cmPerPx;
+        $('pdfPage').value = r.page; $('pdfPage').max = r.pages;
+        $('pdfPages').textContent = `／ ${r.pages} ページ`;
+        $('pdfPageRow').classList.toggle('hidden', r.pages < 2);
+      } else {
+        const { img } = await SS.trace.loadImageFromFile(file);
+        canvas = SS.trace.toCanvas(img, 3000, 0);
+        S.pdfData = null;
+        $('pdfPageRow').classList.add('hidden');
+      }
+      $('pdfScaleRow').classList.toggle('hidden', !cmPerPx);
+      S.traceSrc = { img: canvas, rot: 0 };
+      S.trace = null;
+      placeDrawing(canvas, cmPerPx);
+      $('overlayControls').classList.remove('hidden');
+      $('traceControls').classList.add('hidden');
       openTab('leftPanel', 'traceTab');
-      // ステージの外枠が見つかったら、四隅合わせの画面を自動で開く
-      const frame = SS.trace.findFrame(S.trace.prep);
-      if (frame) openCropEditor(frame, true);
-      else { openPanel('leftPanel'); toast('画像を読み込みました。「✂ トリミング・四隅合わせ」で範囲を決められます'); }
+      openPanel('leftPanel');
+      toast('舞台図を重ねました。「⤢ 舞台の前の角に合わせる」を押して、図の舞台の左の角 → 右の角をタップすると、ぴったり重なります', true);
     } catch (err) {
-      toast(err.message || '画像を読み込めませんでした');
+      toast(err.message || '読み込めませんでした');
     }
+  }
+
+  // 読み込んだ図を下絵にする（白い余白は自動で切り取り、ステージに入る大きさで置く）
+  function placeDrawing(canvas, cmPerPx) {
+    pushHistory();
+    const crop = SS.trace.autoTrim(canvas);
+    const u = { src: canvas.toDataURL('image/jpeg', 0.9), opacity: +$('underlayOpacity').value / 100, rot: 0, crop, pxW: canvas.width, pxH: canvas.height, cmPerPx: cmPerPx || 0, x: 0, y: 0, w: canvas.width, h: canvas.height };
+    doc().underlay = u;
+    fitDrawingInStage();
+    syncOverlayUI();
+    render();
+    fitView(SS.render.underlayBounds(u));
+  }
+
+  // 使う範囲がステージにちょうど入るように、大きさと位置を変える
+  function fitDrawingInStage() {
+    const u = doc().underlay; if (!u) return;
+    const st = doc().stage;
+    let b = SS.render.underlayBounds(u);
+    scaleDrawing(Math.min(st.w / (b.x1 - b.x0), st.d / (b.y1 - b.y0)), { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 });
+    b = SS.render.underlayBounds(u);
+    u.x += st.w / 2 - (b.x0 + b.x1) / 2; u.y += st.d / 2 - (b.y0 + b.y1) / 2;
+  }
+  // 点 P を中心に f 倍
+  function scaleDrawing(f, P) {
+    const u = doc().underlay;
+    u.x = P.x + (u.x - P.x) * f; u.y = P.y + (u.y - P.y) * f; u.w *= f; u.h *= f;
+  }
+  // 使う範囲の真ん中（舞台の座標）
+  function drawingCenter() {
+    const u = doc().underlay, c = SS.render.underlayCrop(u);
+    return SS.render.underlayToWorld(u, (c.l + c.r) / 2, (c.t + c.b) / 2);
+  }
+  function rotateDrawing(deg) {
+    const u = doc().underlay; if (!u) return;
+    const C = drawingCenter();
+    u.rot = Math.round(deg * 10) / 10;
+    const C2 = drawingCenter();
+    u.x += C.x - C2.x; u.y += C.y - C2.y;
+  }
+  function syncOverlayUI() {
+    const u = doc().underlay; if (!u) return;
+    $('underlayOpacity').value = Math.round((u.opacity == null ? 0.45 : u.opacity) * 100);
+    $('ovRot').value = u.rot || 0;
+    $('ovRotVal').textContent = `${Math.round((u.rot || 0) * 10) / 10}°`;
+    $('ovOnTop').checked = !!u.onTop;
+    $('pdfScaleRow').classList.toggle('hidden', !u.cmPerPx);
+  }
+
+  // 2点を選んで合わせる
+  function pickTargets(kind) {
+    const st = doc().stage, poly = SS.render.stagePoly(st);
+    if (kind === 'front') return [{ x: poly[3][0], y: poly[3][1] }, { x: poly[2][0], y: poly[2][1] }];
+    if (kind === 'back') return [{ x: poly[0][0], y: poly[0][1] }, { x: poly[1][0], y: poly[1][1] }];
+    return null;
+  }
+  const PICK_TEXT = {
+    front: ['図の舞台の<b>前の左の角</b>をタップ', '図の舞台の<b>前の右の角</b>をタップ'],
+    back: ['図の舞台の<b>奥の左の角</b>をタップ', '図の舞台の<b>奥の右の角</b>をタップ'],
+    len: ['長さのわかる<b>1つ目の点</b>をタップ', '<b>2つ目の点</b>をタップ'],
+  };
+  function startPick(kind) {
+    if (!doc().underlay) return toast('先に舞台図を読み込んでください');
+    S.pick = { kind, pts: [] };
+    S.underlayEdit = false; $('underlayEdit').checked = false;
+    closePanels();
+    pickStep();
+    render();
+  }
+  function endPick() {
+    S.pick = null;
+    $('pickHint').hidden = true;
+    renderOverlay();
+  }
+  function pickStep() {
+    const P = S.pick; if (!P) return;
+    if (P.pts.length < 2) {
+      $('pickHint').hidden = false;
+      $('pickHintText').innerHTML = `${P.pts.length + 1}/2：${PICK_TEXT[P.kind][P.pts.length]}（ドラッグで画面を動かせます）`;
+      return;
+    }
+    const [p1, p2] = P.pts;
+    const kind = P.kind;
+    endPick();
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 5) return toast('2つの点が近すぎます。もう一度どうぞ');
+    if (kind === 'len') {
+      const cur = Math.hypot(p2.x - p1.x, p2.y - p1.y) / 100;
+      openModal(`<h2>📏 2点の間の実際の長さ</h2><p class="hint">図に書かれている寸法（例：間口 18m）を入れてください。</p>
+        <label class="field">長さ（m）<input id="pickLen" type="number" step="0.01" min="0.1" value="${cur.toFixed(2)}"></label>
+        <div class="btn-row"><button class="btn primary" id="pickLenOk">この長さで合わせる</button><button class="btn" id="pickLenNo">やめる</button></div>`);
+      setTimeout(() => { const el = $('pickLen'); if (el) { el.focus(); el.select(); } }, 50);
+      $('pickLenNo').onclick = closeModal;
+      $('pickLenOk').onclick = () => {
+        const L = +$('pickLen').value * 100;
+        if (!(L > 0)) return;
+        closeModal();
+        pushHistory();
+        scaleDrawing(L / Math.hypot(p2.x - p1.x, p2.y - p1.y), p1);
+        doc().underlay.aligned = true;
+        render();
+        fitView(SS.render.underlayBounds(doc().underlay));
+        toast(`2点の間を ${(L / 100).toFixed(2)}m にしました。位置は「↑↓←→」かドラッグで合わせられます`, true);
+      };
+      return;
+    }
+    // 2点を舞台の角に重ねる（大きさ・回転・位置を一度に）
+    const [q1, q2] = pickTargets(kind);
+    const u = doc().underlay;
+    pushHistory();
+    const f = Math.hypot(q2.x - q1.x, q2.y - q1.y) / Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const th = Math.atan2(q2.y - q1.y, q2.x - q1.x) - Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    const M = p => {
+      const dx = (p.x - p1.x) * f, dy = (p.y - p1.y) * f;
+      return { x: q1.x + dx * Math.cos(th) - dy * Math.sin(th), y: q1.y + dx * Math.sin(th) + dy * Math.cos(th) };
+    };
+    const tl = M({ x: u.x, y: u.y });
+    u.x = tl.x; u.y = tl.y; u.w *= f; u.h *= f;
+    let rot = (u.rot || 0) + (th * 180) / Math.PI;
+    rot = ((rot + 540) % 360) - 180;
+    u.rot = Math.round(rot * 100) / 100;
+    u.aligned = true;
+    syncOverlayUI();
+    render();
+    fitView(SS.render.underlayBounds(u));
+    toast('舞台図を、この配置図の舞台に重ねました。ずれていたら「②微調整」で直せます', true);
+  }
+  document.querySelectorAll('[data-pick]').forEach(b => { b.onclick = () => startPick(b.getAttribute('data-pick')); });
+  $('pickCancel').onclick = endPick;
+  $('btnOvFit').onclick = () => { if (!doc().underlay) return; pushHistory(); fitDrawingInStage(); render(); };
+  $('btnPdfScale').onclick = () => {
+    const u = doc().underlay; if (!u || !u.cmPerPx) return;
+    const ratio = +$('pdfScale').value;
+    if (!(ratio > 0)) return;
+    pushHistory();
+    const C = drawingCenter();
+    scaleDrawing((u.pxW * u.cmPerPx * ratio) / u.w, C);
+    u.aligned = true;
+    render();
+    fitView(SS.render.underlayBounds(u));
+    toast(`縮尺 1/${ratio} で実寸にしました。位置はドラッグや「⤢ 舞台の前の角に合わせる」で合わせてください`, true);
+  };
+  $('pdfPage').addEventListener('change', e => { if (S.pdfData) handleImageFile(new Blob([S.pdfData], { type: 'application/pdf' }), +e.target.value); });
+  let rotHist = 0;
+  $('ovRot').addEventListener('input', e => {
+    if (!doc().underlay) return;
+    if (Date.now() - rotHist > 1500) pushHistory();
+    rotHist = Date.now();
+    rotateDrawing(+e.target.value);
+    $('ovRotVal').textContent = `${e.target.value}°`;
+    render();
+  });
+  document.querySelectorAll('[data-ovmove]').forEach(b => {
+    b.onclick = e => {
+      const u = doc().underlay; if (!u) return;
+      const [dx, dy] = b.getAttribute('data-ovmove').split(',').map(Number);
+      const step = e.shiftKey ? 50 : 10;
+      pushHistory(); u.x += dx * step; u.y += dy * step; render();
+    };
+  });
+  document.querySelectorAll('[data-ovzoom]').forEach(b => {
+    b.onclick = () => { if (!doc().underlay) return; pushHistory(); scaleDrawing(+b.getAttribute('data-ovzoom'), drawingCenter()); render(); };
+  });
+  $('btnOvShowAll').onclick = () => { const u = doc().underlay; if (u) fitView(SS.render.underlayBounds(u)); };
+  $('ovOnTop').addEventListener('change', e => { const u = doc().underlay; if (!u) return; u.onTop = e.target.checked; render(); });
+  $('btnOvCrop').onclick = openRectCrop;
+  $('btnTraceOpen').onclick = () => {
+    if (!S.traceSrc) return toast('もう一度、舞台図（配置図）の画像を選んでください');
+    const prep = SS.trace.prepare(S.traceSrc.img);
+    S.trace = { prep, result: null, canvas: S.traceSrc.img, framed: false };
+    $('traceScale').checked = !(doc().underlay && doc().underlay.aligned);
+    $('traceControls').classList.remove('hidden');
+    runDetect();
+    $('traceControls').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // 使う範囲を四角く切り取る（外側の客席・袖などを隠す）
+  function openRectCrop() {
+    const u = doc().underlay; if (!u) return;
+    const img = new Image();
+    img.onload = () => {
+      let c = SS.render.underlayCrop(u);
+      openModal(`<h2>✂ 使う範囲を切り取る</h2>
+        <p class="hint">四隅の点をドラッグして、残したい範囲を決めてください（はみ出す部分はあとで「図の全体を表示」でも見られます）。</p>
+        <div class="crop-wrap" id="rcWrap"><canvas id="rcCanvas"></canvas><svg id="rcSvg"></svg></div>
+        <div class="btn-row"><button class="btn" id="rcAuto">白い余白を自動で切る</button><button class="btn" id="rcAll">全体を使う</button></div>
+        <div class="btn-row"><button class="btn primary" id="rcOk">この範囲にする</button><button class="btn" id="rcNo">やめる</button></div>`);
+      const W = img.naturalWidth, H = img.naturalHeight;
+      const cv = $('rcCanvas'), sv = $('rcSvg');
+      const k = Math.min(1, 1600 / Math.max(W, H));
+      cv.width = Math.round(W * k); cv.height = Math.round(H * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      sv.setAttribute('viewBox', `0 0 ${cv.width} ${cv.height}`);
+      const draw = () => {
+        const x0 = c.l * cv.width, y0 = c.t * cv.height, x1 = c.r * cv.width, y1 = c.b * cv.height;
+        const hr = Math.max(cv.width, cv.height) / 45;
+        sv.innerHTML = `<path d="M0 0H${cv.width}V${cv.height}H0Z M${x0} ${y0}H${x1}V${y1}H${x0}Z" fill="rgba(0,0,0,.45)" fill-rule="evenodd"/>
+          <rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#4d8dff" stroke-width="${hr / 4}"/>` +
+          [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="${hr}" fill="rgba(77,141,255,.35)" stroke="#fff" stroke-width="${hr / 5}"/>`).join('');
+      };
+      draw();
+      let grab = -1;
+      const toF = e => { const r = sv.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) }; };
+      sv.addEventListener('pointerdown', e => {
+        const p = toF(e);
+        const cs = [[c.l, c.t], [c.r, c.t], [c.r, c.b], [c.l, c.b]];
+        let bi = 0, bd = Infinity;
+        cs.forEach((q, i) => { const d = Math.hypot((q[0] - p.x) * W, (q[1] - p.y) * H); if (d < bd) { bd = d; bi = i; } });
+        grab = bi; sv.setPointerCapture(e.pointerId);
+      });
+      sv.addEventListener('pointermove', e => {
+        if (grab < 0) return;
+        const p = toF(e);
+        if (grab === 0 || grab === 3) c.l = Math.min(p.x, c.r - 0.02); else c.r = Math.max(p.x, c.l + 0.02);
+        if (grab === 0 || grab === 1) c.t = Math.min(p.y, c.b - 0.02); else c.b = Math.max(p.y, c.t + 0.02);
+        draw();
+      });
+      sv.addEventListener('pointerup', () => { grab = -1; });
+      $('rcAuto').onclick = () => { c = SS.trace.autoTrim(img); draw(); };
+      $('rcAll').onclick = () => { c = { l: 0, t: 0, r: 1, b: 1 }; draw(); };
+      $('rcNo').onclick = closeModal;
+      $('rcOk').onclick = () => { pushHistory(); u.crop = c; closeModal(); render(); toast('使う範囲を切り取りました', true); };
+    };
+    img.src = u.src;
   }
 
   // 解析する画像（キャンバス）を決めて、下絵として置く
@@ -1331,14 +1600,17 @@
     const prep = SS.trace.prepare(canvas);
     S.trace = { prep, result: null, canvas, framed };
     const st = doc().stage;
-    const u = { src: canvas.toDataURL('image/jpeg', 0.85), opacity: +$('underlayOpacity').value / 100 };
-    if (framed) { u.x = 0; u.y = 0; u.w = st.w; u.h = st.d; }
+    const u = { src: canvas.toDataURL('image/jpeg', 0.85), opacity: +$('underlayOpacity').value / 100, rot: 0, pxW: canvas.width, pxH: canvas.height, cmPerPx: 0 };
+    if (framed) { u.x = 0; u.y = 0; u.w = st.w; u.h = st.d; u.aligned = true; }
     else {
       const k = Math.min(st.w / prep.w, st.d / prep.h);
       u.w = prep.w * k; u.h = prep.h * k; u.x = (st.w - u.w) / 2; u.y = (st.d - u.h) / 2;
     }
     doc().underlay = u;
     $('traceScale').checked = !framed;
+    $('overlayControls').classList.remove('hidden');
+    $('traceControls').classList.remove('hidden');
+    syncOverlayUI();
     runDetect();
     render();
   }
@@ -1495,6 +1767,13 @@
         center.y = Math.min(center.y, d.stage.d - 50);
       }
       u.x = 0; u.y = 0; u.w = d.stage.w; u.h = d.stage.d;
+    } else if (u.aligned || !$('traceScale').checked) {
+      // 舞台図を重ねて合わせてあるときは、その位置のまま取り込む（切り取った外側の椅子は使わない）
+      const cr = SS.render.underlayCrop(u);
+      const inCrop = p => p.x / prep.w >= cr.l && p.x / prep.w <= cr.r && p.y / prep.h >= cr.t && p.y / prep.h <= cr.b;
+      for (let i = seats.length - 1; i >= 0; i--) if (!inCrop(seats[i])) seats.splice(i, 1);
+      for (let i = boxes.length - 1; i >= 0; i--) if (!inCrop(boxes[i])) boxes.splice(i, 1);
+      toW = p => SS.render.underlayToWorld(u, p.x / prep.w, p.y / prep.h);
     } else if ($('traceScale').checked && seats.length >= 3) {
       const spacing = SS.trace.typicalSpacing(seats) || res.s0 * 1.5;
       const cm = 75 / spacing; // となりの席との間隔を約75cmとみなす
@@ -1511,15 +1790,15 @@
       const W = Math.max(800, Math.ceil((bw + 300) / 100) * 100);
       const D = Math.max(600, Math.ceil((bh + 280) / 100) * 100);
       d.stage.w = W; d.stage.d = D;
+      if (d.stage.bw) d.stage.bw = Math.min(d.stage.bw, Math.round(W * 0.7));
       const ox = W / 2 - ((minX + maxX) / 2) * cm;
       const oy = 150 - minY * cm;
       toW = p => ({ x: ox + p.x * cm, y: oy + p.y * cm });
       center = toW(cImg);
       center.y = Math.min(center.y, D - 60);
-      u.x = ox; u.y = oy; u.w = prep.w * cm; u.h = prep.h * cm;
+      u.x = ox; u.y = oy; u.w = prep.w * cm; u.h = prep.h * cm; u.rot = 0;
     } else {
-      const kx = u.w / prep.w, ky = u.h / prep.h;
-      toW = p => ({ x: u.x + p.x * kx, y: u.y + p.y * ky });
+      toW = p => SS.render.underlayToWorld(u, p.x / prep.w, p.y / prep.h);
     }
     const scale = u.w / prep.w;
     if ($('traceReplace').checked) d.items = d.items.filter(it => it.type === 'podium');
@@ -1563,20 +1842,16 @@
 
   $('traceFile').addEventListener('change', e => { handleImageFile(e.target.files[0]); e.target.value = ''; });
   $('underlayOpacity').addEventListener('input', e => { if (doc().underlay) { doc().underlay.opacity = +e.target.value / 100; render(); } });
-  $('underlayEdit').addEventListener('change', e => { S.underlayEdit = e.target.checked; render(); if (S.underlayEdit) toast('下絵をドラッグで移動、ホイールで拡大縮小できます'); });
-  $('btnUnderlayFit').onclick = () => {
-    const u = doc().underlay; if (!u) return;
-    const st = doc().stage;
-    const k = Math.min(st.w / u.w, st.d / u.h);
-    u.w *= k; u.h *= k; u.x = (st.w - u.w) / 2; u.y = (st.d - u.h) / 2;
-    render();
-  };
+  $('underlayEdit').addEventListener('change', e => { S.underlayEdit = e.target.checked; if (S.underlayEdit) pushHistory(); render(); if (S.underlayEdit) { closePanels(); toast('図をドラッグで移動、ホイール（2本指）で拡大縮小できます。終わったらチェックを外してください'); } });
   $('btnUnderlayRemove').onclick = () => {
+    pushHistory();
     doc().underlay = null;
-    S.trace = null;
+    S.trace = null; S.traceSrc = null; S.pdfData = null;
     S.underlayEdit = false;
     $('underlayEdit').checked = false;
     $('traceControls').classList.add('hidden');
+    $('overlayControls').classList.add('hidden');
+    if (S.pick) endPick();
     render();
   };
 
@@ -1680,7 +1955,7 @@
       <h2>画像として保存</h2>
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
-      ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 下絵を入れる</label>' : ''}
+      ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで紙を広げる</label>' : ''}
       <label class="field" style="margin-top:10px">画質
         <select id="exScale"><option value="1">ふつう</option><option value="2" selected>きれい</option><option value="3">とてもきれい（印刷向け）</option></select>
       </label>
@@ -1692,7 +1967,7 @@
       <div id="exResult"></div>
     `);
     const build = () => SS.render.fullSVG(doc(), renderOpts(), conductor(), {
-      legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: $('exUnderlay') && $('exUnderlay').checked, pxPerCm: +$('exScale').value,
+      legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: $('exUnderlay') && $('exUnderlay').checked, underlayAll: $('exUnderlayAll') && $('exUnderlayAll').checked, pxPerCm: +$('exScale').value,
     });
     $('exPng').onclick = async () => {
       try {
@@ -1743,6 +2018,7 @@
         <li><b>並び方</b>：かんたん編成の「並び方」で、<b>標準・Cl下手/Sax上手・昔ながら・ドイツ式</b>を選べます。「ひな形」にも、コンクールA（55人）や小編成などの型があります。</li>
         <li><b>選び方</b>：右上の <b>⬚</b> で四角く囲んで、<b>➰</b> で自由に囲んで、まとめて選べます。<b>ひな壇（平台）は選ばれません</b>（平台だけを囲んだときは平台を選びます）。</li>
         <li><b>弧のカーブ</b>：「整える」のスライダーで、床の扇形を<b>ゆるい弧〜まっすぐ</b>に変えられます。右端に戻すと元の扇形です。</li>
+        <li><b>舞台図を重ねる</b>：「トレース」タブで、ホールの<b>舞台図（PDF・画像）</b>を読み込むと配置図に重なります。「⤢ 舞台の前の角に合わせる」で図の前の左右の角をタップすると、<b>大きさ・向き・位置が一度に</b>合います。PDFなら縮尺（1/100など）で実寸にもできます。図が大きくはみ出しても大丈夫。「✂ 使う範囲を切り取る」「🔭 図の全体を表示」で調整できます。</li>
         <li><b>方眼・コンクール用の図</b>：「設定」で方眼を <b>1.82m（1間）</b> にしたり、奏者を<b>椅子○・譜面台×</b>のコンクール用の表し方にしたりできます。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
         <li><b>低音を上手の外側に・ホルンのボックス</b>：「一括作成」タブの「配置のくふう」のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。ホルンを2人ずつ前後に並べるボックス型もここで選べます。</li>
@@ -1966,9 +2242,8 @@
       try { if (!localStorage.getItem('stagesetting.helped')) { localStorage.setItem('stagesetting.helped', '1'); setTimeout(showHelp, 400); } } catch (e) { /* ignore */ }
     }
     if (S.doc.underlay) {
-      $('traceControls').classList.remove('hidden');
-      $('underlayOpacity').value = Math.round(S.doc.underlay.opacity * 100);
-      $('traceStatus').textContent = '自動で読み取るには、もう一度画像を選んでください';
+      $('overlayControls').classList.remove('hidden');
+      syncOverlayUI();
     }
     renderAll();
     renderSteppers();

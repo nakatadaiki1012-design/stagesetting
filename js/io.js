@@ -83,6 +83,38 @@ window.SS = window.SS || {};
     return s;
   };
 
+  // ---------------------------------------------------------------- 下絵（舞台図の重ね合わせ）
+  // u: { src, x, y, w, h, rot(度・左上の角が中心), crop:{l,t,r,b}(0〜1), opacity }
+  R.underlayCrop = u => Object.assign({ l: 0, t: 0, r: 1, b: 1 }, u.crop || {});
+  // 画像の中の位置（0〜1）→ 舞台の座標(cm)
+  R.underlayToWorld = function (u, fx, fy) {
+    const a = ((u.rot || 0) * Math.PI) / 180, lx = fx * u.w, ly = fy * u.h;
+    return { x: u.x + lx * Math.cos(a) - ly * Math.sin(a), y: u.y + lx * Math.sin(a) + ly * Math.cos(a) };
+  };
+  R.worldToUnderlay = function (u, x, y) {
+    const a = ((u.rot || 0) * Math.PI) / 180, dx = x - u.x, dy = y - u.y;
+    return { fx: (dx * Math.cos(a) + dy * Math.sin(a)) / u.w, fy: (-dx * Math.sin(a) + dy * Math.cos(a)) / u.h };
+  };
+  // 切り取った範囲の四隅と、それを囲む四角
+  R.underlayBounds = function (u) {
+    const c = R.underlayCrop(u);
+    const pts = [[c.l, c.t], [c.r, c.t], [c.r, c.b], [c.l, c.b]].map(p => R.underlayToWorld(u, p[0], p[1]));
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    return { pts, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  };
+  let ulSeq = 0;
+  R.underlaySVG = function (u, opt) {
+    opt = opt || {};
+    const c = R.underlayCrop(u);
+    const id = 'ulClip' + (opt.id || ++ulSeq);
+    const cx = c.l * u.w, cy = c.t * u.h, cw = (c.r - c.l) * u.w, ch = (c.b - c.t) * u.h;
+    let s = `<g transform="translate(${u.x} ${u.y}) rotate(${u.rot || 0})" pointer-events="none">`;
+    s += `<clipPath id="${id}"><rect x="${cx}" y="${cy}" width="${cw}" height="${ch}"/></clipPath>`;
+    s += `<image href="${u.src}" x="0" y="0" width="${u.w}" height="${u.h}" opacity="${u.opacity == null ? 0.5 : u.opacity}" preserveAspectRatio="none" clip-path="url(#${id})"/>`;
+    if (opt.edit) s += `<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="none" stroke="#2f6fde" stroke-width="${3 / (opt.k || 1)}" stroke-dasharray="${10 / (opt.k || 1)}"/>`;
+    return s + '</g>';
+  };
+
   // ---------------------------------------------------------------- 寸法線
   const fmtM = cm => (cm / 100).toFixed(2).replace(/0$/, '') + 'm';
   function dimLine(x1, y1, x2, y2, label, color, k, side, at) {
@@ -214,7 +246,14 @@ window.SS = window.SS || {};
       });
       legendH = 70 + Math.ceil(cells.length / perRow) * 40;
     }
-    const x0 = -pad, y0 = -titleH - pad / 2, W = st.w + pad * 2, H = bottom + legendH + pad - y0;
+    let x0 = -pad, y0 = -titleH - pad / 2, W = st.w + pad * 2, H = bottom + legendH + pad - y0;
+    // 下絵（舞台図）を入れるときは、はみ出す部分まで紙を広げる
+    if (ex.underlay && doc.underlay && ex.underlayAll) {
+      const b = R.underlayBounds(doc.underlay);
+      const nx0 = Math.min(x0, b.x0 - 20), ny0 = Math.min(y0, b.y0 - 20);
+      const nx1 = Math.max(x0 + W, b.x1 + 20), ny1 = Math.max(y0 + H, b.y1 + 20);
+      x0 = nx0; y0 = ny0; W = nx1 - nx0; H = ny1 - ny0;
+    }
     const k = ex.pxPerCm;
     let s = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.round(W * k)}" height="${Math.round(H * k)}" viewBox="${x0} ${y0} ${W} ${H}" font-family="'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif">`;
     s += `<rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>`;
@@ -222,7 +261,7 @@ window.SS = window.SS || {};
     if (doc.subtitle) s += `<text x="${st.w / 2}" y="${-titleH + 88}" text-anchor="middle" font-size="30" fill="#4a5462">${SS.esc(doc.subtitle)}</text>`;
     s += R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
     const u = doc.underlay;
-    if (ex.underlay && u) s += `<image href="${u.src}" x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" opacity="${u.opacity}" preserveAspectRatio="none"/>`;
+    if (ex.underlay && u) s += R.underlaySVG(u, { id: 'ex' });
     s += R.itemsSVG(doc, opts, conductor, false);
     if (opts.dims) s += R.dimsSVG(doc, 0.55, null);
     s += legend;

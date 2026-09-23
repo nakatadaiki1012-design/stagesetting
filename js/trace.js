@@ -19,6 +19,71 @@ window.SS = window.SS || {};
     });
   };
 
+  // ---------------------------------------------------------------- PDF（pdf.js をその時だけ読み込む）
+  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  let pdfjsP = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!pdfjsP) {
+      pdfjsP = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = PDFJS + 'pdf.min.js';
+        s.onload = () => {
+          const lib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+          if (!lib) return reject(new Error('PDFを読むしくみを準備できませんでした'));
+          lib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+          resolve(lib);
+        };
+        s.onerror = () => { pdfjsP = null; reject(new Error('PDFを読むにはネット接続が必要です')); };
+        document.head.appendChild(s);
+      });
+    }
+    return pdfjsP;
+  }
+  T.isPdf = file => !!file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''));
+  /**
+   * PDFの1ページを画像（キャンバス）にする。
+   * 戻り値 { canvas, pages, page, cmPerPx }：cmPerPx は「紙の上での」1ピクセルの長さ（縮尺 1/100 なら ×100 で実寸）
+   */
+  T.loadPdf = async function (file, pageNo, maxDim) {
+    const lib = await loadPdfJs();
+    const buf = file.arrayBuffer ? await file.arrayBuffer() : file;
+    const keep = buf.slice(0); // pdf.js は渡したデータを使い切るので、ページを変えるとき用に写しを残す
+    const pdf = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
+    const n = Math.min(Math.max(1, pageNo || 1), pdf.numPages);
+    const page = await pdf.getPage(n);
+    const v1 = page.getViewport({ scale: 1 });
+    const scale = Math.min(4, (maxDim || 3000) / Math.max(v1.width, v1.height));
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return { canvas, pages: pdf.numPages, page: n, cmPerPx: (2.54 / 72) / scale, data: keep };
+  };
+
+  // 白い余白を除いた、図のある範囲（0〜1の割合）
+  T.autoTrim = function (img) {
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const k = Math.min(1, 600 / Math.max(iw, ih));
+    const w = Math.max(1, Math.round(iw * k)), h = Math.max(1, Math.round(ih * k));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const p = (y * w + x) * 4;
+      if (d[p] + d[p + 1] + d[p + 2] < 690) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) return { l: 0, t: 0, r: 1, b: 1 };
+    const m = 4;
+    return { l: Math.max(0, (x0 - m) / w), t: Math.max(0, (y0 - m) / h), r: Math.min(1, (x1 + m + 1) / w), b: Math.min(1, (y1 + m + 1) / h) };
+  };
+
   // 画像を解析用のキャンバスに描く（大きすぎる画像は縮小）
   T.prepare = function (img) {
     const k = Math.min(1, MAX_DIM / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));

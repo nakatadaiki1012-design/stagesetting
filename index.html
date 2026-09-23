@@ -123,32 +123,68 @@
     </section>
 
     <section class="tabpane" id="traceTab">
-      <h3>既存の配置図から自動トレース</h3>
-      <p class="hint">紙の配置図の写真やスクリーンショット、PDFを画像にしたものを読み込むと、椅子（丸や四角）を自動で見つけて配置します。</p>
-      <label class="btn wide filebtn">📷 画像を選ぶ<input type="file" id="traceFile" accept="image/*" hidden></label>
-      <p class="hint small">画像をこの画面にドラッグ＆ドロップ、または貼り付け（Ctrl+V）でもOK。</p>
+      <h3>舞台図を重ねる・読み取る</h3>
+      <p class="hint">ホールの舞台図（PDF・写真・スクリーンショット）を読み込んで、作った配置図に<b>重ねて</b>確かめられます。椅子の位置を<b>自動で読み取る</b>こともできます。</p>
+      <label class="btn wide filebtn">📄 舞台図を選ぶ（画像・PDF）<input type="file" id="traceFile" accept="image/*,application/pdf,.pdf" hidden></label>
+      <p class="hint small">この画面にドラッグ＆ドロップ、または貼り付け（Ctrl+V）でもOK。</p>
+
+      <div id="overlayControls" class="hidden">
+        <div class="ov-step">
+          <h4>① 位置と大きさを合わせる</h4>
+          <p class="hint small">図の上で、2つの点を順にタップします。</p>
+          <div class="tool-grid">
+            <button class="btn" data-pick="front" title="図の舞台の前の角（左・右）をタップすると、この配置図の舞台に重なります">⤢ 舞台の前の角に合わせる</button>
+            <button class="btn" data-pick="back" title="図の舞台の奥の角（左・右）をタップ">⤡ 舞台の奥の角に合わせる</button>
+            <button class="btn" data-pick="len" title="長さのわかる2点（例：間口の両端）をタップして、実際の長さを入れる">📏 2点の長さで縮尺</button>
+            <button class="btn" id="btnOvFit" title="図がステージにちょうど入る大きさにします">⬚ ステージに入れる</button>
+          </div>
+          <div id="pdfScaleRow" class="row2 hidden">
+            <label class="field">図面の縮尺 1 /<input id="pdfScale" type="number" min="10" max="2000" step="10" value="100"></label>
+            <label class="field">&nbsp;<button class="btn" id="btnPdfScale">この縮尺で実寸に</button></label>
+          </div>
+          <div id="pdfPageRow" class="field hidden">PDFのページ
+            <div class="row2"><input id="pdfPage" type="number" min="1" value="1"><span id="pdfPages" class="small" style="align-self:center"></span></div>
+          </div>
+        </div>
+        <div class="ov-step">
+          <h4>② 見え方・微調整</h4>
+          <label class="field">濃さ<input type="range" id="underlayOpacity" min="0" max="100" value="45"></label>
+          <label class="field">回転 <b id="ovRotVal">0°</b><input type="range" id="ovRot" min="-180" max="180" step="0.5" value="0"></label>
+          <div class="tool-grid six">
+            <button class="btn" data-ovmove="-1,0" title="左へ">←</button>
+            <button class="btn" data-ovmove="0,-1" title="奥へ">↑</button>
+            <button class="btn" data-ovmove="0,1" title="手前へ">↓</button>
+            <button class="btn" data-ovmove="1,0" title="右へ">→</button>
+            <button class="btn" data-ovzoom="0.98" title="小さく">－</button>
+            <button class="btn" data-ovzoom="1.02" title="大きく">＋</button>
+          </div>
+          <label class="check"><input type="checkbox" id="underlayEdit"> 図をドラッグで動かす（ホイールで拡大縮小）</label>
+          <div class="row2">
+            <button class="btn" id="btnOvCrop">✂ 使う範囲を切り取る</button>
+            <button class="btn" id="btnOvShowAll">🔭 図の全体を表示</button>
+          </div>
+          <label class="check"><input type="checkbox" id="ovOnTop"> 図を奏者より上に重ねる（線を見やすく）</label>
+          <button class="btn danger wide" id="btnUnderlayRemove">舞台図を消す</button>
+        </div>
+        <div class="ov-step">
+          <h4>③ 椅子を自動で読み取る（配置図の画像のとき）</h4>
+          <button class="btn wide" id="btnTraceOpen">🔍 この図から椅子を読み取る</button>
+        </div>
+      </div>
 
       <div id="traceControls" class="hidden">
-        <button class="btn wide" id="btnCrop">✂ トリミング・四隅合わせ（枠の自動読み取り）</button>
+        <button class="btn wide" id="btnCrop">✂ ステージの四隅合わせ（枠の自動読み取り）</button>
         <div class="trace-thumb"><canvas id="tracePreview"></canvas></div>
         <p id="traceStatus" class="status"></p>
         <label class="field">読み取りの感度 <span id="sensVal"></span><input type="range" id="traceSens" min="-60" max="60" value="0"></label>
         <label class="field">椅子の大きさ <span id="sizeVal">自動</span><input type="range" id="traceSize" min="0" max="80" value="0"></label>
         <label class="check"><input type="checkbox" id="traceSplit" checked> くっついた椅子を分ける</label>
         <label class="check"><input type="checkbox" id="traceBoxes"> 大きな図形（打楽器など）も取り込む</label>
-        <label class="check"><input type="checkbox" id="traceScale" checked> 縮尺と指揮者の位置を自動で合わせる</label>
+        <label class="check"><input type="checkbox" id="traceScale" checked> 縮尺と指揮者の位置を自動で合わせる（①で合わせていないとき）</label>
         <label class="check"><input type="checkbox" id="traceTidy" checked> 取り込んだ後にきれいに整える</label>
         <label class="check"><input type="checkbox" id="traceOcr"> 文字（パート名）も読み取る <span class="small">※ネット接続が必要・少し時間がかかります</span></label>
         <label class="check"><input type="checkbox" id="traceReplace" checked> いまの配置（指揮台以外）を消して置き換える</label>
         <button class="btn primary wide" id="btnTraceApply">この内容で取り込む</button>
-        <hr>
-        <h4>下絵（なぞり用）</h4>
-        <label class="field">濃さ<input type="range" id="underlayOpacity" min="0" max="100" value="45"></label>
-        <label class="check"><input type="checkbox" id="underlayEdit"> 下絵を動かす・拡大する（ドラッグ／ホイール）</label>
-        <div class="row2">
-          <button class="btn" id="btnUnderlayFit">ステージに合わせる</button>
-          <button class="btn danger" id="btnUnderlayRemove">下絵を消す</button>
-        </div>
       </div>
     </section>
   </aside>
@@ -200,6 +236,7 @@
         <datalist id="partListCtx"><option value="Fl"><option value="Ob"><option value="Cl1"><option value="Cl2"><option value="A.Sx"><option value="T.Sx"><option value="B.Sx"><option value="Hr"><option value="Tp"><option value="Tb"><option value="Euph"><option value="Tuba"><option value="Perc"><option value="Vn1"><option value="Vn2"><option value="Va"><option value="Vc"><option value="Cb"></datalist>
       </div>
     </div>
+    <div class="pick-hint" id="pickHint" hidden><span id="pickHintText"></span><button id="pickCancel">やめる</button></div>
     <div class="place-hint" id="placeHint" hidden><span id="placeHintText"></span><button id="placeCancel">やめる</button></div>
     <div class="drop-hint" id="dropHint">ここに画像をドロップしてトレース</div>
     <div class="toast" id="toast"></div>

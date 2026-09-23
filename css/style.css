@@ -300,3 +300,17 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .arc-curve b { color: #2f6fde; font-size: 12px; margin-left: 4px; }
 .arc-curve input[type=range] { width: 100%; }
 .range-ends { display: flex; justify-content: space-between; font-size: 10.5px; color: #6b7380; margin-top: -2px; }
+
+/* 舞台図の重ね合わせ */
+.ov-step { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; background: #fbfcfe; }
+.ov-step h4 { margin: 0 0 6px; }
+.ov-step .tool-grid .btn { font-size: 12px; }
+.pick-hint { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 30; background: #1f2733; color: #fff; padding: 8px 12px; border-radius: 10px; font-size: 13px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 14px rgba(0,0,0,.25); max-width: calc(100% - 32px); }
+.pick-hint button { background: #fff; color: #1f2733; border: 0; border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+#layerUnderlay.on-top { opacity: 1; }
+.crop-rect-wrap { position: relative; max-height: 60vh; overflow: auto; background: #eee; }
+.ov-step .tool-grid, .ov-step .row2 { grid-template-columns: 1fr 1fr; }
+.ov-step .tool-grid.six { grid-template-columns: repeat(6, 1fr); }
+.ov-step .btn { white-space: normal; line-height: 1.25; min-width: 0; padding-left: 4px; padding-right: 4px; }
+#traceTab { overflow-x: hidden; }
+#traceControls .btn { white-space: normal; line-height: 1.25; }
