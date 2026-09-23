@@ -1093,9 +1093,52 @@
   }
 
   // ------------------------------------------------------------ 編成表
+  // 「かんたん編成」の設定人数（▲▼）と、いま舞台にいる人数をくらべる
+  function ensCompare() {
+    const d = doc();
+    if (!d.ensemble) return null;
+    const st = d.ensemble;
+    const keys = Object.keys(st.counts);
+    const onStage = {};
+    let other = 0;
+    d.items.forEach(it => {
+      if (it.type !== 'player') return;
+      let k = (it.label || '').trim();
+      if (!(k in st.counts) && /^tim/i.test(k) && 'Perc' in st.counts && !('Timp' in st.counts)) k = 'Perc'; // 吹奏楽ではティンパニ奏者も「Perc」の人数
+      if (k in st.counts) onStage[k] = (onStage[k] || 0) + 1; else other++;
+    });
+    const setTotal = keys.reduce((a, k) => a + (st.counts[k] || 0), 0);
+    const stageTotal = d.items.filter(it => it.type === 'player').length;
+    const diffs = keys.filter(k => (onStage[k] || 0) !== (st.counts[k] || 0)).map(k => ({ k, set: st.counts[k] || 0, now: onStage[k] || 0 }));
+    return { setTotal, stageTotal, diffs, other, onStage };
+  }
+  function renderEnsTotal() {
+    const c = ensCompare();
+    const stageTotal = players().length;
+    if (!c || (!c.diffs.length && !c.other)) {
+      $('ensTotal').innerHTML = `合計 ${stageTotal} 人`;
+      return;
+    }
+    const list = c.diffs.slice(0, 6).map(x => `${SS.esc(x.k)} ${x.set}→<b>${x.now}</b>`).join('、') + (c.diffs.length > 6 ? ' ほか' : '') + (c.other ? `${c.diffs.length ? '、' : ''}その他のパート名 ${c.other}人` : '');
+    $('ensTotal').innerHTML = `合計 ${stageTotal} 人 <span class="ens-sub">（▲▼の設定は ${c.setTotal} 人）</span>
+      <div class="ens-diff">舞台の上の人数が、▲▼の設定と違います（手で消した・足した人がいます）：${list}
+      <br><button class="btn" id="ensSync">▲▼の人数を、いまの舞台に合わせる</button>
+      <span class="small">※そのまま▲▼を押すと、設定の人数で並べ直します</span></div>`;
+    $('ensSync').onclick = () => {
+      const st = ens();
+      pushHistory();
+      Object.keys(st.counts).forEach(k => { st.counts[k] = c.onStage[k] || 0; });
+      renderSteppers();
+      renderCounts();
+      toast('▲▼の人数を、いまの舞台に合わせました（配置はそのまま）', true);
+    };
+  }
+
   function renderCounts() {
+    renderEnsTotal();
     const c = SS.render.counts(doc());
-    let h = `<div class="total">合計 ${c.total} 人</div>`;
+    const cmp = ensCompare();
+    let h = `<div class="total">合計 ${c.total} 人${cmp && cmp.setTotal !== c.total ? `<span class="ens-sub">（かんたん編成の▲▼の設定は ${cmp.setTotal} 人）</span>` : ''}</div>`;
     if (!c.total) h += '<p class="hint">奏者がまだいません。</p>';
     h += '<table class="count-table">';
     c.groups.forEach(x => {
@@ -2120,7 +2163,8 @@
       return `<div class="stepper${n ? '' : ' zero'}" data-part="${k}"><span class="nm"><i style="background:${SS.partGroup(k).color}"></i>${SS.esc(k)}</span>
         <button data-d="-1" aria-label="${SS.esc(k)}を1人減らす">▼</button><b>${n}</b><button data-d="1" aria-label="${SS.esc(k)}を1人増やす">▲</button></div>`;
     }).join('');
-    $('ensTotal').textContent = `合計 ${total} 人`;
+    void total;
+    renderEnsTotal();
     // ひな壇
     $('ensHornBox').checked = !!st.hornBox;
     $('ensLowOuter').checked = !!st.lowOuter;
@@ -2168,7 +2212,6 @@
         const box = b.parentElement;
         box.querySelector('b').textContent = v;
         box.classList.toggle('zero', !v);
-        $('ensTotal').textContent = `合計 ${Object.values(st2.counts).reduce((a, x) => a + x, 0)} 人`;
         applyAuto();
       };
       // 押しっぱなしで連続して増減

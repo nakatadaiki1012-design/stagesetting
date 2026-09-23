@@ -324,3 +324,8 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .ai-examples button { font: inherit; font-size: 11px; border: 1px solid #c9d8f5; background: #fff; color: #2f6fde; border-radius: 12px; padding: 3px 8px; cursor: pointer; }
 .ai-out { font-size: 12.5px; line-height: 1.6; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 6px 0 0; white-space: pre-wrap; }
 .ai-out.err { border-color: #f0b6b6; background: #fff6f6; }
+
+/* 設定の人数と舞台の人数のちがい */
+.ens-sub { font-weight: 400; font-size: 12px; color: #6b7380; margin-left: 4px; }
+.ens-diff { margin-top: 6px; font-weight: 400; font-size: 12.5px; line-height: 1.6; background: #fff8e6; border: 1px solid #f0d58a; border-radius: 8px; padding: 6px 8px; }
+.ens-diff .btn { margin-top: 6px; font-size: 12.5px; }
