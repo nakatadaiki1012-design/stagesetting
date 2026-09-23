@@ -329,3 +329,10 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .ens-sub { font-weight: 400; font-size: 12px; color: #6b7380; margin-left: 4px; }
 .ens-diff { margin-top: 6px; font-weight: 400; font-size: 12.5px; line-height: 1.6; background: #fff8e6; border: 1px solid #f0d58a; border-radius: 8px; padding: 6px 8px; }
 .ens-diff .btn { margin-top: 6px; font-size: 12.5px; }
+
+/* 初めての案内 */
+.welcome-steps { padding-left: 1.4em; margin: 0 0 10px; }
+.welcome-steps li { margin: 0 0 10px; }
+.welcome-steps li b { display: block; font-size: 15px; }
+.welcome-steps li span { display: block; font-size: 13px; color: #4a5462; margin: 2px 0 4px; }
+.welcome-steps .btn { font-size: 12.5px; padding: 4px 10px; }

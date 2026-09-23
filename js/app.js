@@ -2072,6 +2072,23 @@
   };
 
   $('btnHelp').onclick = showHelp;
+  // 初めて開いたときの短い案内（くわしい説明は「？」ボタン）
+  function showWelcome() {
+    openModal(`
+      <h2>🎼 ようこそ</h2>
+      <p style="margin:0 0 10px">3つの手順で配置図ができます。</p>
+      <ol class="welcome-steps">
+        <li><b>ひな形を選ぶ</b><span>近い編成の型を選ぶと、すぐに配置図ができます。</span><button class="btn" id="wStep1">ひな形を見る</button></li>
+        <li><b>人数を ▲▼ で変える</b><span>「かんたん編成」でパートの人数を変えると、自動で並べ直します。</span><button class="btn" id="wStep2">かんたん編成を開く</button></li>
+        <li><b>画像で保存</b><span>上の「🖼 画像」から保存できます。印刷もできます。</span></li>
+      </ol>
+      <p class="hint small">くわしい使い方は、右上の <b>？</b> ボタンでいつでも見られます。</p>
+      <button class="btn primary wide" id="wStart">はじめる</button>
+    `);
+    $('wStart').onclick = closeModal;
+    $('wStep1').onclick = () => { closeModal(); openTab('leftPanel', 'tplTab'); openPanel('leftPanel'); };
+    $('wStep2').onclick = () => { closeModal(); openTab('leftPanel', 'autoTab'); openPanel('leftPanel'); };
+  }
   function showHelp() {
     openModal(`
       <h2>🎼 使い方</h2>
@@ -2312,7 +2329,7 @@
     if (!loaded) {
       const t = SS.TEMPLATES[0].make();
       S.doc = normalize({ stage: t.stage, items: t.items, ensemble: t.ensemble || null });
-      try { if (!localStorage.getItem('stagesetting.helped')) { localStorage.setItem('stagesetting.helped', '1'); setTimeout(showHelp, 400); } } catch (e) { /* ignore */ }
+      try { if (!localStorage.getItem('stagesetting.helped')) { localStorage.setItem('stagesetting.helped', '1'); setTimeout(showWelcome, 400); } } catch (e) { /* ignore */ }
     }
     if (S.doc.underlay) {
       $('overlayControls').classList.remove('hidden');
