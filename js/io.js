@@ -167,9 +167,43 @@ window.SS = window.SS || {};
     return s + '</g>';
   };
 
+  // ---------------------------------------------------------------- 舞台の大きさを変える丸いつまみの位置
+  R.stageKnobs = function (st) {
+    const bw = R.backWidth(st), cx = st.w / 2, out = [];
+    const add = (kind, x, y, arrow, title) => out.push({ kind, x, y, arrow, title });
+    if (st.shape === 'round') {
+      // 丸い舞台：いちばん広い所の幅と、中央の奥行
+      const yMid = R.stagePoly(st).reduce((a, p) => (p[0] > a[0] ? p : a), [0, 0])[1];
+      add('stageW', 0, yMid, '↔', 'ドラッグで舞台の幅を変える');
+      add('stageW', st.w, yMid, '↔', 'ドラッグで舞台の幅を変える');
+      add('stageD', cx, st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    } else if (st.shape === 'arc') {
+      // 弧の舞台：前の角（幅）、角の奥行、真ん中のふくらみ
+      const yc = st.d - R.arcSag(st);
+      add('stageW', 0, yc, '↔', 'ドラッグで舞台の幅を変える');
+      add('stageW', st.w, yc, '↔', 'ドラッグで舞台の幅を変える');
+      add('stageD', st.w * 0.2, R.frontAt(st, st.w * 0.2), '↕', 'ドラッグで舞台の奥行（角の所）を変える');
+      add('stageSag', cx, st.d, '◠', 'ドラッグで弧のふくらみを変える');
+    } else {
+      add('stageW', 0, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+      add('stageW', st.w, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+      add('stageD', cx + Math.min(260, st.w * 0.2), st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    }
+    if (bw < st.w - 1) {
+      add('stageBW', cx - bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
+      add('stageBW', cx + bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
+    }
+    return out;
+  };
+
   // ---------------------------------------------------------------- 寸法線
   const fmtM = cm => (cm / 100).toFixed(2).replace(/0$/, '') + 'm';
-  function dimLine(x1, y1, x2, y2, label, color, k, side, at) {
+  // 寸法の文字の大きさ（画面の拡大率 k に合わせる）
+  const labelSize = (label, k) => { const fs = 13 / k; return { fs, tw: label.length * fs * 0.62 + 10 / k, th: fs + 6 / k }; };
+  const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  let placed = null; // この回に描いた寸法の文字の四角（重なりを避けるため）
+  // pos を渡すと、文字をその位置に置き、線の真ん中から細い引き出し線を引く
+  function dimLine(x1, y1, x2, y2, label, color, k, side, at, pos) {
     const sw = 1.6 / k, tk = 9 / k, fs = 13 / k;
     const vert = Math.abs(x2 - x1) < Math.abs(y2 - y1);
     let s = `<g class="dim" pointer-events="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}"/>`;
@@ -177,8 +211,14 @@ window.SS = window.SS || {};
     else s += `<path d="M${x1} ${y1 - tk}V${y1 + tk}M${x2} ${y2 - tk}V${y2 + tk}" stroke="${color}" stroke-width="${sw}"/>`;
     const f = at == null ? 0.5 : at;
     const mx = x1 + (x2 - x1) * f, my = y1 + (y2 - y1) * f;
-    const tw = label.length * fs * 0.62 + 10 / k, th = fs + 6 / k;
-    const lx = vert ? mx + (side || 1) * (tw / 2 + 6 / k) : mx, ly = vert ? my : my + (side || -1) * (th / 2 + 3 / k);
+    const { tw, th } = labelSize(label, k);
+    let lx = vert ? mx + (side || 1) * (tw / 2 + 6 / k) : mx, ly = vert ? my : my + (side || -1) * (th / 2 + 3 / k);
+    if (pos) {
+      lx = pos.x; ly = pos.y;
+      const ex = Math.max(lx - tw / 2, Math.min(lx + tw / 2, mx)), ey = Math.max(ly - th / 2, Math.min(ly + th / 2, my));
+      s += `<line x1="${mx}" y1="${my}" x2="${ex}" y2="${ey}" stroke="${color}" stroke-width="${1 / k}" stroke-dasharray="${3 / k} ${2 / k}"/>`;
+    }
+    if (placed) placed.push({ x0: lx - tw / 2, x1: lx + tw / 2, y0: ly - th / 2, y1: ly + th / 2 });
     s += `<rect x="${lx - tw / 2}" y="${ly - th / 2}" width="${tw}" height="${th}" rx="${4 / k}" fill="#fff" fill-opacity=".92" stroke="${color}" stroke-width="${1 / k}"/>`;
     s += `<text x="${lx}" y="${ly}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${color}">${label}</text></g>`;
     return s;
@@ -196,7 +236,10 @@ window.SS = window.SS || {};
    * ステージの主な寸法と、選んだ部品のまわりの距離
    * k: 画面の拡大率（線や文字の太さをそろえる）
    */
-  R.dimsSVG = function (doc, k, sel) {
+  // opt.knobs：画面に舞台のつまみが出ているとき（つまみと重ならないようにする）
+  R.dimsSVG = function (doc, k, sel, opt) {
+    opt = opt || {};
+    placed = [];
     const st = doc.stage;
     const C1 = '#3b6bb5', C2 = '#d6336c';
     let s = '';
@@ -207,10 +250,6 @@ window.SS = window.SS || {};
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
     const pod = doc.items.find(it => it.type === 'podium');
-    if (pod) {
-      const pb = bboxOf(pod);
-      if (st.d - pb.y1 > 5) s += dimLine(pb.x1 + 30, pb.y1, pb.x1 + 30, st.d, `指揮台〜舞台際 ${fmtM(st.d - pb.y1)}`, C1, k, 1);
-    }
     if (sel && sel.type !== 'player' && sel.type !== 'text') {
       const bb = bboxOf(sel);
       const cy = sel.y;
@@ -233,7 +272,31 @@ window.SS = window.SS || {};
       const fs = 13 / k, tw = tag.length * fs * 0.6 + 12 / k;
       const ty = bb.y1 + 10 / k;
       s += `<g pointer-events="none"><rect x="${bb.x0}" y="${ty}" width="${tw}" height="${fs + 8 / k}" rx="${4 / k}" fill="${C2}"/><text x="${bb.x0 + 6 / k}" y="${ty + (fs + 8 / k) / 2}" dy="0.35em" font-size="${fs}" font-weight="700" fill="#fff">${tag}</text></g>`;
+      placed.push({ x0: bb.x0, x1: bb.x0 + tw, y0: ty, y1: ty + fs + 8 / k });
     }
+    // 指揮台〜舞台際：丸いつまみ・ほかの寸法の文字と重ならない場所を選ぶ
+    if (pod) {
+      const pb = bboxOf(pod);
+      const lxLine = pb.x1 + 30, fe = R.frontAt(st, lxLine);
+      if (fe - pb.y1 > 5) {
+        const label = `指揮台〜舞台際 ${fmtM(fe - pb.y1)}`;
+        const { tw, th } = labelSize(label, k);
+        const my = (pb.y1 + fe) / 2, g = 8 / k;
+        const knobR = 26 / k;
+        const blocks = placed.slice().concat(opt.knobs ? R.stageKnobs(st).map(q => ({ x0: q.x - knobR, x1: q.x + knobR, y0: q.y - knobR, y1: q.y + knobR })) : []);
+        const cands = [
+          { x: lxLine + tw / 2 + g, y: my },                       // 線の右
+          { x: pb.x0 - 30 - tw / 2 - g, y: my },                   // 指揮台の左
+          { x: lxLine + tw / 2 + g, y: pb.y0 - th / 2 - g },         // 指揮台の右上
+          { x: pb.x0 - 30 - tw / 2 - g, y: pb.y0 - th / 2 - g },     // 指揮台の左上
+          { x: pod.x, y: pb.y0 - th / 2 - g * 2 },                  // 指揮台の上
+        ];
+        const free = c => !blocks.some(b => overlap({ x0: c.x - tw / 2, x1: c.x + tw / 2, y0: c.y - th / 2, y1: c.y + th / 2 }, b));
+        const best = cands.find(free) || cands[0];
+        s += dimLine(lxLine, pb.y1, lxLine, fe, label, C1, k, 1, 0.5, best === cands[0] ? null : best);
+      }
+    }
+    placed = null;
     return s;
   };
 

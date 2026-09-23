@@ -115,38 +115,13 @@
   function stageHandlesSVG(k) {
     if (S.underlayEdit || S.placing || S.pick) return '';
     const st = doc().stage;
-    const bw = SS.render.backWidth(st), cx = st.w / 2;
     const r = 11 / k, hit = 24 / k;
     const knob = (kind, x, y, arrow, title) =>
       `<g data-handle="${kind}" style="cursor:${arrow === '↔' ? 'ew-resize' : 'ns-resize'}"><title>${title}</title>` +
       `<circle cx="${x}" cy="${y}" r="${hit}" fill="transparent"/>` +
       `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#3b6bb5" stroke-width="${2.5 / k}"/>` +
       `<text x="${x}" y="${y}" dy="0.36em" text-anchor="middle" font-size="${14 / k}" font-weight="700" fill="#3b6bb5" pointer-events="none">${arrow}</text></g>`;
-    let s = '';
-    const R = SS.render;
-    if (st.shape === 'round') {
-      // 丸い舞台：いちばん広い所の幅と、中央の奥行
-      const yMid = R.stagePoly(st).reduce((a, p) => (p[0] > a[0] ? p : a), [0, 0])[1];
-      s += knob('stageW', 0, yMid, '↔', 'ドラッグで舞台の幅を変える');
-      s += knob('stageW', st.w, yMid, '↔', 'ドラッグで舞台の幅を変える');
-      s += knob('stageD', cx, st.d, '↕', 'ドラッグで舞台の奥行を変える');
-    } else if (st.shape === 'arc') {
-      // 弧の舞台：前の角（幅）、角の奥行、真ん中のふくらみ
-      const yc = st.d - R.arcSag(st);
-      s += knob('stageW', 0, yc, '↔', 'ドラッグで舞台の幅を変える');
-      s += knob('stageW', st.w, yc, '↔', 'ドラッグで舞台の幅を変える');
-      s += knob('stageD', st.w * 0.08, yc, '↕', 'ドラッグで舞台の奥行（角の所）を変える');
-      s += knob('stageSag', cx, st.d, '◠', 'ドラッグで弧のふくらみを変える');
-    } else {
-      s += knob('stageW', 0, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
-      s += knob('stageW', st.w, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
-      s += knob('stageD', cx + Math.min(260, st.w * 0.2), st.d, '↕', 'ドラッグで舞台の奥行を変える');
-    }
-    if (bw < st.w - 1) {
-      s += knob('stageBW', cx - bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
-      s += knob('stageBW', cx + bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
-    }
-    return s;
+    return SS.render.stageKnobs(st).map(q => knob(q.kind, q.x, q.y, q.arrow, q.title)).join('');
   }
 
   function renderOverlay(marquee) {
@@ -199,7 +174,7 @@
     layerOverlay.innerHTML = s;
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    $('layerDims').innerHTML = opts().dims ? SS.render.dimsSVG(doc(), k, one) : '';
+    $('layerDims').innerHTML = opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick) }) : '';
     positionCtxBar();
   }
 
@@ -580,7 +555,8 @@
     } else if (st.shape === 'arc') {
       // 角の所の奥行を変える（ふくらみはそのまま）
       const sg = SS.render.arcSag(st);
-      st.d = Math.max(300, Math.min(5000, r10(w.y) + sg));
+      const off = SS.render.frontAt(st, st.w * 0.2) - (st.d - sg); // つまみは弧の上（角より少し前）にある
+      st.d = Math.max(300, Math.min(5000, r10(w.y - off) + sg));
       st.sag = sg;
     } else {
       st.d = Math.max(300, Math.min(5000, r10(w.y)));
