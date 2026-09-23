@@ -285,3 +285,5 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .hina-heights label { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 6px; font-size: 12.5px; }
 .hina-heights select { font: inherit; font-size: 12.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; }
 .mat-list { font-size: 12.5px; line-height: 1.7; margin: 4px 0 0; padding-left: 18px; }
+
+.v3-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%); }

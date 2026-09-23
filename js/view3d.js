@@ -113,12 +113,35 @@ window.SS = window.SS || {};
   const SKINS = ['#f1c9a5', '#e8b995', '#f5d3b3', '#dcae88'];
   function hashId(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); }
 
+  // 足元の影（床になじませる）
+  let blobTex = null;
+  function blobShadow(size, strength) {
+    if (!blobTex) {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 128;
+      const x = cv.getContext('2d');
+      const gr = x.createRadialGradient(64, 64, 4, 64, 64, 62);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.5, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+      blobTex = new T.CanvasTexture(cv);
+    }
+    const m = new T.Mesh(new T.PlaneGeometry(size, size), new T.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: strength, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.004;
+    m.renderOrder = 1;
+    return m;
+  }
+
   // 腕（肩→ひじ→手）
   function arm(g, sh, hand, color, skin) {
     const mid = [(sh[0] + hand[0]) / 2 + Math.sign(sh[0]) * 0.07, Math.min(sh[1], hand[1]) - 0.1, (sh[2] + hand[2]) / 2 - 0.02];
     tube(g, sh, mid, 0.045, color, { roughness: 0.8 }, 0.05);
     tube(g, mid, hand, 0.037, color, { roughness: 0.8 }, 0.043);
-    sph(g, 0.034, skin, hand[0], hand[1], hand[2]);
+    sph(g, 0.046, color, mid[0], mid[1], mid[2], { roughness: 0.8 });
+    // 手（少し平たい）
+    const h = sph(g, 0.038, skin, hand[0], hand[1], hand[2]);
+    h.scale.set(0.9, 0.65, 1.25);
+    tube(g, [hand[0], hand[1], hand[2] - 0.05], hand, 0.03, '#f4f4f2', { roughness: 0.9 });
   }
 
   // 奏者（人＋楽器）
@@ -155,6 +178,7 @@ window.SS = window.SS || {};
       [-0.1, 0.1].forEach(xx => {
         tube(g, [xx, seatY + 0.09, -0.08], [xx * 1.2, seatY + 0.08, 0.3], 0.075, pants, { roughness: 0.85 });
         tube(g, [xx * 1.2, seatY + 0.08, 0.3], [xx * 1.25, 0.06, 0.34], 0.058, pants, { roughness: 0.85 });
+        sph(g, 0.075, pants, xx * 1.2, seatY + 0.08, 0.3, { roughness: 0.85 });
         box(g, 0.1, 0.06, 0.24, '#0d0d0f', xx * 1.25, 0.03, 0.4, { roughness: 0.35 });
       });
     } else {
@@ -166,10 +190,22 @@ window.SS = window.SS || {};
     const hipY = standing ? 0.92 : seatY + 0.14;
     const torsoH = 0.55;
     // 胴体（上がやや広い）
-    const torso = cyl(g, 0.2, 0.16, torsoH, cloth, 0, hipY + torsoH / 2, -0.03, { roughness: 0.85 }, 24);
-    torso.scale.set(1, 1, 0.62);
-    sph(g, 0.1, cloth, -0.17, hipY + torsoH - 0.05, -0.03, { roughness: 0.85 });
-    sph(g, 0.1, cloth, 0.17, hipY + torsoH - 0.05, -0.03, { roughness: 0.85 });
+    // 上着の形（腰から肩へ広がる）
+    const prof = [[0.001, 0], [0.16, 0], [0.175, 0.07], [0.165, 0.22], [0.185, 0.4], [0.2, 0.48], [0.17, 0.54], [0.09, 0.575], [0.001, 0.58]]
+      .map(p => new T.Vector2(p[0], p[1] * torsoH / 0.58));
+    const torso = mesh(new T.LatheGeometry(prof, 28), cloth, { roughness: 0.82 });
+    torso.position.set(0, hipY, -0.03);
+    torso.scale.set(1, 1, 0.6);
+    g.add(torso);
+    sph(g, 0.085, cloth, -0.175, hipY + torsoH - 0.06, -0.03, { roughness: 0.82 });
+    sph(g, 0.085, cloth, 0.175, hipY + torsoH - 0.06, -0.03, { roughness: 0.82 });
+    // 白いシャツの胸元と蝶ネクタイ
+    const shirt = new T.Mesh(new T.CircleGeometry(0.075, 3), mat('#f4f4f2', { roughness: 0.9 }));
+    shirt.position.set(0, hipY + torsoH - 0.1, 0.085);
+    shirt.rotation.z = -Math.PI / 2;
+    shirt.scale.set(1.3, 0.8, 1);
+    g.add(shirt);
+    box(g, 0.07, 0.022, 0.02, '#0b0b0c', 0, hipY + torsoH - 0.03, 0.092);
     // えり（白）
     const collar = cyl(g, 0.065, 0.07, 0.05, V.clothes === 'part' ? '#eeeeee' : '#f2f2f2', 0, hipY + torsoH + 0.005, -0.01, { roughness: 0.9 });
     void collar;
@@ -178,6 +214,9 @@ window.SS = window.SS || {};
     const headY = neckY + 0.17;
     const hd = sph(g, 0.1, skin, 0, headY, 0.005);
     hd.scale.set(0.92, 1.08, 1);
+    // 耳・鼻
+    [-1, 1].forEach(sx => { const e = sph(g, 0.024, skin, sx * 0.092, headY - 0.005, -0.005); e.scale.set(0.5, 1, 0.8); head.push(e); });
+    head.push(sph(g, 0.016, skin, 0, headY - 0.015, 0.1));
     head.push(hd);
     const hair = sph(g, 0.108, hairC, 0, headY + 0.035, -0.022, { roughness: 0.9 });
     hair.scale.set(0.98, 0.9, 1.02);
@@ -321,6 +360,7 @@ window.SS = window.SS || {};
       box(desk, 0.5, 0.03, 0.05, '#1a1a1d', 0, -0.17, -0.02);
       g.add(desk);
     }
+    g.add(blobShadow(0.9, 0.35));
     return { g, head };
   }
 
@@ -608,7 +648,35 @@ window.SS = window.SS || {};
       m4.makeTranslation(p[0], p[1] + 0.75, p[2] + 0.24); back.setMatrixAt(i, m4);
     });
     scene.add(cushion); scene.add(back);
-    [-3, W + 3].forEach(x => box(scene, 0.3, 10, 30, '#2a1f1a', x, 4, D + 15));
+    // 客席の横の壁（木の縦格子）とバルコニー席
+    const hallTex = planksTexture('#6b4428', 40, true);
+    [-3, W + 3].forEach((x, si) => {
+      const wm = new T.MeshStandardMaterial({ map: hallTex.clone(), roughness: 0.6 });
+      wm.map.needsUpdate = true; wm.map.repeat.set(12, 4);
+      const w = new T.Mesh(new T.BoxGeometry(0.3, 12, 30), wm);
+      w.position.set(x, 5, D + 15); w.receiveShadow = true; scene.add(w);
+      const dir = si ? -1 : 1;
+      for (let lv = 0; lv < 2; lv++) {
+        const y = 3 + lv * 3.2;
+        box(scene, 2.2, 0.25, 26, '#3a2a1e', x + dir * 1.2, y, D + 16);
+        box(scene, 0.12, 0.9, 26, '#7a5230', x + dir * 2.3, y + 0.55, D + 16);
+        const seats = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.8, 0.5), mat('#7a1a26', { roughness: 0.9 }), 40);
+        const mm = new T.Matrix4();
+        for (let i = 0; i < 40; i++) { mm.makeTranslation(x + dir * 1.0, y + 0.5, D + 3.5 + i * 0.62); seats.setMatrixAt(i, mm); }
+        scene.add(seats);
+      }
+    });
+    // 客席の天井とダウンライト、非常口の表示
+    const ceil = new T.Mesh(new T.PlaneGeometry(W + 6, 30), mat('#1b1512', { roughness: 0.9 }));
+    ceil.rotation.x = Math.PI / 2; ceil.position.set(W / 2, 11, D + 15); scene.add(ceil);
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 5; j++) {
+      const l = new T.Mesh(new T.CircleGeometry(0.12, 16), new T.MeshBasicMaterial({ color: '#fff3d6' }));
+      l.rotation.x = Math.PI / 2; l.position.set(W * (0.1 + i * 0.16), 10.98, D + 3 + j * 5); scene.add(l);
+    }
+    [-2.8, W + 2.8].forEach(x => {
+      const e = new T.Mesh(new T.PlaneGeometry(0.6, 0.25), new T.MeshBasicMaterial({ color: '#2fbf5b' }));
+      e.position.set(x + (x < 0 ? 0.2 : -0.2), 2.4, D + 2); e.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(e);
+    });
 
     // 部品
     playerGroups = new Map();
@@ -637,6 +705,10 @@ window.SS = window.SS || {};
         const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina';
         const g = makeItem(it, color, rh.get(it) || 0.2);
         if (!g) return;
+        if (!isRiser && it.type !== 'podium') {
+          const cat = SS.CATALOG[it.type] || {};
+          g.add(blobShadow(Math.max((it.w || cat.w || 60), (it.h || cat.h || 60)) / 100 * 1.25, 0.3));
+        }
         const base = isRiser ? 0 : heightAt(it.x, it.y, rh);
         g.position.set(x, base, z);
         g.rotation.y = rot;

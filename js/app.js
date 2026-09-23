@@ -25,7 +25,7 @@
 
   // ------------------------------------------------------------ 文書
   function defaultOptions() {
-    return { showNames: true, showStands: true, showNumbers: false, grid: true, snap: false, colorBy: true, seatR: 24, figure: true, guides: true };
+    return { showNames: true, showStands: true, showNumbers: false, grid: true, snap: false, colorBy: true, seatR: 24, figure: true, guides: true, dims: true };
   }
   function normalize(doc) {
     doc = doc || {};
@@ -84,7 +84,7 @@
   // ------------------------------------------------------------ 描画
   function renderOpts() {
     const o = opts();
-    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, figure: o.figure };
+    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, figure: o.figure, dims: o.dims };
   }
 
   function render() {
@@ -140,6 +140,9 @@
       s += `<rect x="${x}" y="${y}" width="${Math.abs(marquee.x1 - marquee.x0)}" height="${Math.abs(marquee.y1 - marquee.y0)}" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.5 / k}" stroke-dasharray="${5 / k}"/>`;
     }
     layerOverlay.innerHTML = s;
+    // 寸法線（選んだ物が1つなら、そのまわりの距離も）
+    const one = sel.length === 1 ? sel[0] : null;
+    $('layerDims').innerHTML = opts().dims ? SS.render.dimsSVG(doc(), k, one) : '';
     positionCtxBar();
   }
 
@@ -152,7 +155,8 @@
     const r = svg.getBoundingClientRect();
     if (!r.width || !r.height) return;
     const st = doc().stage;
-    const x0 = -80, y0 = -80, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
+    const mx = opts().dims ? 110 : 80;
+    const x0 = -mx, y0 = -95, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
     S.view.tx = (r.width - (x1 - x0) * k) / 2 - x0 * k;
@@ -952,6 +956,7 @@
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
     $('optFigure').checked = o.figure;
+    $('optDims').checked = o.dims;
     $('optGuides').checked = o.guides;
   }
   function bindSetting(id, ev, fn) {
@@ -973,6 +978,7 @@
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
   bindSetting('optFigure', 'change', el => { opts().figure = el.checked; });
+  bindSetting('optDims', 'change', el => { opts().dims = el.checked; });
   bindSetting('optGuides', 'change', el => { opts().guides = el.checked; });
 
   // ------------------------------------------------------------ パネル・タブ
@@ -1577,6 +1583,8 @@
         <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
         <li><b>ひな壇</b>：段数と平台（3×6尺／4×6尺）を選ぶと、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
         <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
+        <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
+        <li><b>低音を上手の外側に</b>：かんたん編成のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。</li>
         <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
         <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。</li>
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
@@ -1630,6 +1638,7 @@
     if (opts2.fit) fitView();
     if (!r.fits) toast('このステージには入りきりません。ひな壇の段数か人数を減らすか、打楽器を別の場所に置いてください（はみ出した人は端に寄せています）');
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
+    else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
@@ -1650,6 +1659,8 @@
     $('ensTotal').textContent = `合計 ${total} 人`;
     // ひな壇
     $('ensHornBox').checked = !!st.hornBox;
+    $('ensLowOuter').checked = !!st.lowOuter;
+    $('lowOuterWrap').hidden = st.type !== 'band';
     $('percPlace').value = st.percPlace || 'back';
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
@@ -1705,6 +1716,7 @@
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
   $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; applyAuto(); };
+  $('ensLowOuter').onchange = e => { ens().lowOuter = e.target.checked; applyAuto(); };
   $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };

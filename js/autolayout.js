@@ -71,7 +71,7 @@ window.SS = window.SS || {};
     const counts = {};
     e.parts.forEach(([k, n]) => { counts[k] = n; });
     return {
-      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: 'back',
+      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: 'back', lowOuter: type === 'band',
       hina: type === 'orch' ? { steps: 3, panel: '46', deep: 1 } : type === 'strings' ? { steps: 0, panel: '36', deep: 2 } : { steps: 2, panel: '36', deep: 2 },
     };
   };
@@ -322,14 +322,19 @@ window.SS = window.SS || {};
   }
 
   // ---------------------------------------------------------------- 吹奏楽
-  function band(st, stage, tune) {
+  // 上手の外側の弧に置く低音グループ（内側→外側の順。弦バスがいちばん外）
+  const LOW_GROUP = ['B.Cl', 'Euph', 'Tuba', 'St.B'];
+
+  function band(st, stage, tune, lowFallback) {
     const n = st.counts;
+    const lowOn = st.lowOuter && !lowFallback;
     const c = { x: stage.w / 2, y: podiumY(stage) };
     const H = st.hina || { steps: 0 };
     const pn = SS.PANELS[H.panel || '36'];
     const tierD = pn.d * (H.deep || 2);
     const place = st.percPlace || 'back';
-    let rows = BAND_ROWS.map(r => r.flatMap(p => rep(p, n[p]))).filter(r => r.length);
+    const lowLabels = lowOn ? LOW_GROUP.flatMap(p => rep(p, n[p])) : [];
+    let rows = BAND_ROWS.map(r => r.filter(p => !(lowOn && LOW_GROUP.includes(p))).flatMap(p => rep(p, n[p]))).filter(r => r.length);
     const K = Math.min(H.steps || 0, Math.max(0, rows.length - 1));
     const floorRows = rows.slice(0, rows.length - K);
     const tierRows = rows.slice(rows.length - K);
@@ -392,11 +397,27 @@ window.SS = window.SS || {};
     }
     const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place);
     items.push(...tp.items);
+    // 低音グループ：いちばん外側の床の弧の、さらに外側（上手側）に並べる
+    if (lowLabels.length) {
+      const Rl = maxR + gap;
+      let t = 1.48;
+      const pts = [];
+      for (let i = lowLabels.length - 1; i >= 0; i--) {
+        const p = G().fromPolar(Rl, t, c);
+        pts.unshift({ type: 'player', label: lowLabels[i], x: p.x, y: p.y, rot: G().faceAngle(p, c) });
+        t -= sp / Rl;
+      }
+      // ひな壇や打楽器とぶつかる・舞台からはみ出すときは、ふつうの列に戻す
+      const blocked = pts.some(p => !inside(stage, p, 30) || tp.tiers.some(h => Math.abs(p.x - h.x) < h.w / 2 + 40 && Math.abs(p.y - h.y) < h.h / 2 + 40) ||
+        tp.items.some(o => o.type !== 'player' && Math.hypot(o.x - p.x, o.y - p.y) < 90));
+      if (blocked) return band(st, stage, tune, true);
+      items.push(...pts);
+    }
     // ハープ・ピアノは舞台の左右（前寄り）
     rep('Hp', n.Hp).forEach((l, i) => { const p = G().fromPolar(r0 + gap * 0.5 + i * 90, -1.5, c); items.push({ type: 'harp', x: p.x - 45, y: p.y, rot: 0 }, { type: 'player', label: 'Hp', x: p.x + 5, y: p.y, rot: 90 }); });
     rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(r0 + gap * 0.8, 1.45, c); items.push({ type: 'piano', x: p.x, y: p.y - 30, rot: 90 }, { type: 'player', label: 'Pf', x: p.x - 100, y: p.y - 30, rot: 90 }); });
     const out = tp.tiers.concat(expandHornBox(items, c, 72));
-    return { items: out, c, overlap: overlapCheck(tp, out) };
+    return { items: out, c, overlap: overlapCheck(tp, out), lowFallback: !!(st.lowOuter && lowFallback) };
   }
 
   // 打楽器と他の奏者・ひな壇がぶつかっていないか

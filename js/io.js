@@ -57,7 +57,76 @@ window.SS = window.SS || {};
     let s = `<path d="${p}" fill="#fbf6ec" stroke="#b89b6a" stroke-width="6"/>`;
     if (grid) s += `<path d="${p}" fill="url(#gridPat)"/>`;
     s += `<text x="${st.w / 2}" y="${R.frontY(st) + 70}" text-anchor="middle" font-size="40" fill="#8a94a3" font-weight="700" letter-spacing="20">客　席</text>`;
-    s += `<text x="${st.w / 2}" y="-24" text-anchor="middle" font-size="26" fill="#a9b1bd">（舞台奥）</text>`;
+    s += `<text x="${st.w / 2}" y="-78" text-anchor="middle" font-size="26" fill="#a9b1bd">（舞台奥）</text>`;
+    return s;
+  };
+
+  // ---------------------------------------------------------------- 寸法線
+  const fmtM = cm => (cm / 100).toFixed(2).replace(/0$/, '') + 'm';
+  function dimLine(x1, y1, x2, y2, label, color, k, side, at) {
+    const sw = 1.6 / k, tk = 9 / k, fs = 13 / k;
+    const vert = Math.abs(x2 - x1) < Math.abs(y2 - y1);
+    let s = `<g class="dim" pointer-events="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}"/>`;
+    if (vert) s += `<path d="M${x1 - tk} ${y1}H${x1 + tk}M${x2 - tk} ${y2}H${x2 + tk}" stroke="${color}" stroke-width="${sw}"/>`;
+    else s += `<path d="M${x1} ${y1 - tk}V${y1 + tk}M${x2} ${y2 - tk}V${y2 + tk}" stroke="${color}" stroke-width="${sw}"/>`;
+    const f = at == null ? 0.5 : at;
+    const mx = x1 + (x2 - x1) * f, my = y1 + (y2 - y1) * f;
+    const tw = label.length * fs * 0.62 + 10 / k, th = fs + 6 / k;
+    const lx = vert ? mx + (side || 1) * (tw / 2 + 6 / k) : mx, ly = vert ? my : my + (side || -1) * (th / 2 + 3 / k);
+    s += `<rect x="${lx - tw / 2}" y="${ly - th / 2}" width="${tw}" height="${th}" rx="${4 / k}" fill="#fff" fill-opacity=".92" stroke="${color}" stroke-width="${1 / k}"/>`;
+    s += `<text x="${lx}" y="${ly}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${color}">${label}</text></g>`;
+    return s;
+  }
+  // 部品の外形（回転が90°くらいなら幅と奥行を入れかえる）
+  function bboxOf(it) {
+    const sz = SS.itemSize(it, {});
+    const a = Math.abs(((it.rot || 0) % 180 + 180) % 180);
+    const swap = a > 45 && a < 135;
+    const w = swap ? sz.h : sz.w, h = swap ? sz.w : sz.h;
+    return { x0: it.x - w / 2, x1: it.x + w / 2, y0: it.y - h / 2, y1: it.y + h / 2, w, h };
+  }
+  R.bboxOf = bboxOf;
+  /**
+   * ステージの主な寸法と、選んだ部品のまわりの距離
+   * k: 画面の拡大率（線や文字の太さをそろえる）
+   */
+  R.dimsSVG = function (doc, k, sel) {
+    const st = doc.stage;
+    const C1 = '#3b6bb5', C2 = '#d6336c';
+    let s = '';
+    const b = R.backWidth(st);
+    const shaped = b < st.w - 1;
+    s += dimLine(0, st.d + 34, st.w, st.d + 34, `${shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
+    if (shaped) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
+    // 奥行の数字は、ステージの外（左上のすき間）に出す
+    s += dimLine(-42, 0, -42, st.d, `奥行 ${fmtM(st.d)}`, C1, k, 1, 0.1);
+    const pod = doc.items.find(it => it.type === 'podium');
+    if (pod) {
+      const pb = bboxOf(pod);
+      if (st.d - pb.y1 > 5) s += dimLine(pb.x1 + 30, pb.y1, pb.x1 + 30, st.d, `指揮台〜舞台際 ${fmtM(st.d - pb.y1)}`, C1, k, 1);
+    }
+    if (sel && sel.type !== 'player' && sel.type !== 'text') {
+      const bb = bboxOf(sel);
+      const cy = sel.y;
+      const [xl, xr] = R.xRange(st, cy);
+      // 舞台際（客席側）まで
+      if (st.d - bb.y1 > 3) s += dimLine(bb.x1 - 30, bb.y1, bb.x1 - 30, st.d, `舞台際まで ${fmtM(st.d - bb.y1)}`, C2, k, 1);
+      // 奥（反射板）まで
+      if (bb.y0 > 3) s += dimLine(sel.x, 0, sel.x, bb.y0, `奥まで ${fmtM(bb.y0)}`, C2, k, 1);
+      // 下手・上手の端まで
+      if (bb.x0 - xl > 3) s += dimLine(xl, cy, bb.x0, cy, `下手まで ${fmtM(bb.x0 - xl)}`, C2, k, -1);
+      if (xr - bb.x1 > 3) s += dimLine(bb.x1, cy, xr, cy, `上手まで ${fmtM(xr - bb.x1)}`, C2, k, -1);
+      // 指揮台まで（指揮台の奥のふち〜部品の手前のふち）
+      if (pod && sel !== pod) {
+        const pb = bboxOf(pod);
+        if (pb.y0 - bb.y1 > 3) s += dimLine(pod.x, bb.y1, pod.x, pb.y0, `指揮台まで ${fmtM(pb.y0 - bb.y1)}`, C2, k, -1);
+      }
+      // 大きさ
+      const tag = `${fmtM(bb.w)} × ${fmtM(bb.h)}${sel.hgt ? ` ・高さ${Math.round(sel.hgt)}cm` : ''}`;
+      const fs = 13 / k, tw = tag.length * fs * 0.6 + 12 / k;
+      const ty = bb.y1 + 10 / k;
+      s += `<g pointer-events="none"><rect x="${bb.x0}" y="${ty}" width="${tw}" height="${fs + 8 / k}" rx="${4 / k}" fill="${C2}"/><text x="${bb.x0 + 6 / k}" y="${ty + (fs + 8 / k) / 2}" dy="0.35em" font-size="${fs}" font-weight="700" fill="#fff">${tag}</text></g>`;
+    }
     return s;
   };
 
@@ -134,6 +203,7 @@ window.SS = window.SS || {};
     const u = doc.underlay;
     if (ex.underlay && u) s += `<image href="${u.src}" x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" opacity="${u.opacity}" preserveAspectRatio="none"/>`;
     s += R.itemsSVG(doc, opts, conductor, false);
+    if (opts.dims) s += R.dimsSVG(doc, 0.55, null);
     s += legend;
     s += '</svg>';
     return s;
