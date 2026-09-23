@@ -64,6 +64,21 @@ window.SS = window.SS || {};
     m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
     g.add(m); return m;
   }
+  // 弦楽器の胴（くびれのある形を厚みのある板に）。長さ len は Y 方向、幅 wid は X 方向、厚み dep は Z 方向
+  function fiddleBody(len, wid, dep, color) {
+    const L = len / 2, W = wid / 2, sh = new T.Shape();
+    sh.moveTo(0, L);
+    sh.bezierCurveTo(W * 0.9, L, W * 0.85, L * 0.35, W * 0.62, L * 0.12);
+    sh.bezierCurveTo(W * 0.55, 0, W * 0.55, -L * 0.1, W * 0.7, -L * 0.2);
+    sh.bezierCurveTo(W * 1.05, -L * 0.5, W * 0.9, -L, 0, -L);
+    sh.bezierCurveTo(-W * 0.9, -L, -W * 1.05, -L * 0.5, -W * 0.7, -L * 0.2);
+    sh.bezierCurveTo(-W * 0.55, -L * 0.1, -W * 0.55, 0, -W * 0.62, L * 0.12);
+    sh.bezierCurveTo(-W * 0.85, L * 0.35, -W * 0.9, L, 0, L);
+    const geo = new T.ExtrudeGeometry(sh, { depth: dep, bevelEnabled: true, bevelThickness: dep * 0.25, bevelSize: Math.min(W, L) * 0.04, bevelSegments: 3, curveSegments: 10 });
+    geo.translate(0, 0, -dep / 2);
+    const m = mesh(geo, color, { roughness: 0.28, metalness: 0.05 });
+    return m;
+  }
   function bellCone(g, at, dir, r, len, color) {
     const m = mesh(new T.CylinderGeometry(r, r * 0.22, len, 24, 1, true), color, Object.assign({ side: T.DoubleSide }, METAL));
     const va = new T.Vector3(...at), vd = new T.Vector3(...dir).normalize();
@@ -310,7 +325,7 @@ window.SS = window.SS || {};
       }
       case 'tuba': {
         const body = cyl(g, 0.16, 0.2, 0.72, GOLD, 0.07, hipY + 0.34, 0.2, METAL, 24); void body;
-        bellCone(g, [0.2, headY + 0.3, 0.12], [0.12, 1, -0.05], 0.27, 0.34, GOLD);
+        bellCone(g, [0.2, headY + 0.3, 0.12], [0.12, 1, -0.05], 0.22, 0.34, GOLD);
         tube(g, mouth, [0.05, my - 0.1, 0.2], 0.012, GOLD, METAL);
         hands = [[-0.05, hipY + 0.3, 0.33], [0.2, hipY + 0.35, 0.28]];
         break;
@@ -347,7 +362,8 @@ window.SS = window.SS || {};
         const len = kind === 'bsx' ? 0.72 : kind === 'tsx' ? 0.6 : 0.48;
         tube(g, mouth, [-0.07, my - 0.12, 0.2], 0.011, GOLD, METAL);
         tube(g, [-0.08, my - 0.12, 0.2], [-0.13, my - 0.12 - len, 0.24], r, GOLD, METAL, r * 0.7);
-        bellCone(g, [-0.13, my - 0.05 - len * 0.62, 0.32], [0, 0.6, 0.8], r * 1.8, 0.14, GOLD);
+        const br = kind === 'bsx' ? 0.085 : kind === 'tsx' ? 0.073 : 0.063; // ベルの直径 17／14.6／12.5cm
+        bellCone(g, [-0.13, my - 0.05 - len * 0.62, 0.32], [0, 0.6, 0.8], br, 0.14, GOLD);
         hands = [[-0.09, my - 0.2, 0.22], [-0.12, my - 0.12 - len * 0.7, 0.27]];
         break;
       }
@@ -359,14 +375,23 @@ window.SS = window.SS || {};
       }
       case 'vn': case 'va': {
         const s = kind === 'va' ? 1.12 : 1;
-        const b = box(g, 0.2 * s, 0.045, 0.36 * s, WOOD, 0.13, neckY - 0.01, 0.17, { roughness: 0.3 });
-        b.rotation.y = -0.5; b.rotation.z = 0.3;
-        tube(g, [-0.32, neckY - 0.03, 0.22], [0.3, neckY + 0.03, 0.05], 0.004, '#c9b58a');
+        // 胴 35.5×20.5cm（ビオラ 40×23）、厚み約4cm。左肩にのせて左前へ。ネック・渦巻き、弓 75cm
+        const b = fiddleBody(0.355 * s, 0.205 * s, 0.035, WOOD);
+        b.rotation.x = Math.PI / 2; // 長い向きを前へ、表板を上へ
+        const pv = new T.Group(); pv.add(b);
+        pv.rotation.order = 'YXZ'; pv.rotation.y = 0.55; pv.rotation.z = -0.35; // 左前へ向け、弦側へ少し傾ける
+        pv.position.set(0.14, neckY - 0.01, 0.17); g.add(pv);
+        const dir = new T.Vector3(Math.sin(0.55), 0, Math.cos(0.55));
+        const nk0 = new T.Vector3(0.14, neckY, 0.17).addScaledVector(dir, 0.17 * s), nk1 = nk0.clone().addScaledVector(dir, 0.13 * s);
+        tube(g, nk0.toArray(), nk1.toArray(), 0.011, '#1a120c');
+        sph(g, 0.018, WOOD, nk1.x, nk1.y, nk1.z);
+        tube(g, [-0.34, neckY - 0.03, 0.24], [0.38, neckY + 0.04, 0.04], 0.004, '#c9b58a');
         hands = [[0.28 * s, neckY - 0.02, 0.33 * s], [-0.18, neckY - 0.03, 0.2]];
         break;
       }
       case 'vc': {
-        const b = box(g, 0.42, 0.72, 0.2, WOOD, 0, 0.62, 0.36, { roughness: 0.3 }); b.rotation.x = -0.25;
+        // 胴 76×44cm、厚み約12cm。少し手前に傾ける
+        const b = fiddleBody(0.76, 0.44, 0.12, WOOD); b.position.set(0, 0.62, 0.36); b.rotation.x = -0.25; g.add(b);
         tube(g, [0, 1.0, 0.28], [0.02, 1.35, 0.18], 0.02, '#1a1a1a');
         tube(g, [0, 0.26, 0.42], [0, 0.0, 0.5], 0.006, '#888', METAL);
         tube(g, [-0.36, 0.72, 0.36], [0.24, 0.66, 0.4], 0.004, '#c9b58a');
@@ -374,7 +399,8 @@ window.SS = window.SS || {};
         break;
       }
       case 'cb': {
-        const b = box(g, 0.6, 1.1, 0.24, WOOD, 0.08, 0.72, 0.38, { roughness: 0.3 }); b.rotation.x = -0.12;
+        // 胴 112×68cm、厚み約20cm
+        const b = fiddleBody(1.12, 0.68, 0.18, WOOD); b.position.set(0.08, 0.72, 0.38); b.rotation.x = -0.12; g.add(b);
         tube(g, [0.08, 1.27, 0.3], [0.1, 1.85, 0.24], 0.025, '#1a1a1a');
         hands = [[0.1, 1.45, 0.28], [-0.2, 0.75, 0.42]];
         break;

@@ -636,26 +636,11 @@
   const ctxBar = $('ctxBar');
   function positionCtxBar() {
     const sel = selected();
-    if (!sel.length || (drag && drag.kind !== 'marquee') || S.placing) { ctxBar.hidden = true; return; }
-    const o = renderOpts();
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    sel.forEach(it => {
-      const sz = SS.itemSize(it, o);
-      const r = Math.max(sz.w, sz.h) / 2 + 10;
-      x0 = Math.min(x0, it.x - r); x1 = Math.max(x1, it.x + r);
-      y0 = Math.min(y0, it.y - r); y1 = Math.max(y1, it.y + r);
-    });
-    const k = S.view.k, v = S.view;
-    const wrapR = $('stageWrap').getBoundingClientRect();
+    const tb = document.querySelector('.tidy-bar');
+    if (!sel.length || (drag && drag.kind !== 'marquee') || S.placing) { ctxBar.hidden = true; if (tb) tb.hidden = false; return; }
+    if (tb) tb.hidden = true;
+    // 選んだ物のそばに出すと、指やポインタ・となりの人に重なって邪魔なので、画面の下にまとめて出す
     ctxBar.hidden = false;
-    const bw = ctxBar.offsetWidth, bh = ctxBar.offsetHeight;
-    let left = (x0 + x1) / 2 * k + v.tx - bw / 2;
-    let top = y0 * k + v.ty - bh - 10;
-    if (top < 8) top = y1 * k + v.ty + 10;
-    left = Math.max(8, Math.min(wrapR.width - bw - 8, left));
-    top = Math.max(8, Math.min(wrapR.height - bh - 70, top));
-    ctxBar.style.left = left + 'px';
-    ctxBar.style.top = top + 'px';
     const one = sel.length === 1 ? sel[0] : null;
     $('ctxCount').textContent = sel.length > 1 ? sel.length + '個' : (one.type === 'player' ? (one.label || '奏者') : (SS.CATALOG[one.type] || {}).name || '');
     $('ctxRow').hidden = !(one && one.type === 'player');

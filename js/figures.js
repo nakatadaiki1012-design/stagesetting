@@ -53,82 +53,175 @@ window.SS = window.SS || {};
   const ell = (x, y, rx, ry, rot, fill, stroke, sw) => `<ellipse cx="0" cy="0" rx="${f(rx)}" ry="${f(ry)}" fill="${fill}" stroke="${stroke}" stroke-width="${sw || 1.5}" transform="translate(${f(x)} ${f(y)}) rotate(${rot})"/>`;
   const bell = (x, y, r, c, d) => circ(x, y, r, c, d, 1.6) + circ(x, y, r * 0.55, 'none', d, 1.2);
 
-  // 楽器ごとの形と手の位置
+  const poly = (pts, fill, stroke, sw) => `<path d="M${pts.map(p => f(p[0]) + ' ' + f(p[1])).join('L')}Z" fill="${fill}" stroke="${stroke}" stroke-width="${sw || 1.2}" stroke-linejoin="round"/>`;
+  // 前を向いたベル（真上から見ると、先が広がった台形に見える）。(x, y0)→(x, y1)、口の直径 d
+  const flare = (x, y0, y1, d, c, dk) => poly([[x - 1.8, y0], [x + 1.8, y0], [x + d / 2, y1], [x - d / 2, y1]], c, dk, 1.3) + line(x - d / 2, y1, x + d / 2, y1, dk, 2);
+  // 楽器の胴（横から見た木の胴：丸みのあるひょうたん形）
+  const fiddle = (cx, cy, len, wid, rot, fill, dk) => {
+    const L = len / 2, W = wid / 2;
+    return `<path transform="translate(${f(cx)} ${f(cy)}) rotate(${f(rot)})" d="M0 ${-L}C${W * 0.9} ${-L} ${W * 0.85} ${-L * 0.35} ${W * 0.62} ${-L * 0.12}C${W * 0.55} 0 ${W * 0.55} ${L * 0.1} ${W * 0.7} ${L * 0.2}C${W * 1.05} ${L * 0.5} ${W * 0.9} ${L} 0 ${L}C${-W * 0.9} ${L} ${-W * 1.05} ${L * 0.5} ${-W * 0.7} ${L * 0.2}C${-W * 0.55} ${L * 0.1} ${-W * 0.55} 0 ${-W * 0.62} ${-L * 0.12}C${-W * 0.85} ${-L * 0.35} ${-W * 0.9} ${-L} 0 ${-L}Z" fill="${fill}" stroke="${dk}" stroke-width="1.4"/>`;
+  };
+  // 点 a から角度 deg の方向へ len 進んだ点
+  const toward = (a, deg, len) => [a[0] + Math.sin(deg * Math.PI / 180) * len, a[1] + Math.cos(deg * Math.PI / 180) * len];
+
+  /**
+   * 楽器ごとの形と手の位置（真上から見た図・単位 cm）。実物の大きさ：
+   * ピッコロ 32／フルート 67／オーボエ 65／クラ 66／イングリッシュホルン 81／バスクラ 高さ約97・ベル約16
+   * ファゴット 134（斜めに持つ）／アルトサックス 高さ70・ベル12.5／テナー 83・ベル14.6／バリトン 120・ベル17
+   * トランペット 全長48・ベル12.3／ホルン ベル31・巻き約30／トロンボーン スライド約70・ベル22（バス24）
+   * ユーフォニアム 高さ66・ベル30（YEP-642）／チューバ 高さ102・ベル44（YBB-321）
+   * バイオリン 全長59（胴35.5×20）／ビオラ 全長67（胴40×23）／弓 約75
+   * チェロ 胴76×44／コントラバス 胴112×68
+   * knees：ひざの位置（左右に開く量）。wide が大きいほど楽器を脚の間にはさむ
+   */
   function instrument(kind) {
     switch (kind) {
-      case 'picc': return { draw: line(-30, 12, 3, 11, SILVER_D, 4.5) + line(-30, 12, 3, 11, SILVER, 2.8), hands: [[-6, 12], [-22, 12]] };
-      case 'fl': return { draw: line(-52, 13, 4, 11, SILVER_D, 4.5) + line(-52, 13, 4, 11, SILVER, 2.8), hands: [[-8, 12], [-34, 13]] };
-      case 'ob': return { draw: line(0, 10, 0, 44, BLACK, 4) + circ(0, 45, 3, BLACK), hands: [[0, 22], [0, 34]] };
-      case 'eh': return { draw: line(0, 10, 0, 50, '#4b3526', 4.5) + circ(0, 51, 4.5, '#4b3526'), hands: [[0, 24], [0, 38]] };
-      case 'cl': return { draw: line(0, 10, 0, 46, BLACK, 4.5) + circ(0, 47, 4.5, BLACK), hands: [[0, 22], [0, 36]] };
-      case 'bcl': return { draw: line(0, 10, 0, 48, BLACK, 6) + circ(-1, 52, 7, SILVER, SILVER_D) , hands: [[0, 26], [0, 40]] };
-      case 'fg': return { draw: line(-14, 26, 16, -40, WOOD_D, 8) + line(-14, 26, 16, -40, WOOD, 5.5) + line(0, 10, -8, 20, SILVER_D, 1.8), hands: [[-8, 16], [8, -10]] };
-      case 'ssx': return { draw: line(0, 10, 0, 44, BRASS_D, 5.5) + line(0, 10, 0, 44, BRASS, 3.5) + bell(0, 46, 5, BRASS, BRASS_D), hands: [[0, 22], [0, 34]] };
-      case 'asx': return { draw: line(0, 10, -7, 17, BRASS_D, 2.5) + line(-7, 17, -13, 40, BRASS_D, 8) + line(-7, 17, -13, 40, BRASS, 5.5) + bell(-11, 43, 6.5, BRASS, BRASS_D), hands: [[-9, 24], [-12, 35]] };
-      case 'tsx': return { draw: line(0, 10, -8, 18, BRASS_D, 2.8) + line(-8, 18, -16, 46, BRASS_D, 9.5) + line(-8, 18, -16, 46, BRASS, 7) + bell(-13, 49, 8, BRASS, BRASS_D), hands: [[-10, 26], [-15, 40]] };
-      case 'bsx': return { draw: line(0, 10, -10, 14, BRASS_D, 3) + line(-16, 2, -20, 40, BRASS_D, 14) + line(-16, 2, -20, 40, BRASS, 11) + bell(-9, 38, 9.5, BRASS, BRASS_D), hands: [[-14, 18], [-18, 32]] };
-      case 'hr': return { draw: line(0, 10, -6, 15, BRASS_D, 2.5) + circ(-11, 16, 10, 'none', BRASS_D, 5) + circ(-11, 16, 10, 'none', BRASS, 3) + bell(-24, 4, 15, BRASS, BRASS_D), hands: [[-22, 10], [-4, 18]] };
-      case 'tp': return { draw: line(0, 10, 0, 42, BRASS_D, 9) + line(0, 10, 0, 42, BRASS, 6.5) + bell(0, 46, 6.5, BRASS, BRASS_D), hands: [[0, 20], [0, 28]] };
+      case 'picc': return { draw: line(6, 11, -26, 13, SILVER_D, 3.4) + line(6, 11, -26, 13, SILVER, 2), hands: [[-5, 12], [-19, 13]] };
+      case 'fl': return {
+        draw: line(8, 11, -59, 16, SILVER_D, 4) + line(8, 11, -59, 16, SILVER, 2.6) + circ(-22, 13.7, 1.3, SILVER_D) + circ(-30, 14.3, 1.3, SILVER_D) + circ(-44, 15, 1.3, SILVER_D),
+        hands: [[-9, 12.5], [-40, 15]],
+      };
+      case 'ob': return { draw: line(0, 10, 0, 50, BLACK, 3.6) + poly([[-1.8, 48], [1.8, 48], [3, 53], [-3, 53]], BLACK, BLACK), hands: [[0, 26], [0, 40]] };
+      case 'eh': return { draw: line(0, 9, 1, 14, SILVER_D, 1.2) + line(1, 14, 0, 58, '#4b3526', 4) + circ(0, 60, 3.8, '#4b3526', '#2e2017'), hands: [[0, 30], [0, 44]] };
+      case 'cl': return { draw: line(0, 10, 0, 49, BLACK, 3.8) + circ(0, 17, 2.2, BLACK) + poly([[-2, 47], [2, 47], [3.4, 53], [-3.4, 53]], BLACK, '#111'), hands: [[0, 26], [0, 41]] };
+      case 'bcl': return {
+        draw: `<path d="M0 10 Q0 18 -2 22" fill="none" stroke="${SILVER_D}" stroke-width="2.2"/>` + circ(-2, 26, 4.2, BLACK, '#111') + circ(-2, 38, 8, SILVER, SILVER_D) + circ(-2, 38, 4.5, 'none', SILVER_D, 1.2),
+        hands: [[-5, 24], [3, 29]], knees: 15,
+      };
+      case 'fg': return {
+        draw: line(0, 10, -6, 19, SILVER_D, 1.6) + line(-15, 32, 13, -8, WOOD_D, 8.5) + line(-15, 32, 13, -8, WOOD, 6) + circ(13, -8, 4.4, WOOD, WOOD_D),
+        hands: [[-9, 23], [8, 2]],
+      };
+      case 'ssx': return { draw: line(0, 10, 0, 44, BRASS_D, 4.2) + line(0, 10, 0, 44, BRASS, 2.8) + flare(0, 38, 48, 7, BRASS, BRASS_D), hands: [[0, 24], [0, 36]] };
+      case 'asx': return {
+        draw: `<path d="M0 10 Q-4 13 -7 18" fill="none" stroke="${BRASS_D}" stroke-width="2.4"/>` + line(-7, 18, -12, 40, BRASS_D, 8) + line(-7, 18, -12, 40, BRASS, 5.8) + ell(-10, 43, 6.3, 5, -10, BRASS, BRASS_D) + ell(-10, 43, 3.6, 2.8, -10, 'none', BRASS_D),
+        hands: [[-8, 24], [-11, 35]],
+      };
+      case 'tsx': return {
+        draw: `<path d="M0 10 Q-5 12 -9 19" fill="none" stroke="${BRASS_D}" stroke-width="2.6"/>` + line(-9, 19, -16, 46, BRASS_D, 9.5) + line(-9, 19, -16, 46, BRASS, 7.2) + ell(-13, 49, 7.3, 5.6, -10, BRASS, BRASS_D) + ell(-13, 49, 4.2, 3.2, -10, 'none', BRASS_D),
+        hands: [[-10, 27], [-14, 40]], knees: 13,
+      };
+      case 'bsx': return {
+        draw: `<path d="M0 10 C-6 8 -12 4 -16 -2" fill="none" stroke="${BRASS_D}" stroke-width="3"/>` + circ(-18, -4, 5.5, BRASS, BRASS_D) + line(-18, -2, -22, 30, BRASS_D, 12) + line(-18, -2, -22, 30, BRASS, 9.5) + ell(-14, 36, 8.5, 6.5, 20, BRASS, BRASS_D) + ell(-14, 36, 5, 3.8, 20, 'none', BRASS_D),
+        hands: [[-16, 14], [-20, 26]], knees: 14,
+      };
+      case 'hr': return {
+        // 巻いた管は縦向き（上から見ると細長い楕円）、ベルは右後ろ向きで右ももの上に
+        draw: `<path d="M0 10 Q-4 14 -6 18" fill="none" stroke="${BRASS_D}" stroke-width="2"/>` +
+          ell(-9, 24, 6.5, 15, 8, 'none', BRASS_D, 5) + ell(-9, 24, 6.5, 15, 8, 'none', BRASS, 3) + circ(-4, 21, 2.2, SILVER, SILVER_D, 1) + circ(-4, 26, 2.2, SILVER, SILVER_D, 1) +
+          ell(-22, 16, 15.5, 9, 55, BRASS, BRASS_D) + ell(-22, 16, 9, 5, 55, 'none', BRASS_D),
+        hands: [[-20, 16], [-4, 23]],
+      };
+      case 'tp': return {
+        draw: line(0, 10, 0, 18, SILVER_D, 1.6) + `<rect x="-3.6" y="18" width="7.2" height="26" rx="2.5" fill="${BRASS}" stroke="${BRASS_D}" stroke-width="1.4"/>` +
+          circ(0, 25, 1.5, SILVER, SILVER_D, 0.8) + circ(0, 28.5, 1.5, SILVER, SILVER_D, 0.8) + circ(0, 32, 1.5, SILVER, SILVER_D, 0.8) + flare(0, 44, 58, 12.3, BRASS, BRASS_D),
+        hands: [[1, 29], [-2, 22]],
+      };
       case 'tb':
       case 'btb': {
-        const br = kind === 'btb' ? 13 : 11;
+        const bd = kind === 'btb' ? 24 : 22;
+        // スライドは縦の面にあるので、上から見ると1本の線。ベル側の管は左肩の上を通って後ろへ
         return {
-          draw: line(4, 12, 11, 44, BRASS_D, 3) +
-            line(-2, 12, -2, 92, BRASS_D, 2.6) + line(3, 12, 3, 92, BRASS_D, 2.6) +
-            `<path d="M-2 92 Q0.5 97 3 92" fill="none" stroke="${BRASS_D}" stroke-width="2.6"/>` +
-            line(-3, 40, 4, 40, BRASS_D, 2.5) + bell(13, 58, br, BRASS, BRASS_D),
-          hands: [[0, 40], [8, 20]], stand: [-26, 58],
+          draw: line(11, -22, 11, 32, BRASS_D, 3.2) + line(11, -22, 11, 32, BRASS, 2) + `<path d="M11 -22 Q11 -29 14.5 -29 Q18 -29 18 -22 L18 -8" fill="none" stroke="${BRASS_D}" stroke-width="2.4"/>` +
+            (kind === 'btb' ? circ(15, -12, 7.5, 'none', BRASS_D, 3.6) + circ(15, -12, 7.5, 'none', BRASS, 2.2) : '') +
+            flare(11, 32, 58, bd, BRASS, BRASS_D) +
+            line(0, 10, 0, 82, BRASS_D, 3.2) + line(0, 10, 0, 82, SILVER, 1.8) + line(-2.5, 82, 2.5, 82, BRASS_D, 3) + line(0, 16, 11, 16, BRASS_D, 2.2),
+          hands: [[0, 44], [7, 17]], stand: [-32, 60],
         };
       }
-      case 'euph': return { draw: line(0, 10, 7, 22, BRASS_D, 3) + `<ellipse cx="6" cy="20" rx="8" ry="10" fill="${BRASS}" stroke="${BRASS_D}" stroke-width="1.5"/>` + bell(14, 3, 13, BRASS, BRASS_D), hands: [[0, 20], [10, 24]] };
-      case 'tuba': return { draw: line(0, 10, 4, 16, BRASS_D, 3) + `<ellipse cx="6" cy="22" rx="15" ry="12" fill="${BRASS}" stroke="${BRASS_D}" stroke-width="1.6"/>` + bell(15, 0, 22, BRASS, BRASS_D), hands: [[-6, 20], [14, 26]] };
+      case 'euph': return {
+        draw: line(0, 10, 4, 18, SILVER_D, 1.8) + `<ellipse cx="3" cy="24" rx="9" ry="11" fill="${BRASS}" stroke="${BRASS_D}" stroke-width="1.5"/>` +
+          circ(-1, 20, 1.6, SILVER, SILVER_D, 0.8) + circ(-1, 24, 1.6, SILVER, SILVER_D, 0.8) + circ(-1, 28, 1.6, SILVER, SILVER_D, 0.8) + bell(15, 8, 15, BRASS, BRASS_D),
+        hands: [[-2, 24], [12, 26]], knees: 13,
+      };
+      case 'tuba': return {
+        draw: line(0, 10, 4, 16, SILVER_D, 2) + `<ellipse cx="4" cy="26" rx="18" ry="13" fill="${BRASS}" stroke="${BRASS_D}" stroke-width="1.6"/>` +
+          circ(-4, 21, 2, SILVER, SILVER_D, 0.9) + circ(-4, 25.5, 2, SILVER, SILVER_D, 0.9) + circ(-4, 30, 2, SILVER, SILVER_D, 0.9) + circ(-4, 34.5, 2, SILVER, SILVER_D, 0.9) + bell(16, 4, 22, BRASS, BRASS_D),
+        hands: [[-6, 26], [16, 28]], knees: 20,
+      };
       case 'vn':
       case 'va': {
-        const s = kind === 'va' ? 1.15 : 1;
+        const s = kind === 'va' ? 1.13 : 1;
+        // 左肩にのせ、左前へ向ける。胴 35.5×20（ビオラ 40×23）、ネックと渦巻き、弓 75cm
+        const c = [8 + 9 * s, 13 + 9 * s], ang = 42;
+        const nk0 = toward(c, ang, 17 * s), nk1 = toward(c, ang, 30 * s);
         return {
-          draw: ell(15, 14, 6.5 * s, 15 * s, -35, WOOD, WOOD_D) + line(20, 22, 27 * s, 34 * s, WOOD_D, 2.5) + line(-28, 22, 20, 5, '#7a6a4a', 1.4),
-          hands: [[-14, 16], [26 * s, 32 * s]],
+          draw: fiddle(c[0], c[1], 35.5 * s, 20.5 * s, -ang, WOOD, WOOD_D) + line(nk0[0], nk0[1], nk1[0], nk1[1], '#2b1d12', 2.6) + circ(nk1[0], nk1[1], 2, WOOD_D) +
+            line(-30, 22, 44, 8, '#7a6a4a', 1.3),
+          hands: [[-16, 19], [nk1[0] - 3, nk1[1] - 3]],
         };
       }
-      case 'vc': return { draw: ell(0, 28, 20, 10, 0, WOOD, WOOD_D) + line(3, 20, 13, 4, WOOD_D, 3) + line(-28, 28, 20, 25, '#7a6a4a', 1.4), hands: [[-16, 26], [12, 8]], stand: [0, 64] };
-      case 'cb': return { draw: ell(6, 28, 27, 12, -8, WOOD, WOOD_D) + line(10, 18, 20, 2, WOOD_D, 3.5) + line(-32, 30, 24, 26, '#7a6a4a', 1.5), hands: [[-18, 28], [18, 6]], stand: [-12, 66], stool: true };
-      case 'gt': return { draw: ell(-10, 18, 13, 8, 0, WOOD, WOOD_D) + line(2, 16, 30, 12, WOOD_D, 3), hands: [[-10, 18], [22, 13]] };
-      case 'bass': return { draw: ell(-10, 18, 14, 8, 0, '#6b2a2a', '#3a1515') + line(3, 16, 38, 11, WOOD_D, 3), hands: [[-10, 18], [28, 12]], standing: true };
-      case 'perc': return { draw: line(-9, 14, -12, 34, WOOD_D, 1.8) + line(9, 14, 12, 34, WOOD_D, 1.8) + circ(-12, 35, 3, '#c8c8d0', '#555') + circ(12, 35, 3, '#c8c8d0', '#555'), hands: [[-9, 14], [9, 14]], standing: true, noStand: true };
-      case 'drs': return { draw: line(-9, 14, -14, 32, WOOD_D, 1.8) + line(9, 14, 14, 32, WOOD_D, 1.8), hands: [[-9, 14], [9, 14]], stool: true, noStand: true };
-      case 'pf': return { draw: '', hands: [[-10, 20], [10, 20]], bench: true, noStand: true };
-      case 'hp': return { draw: '', hands: [[-4, 22], [14, 20]], noStand: true };
-      default: return { draw: '', hands: [[-12, 14], [12, 14]] };
+      case 'vc': return {
+        // 脚の間に立て、少し手前に傾ける。上から見ると胴の幅44、奥行きは傾きで短く見える
+        draw: line(0, 46, 0, 60, '#888', 1.6) + fiddle(0, 32, 34, 44, 0, WOOD, WOOD_D) + line(3, 16, 9, 2, '#2b1d12', 3.4) + circ(9, 1, 2.6, WOOD_D) + line(-38, 34, 34, 30, '#7a6a4a', 1.4),
+        hands: [[-28, 34], [7, 6]], stand: [0, 72], knees: 26,
+      };
+      case 'cb': return {
+        draw: line(2, 56, 2, 66, '#888', 1.8) + fiddle(2, 34, 44, 68, -4, WOOD, WOOD_D) + line(6, 12, 14, -6, '#2b1d12', 4) + circ(14, -7, 3.2, WOOD_D) + line(-40, 38, 36, 34, '#7a6a4a', 1.5),
+        hands: [[-30, 38], [12, -2]], stand: [-14, 78], stool: true, knees: 22,
+      };
+      case 'gt': return { draw: fiddle(-12, 20, 26, 36, 80, WOOD, WOOD_D) + line(4, 18, 36, 14, WOOD_D, 3), hands: [[-12, 20], [28, 15]] };
+      case 'bass': return { draw: fiddle(-12, 20, 26, 34, 80, '#6b2a2a', '#3a1515') + line(4, 18, 46, 12, WOOD_D, 3), hands: [[-12, 20], [34, 13]], standing: true };
+      case 'perc': return { draw: line(-9, 16, -12, 38, WOOD_D, 1.8) + line(9, 16, 12, 38, WOOD_D, 1.8) + circ(-12, 39, 2.6, '#c8c8d0', '#555') + circ(12, 39, 2.6, '#c8c8d0', '#555'), hands: [[-9, 16], [9, 16]], standing: true, noStand: true };
+      case 'drs': return { draw: line(-9, 16, -14, 36, WOOD_D, 1.8) + line(9, 16, 14, 36, WOOD_D, 1.8), hands: [[-9, 16], [9, 16]], stool: true, noStand: true };
+      case 'pf': return { draw: '', hands: [[-12, 22], [12, 22]], bench: true, noStand: true };
+      case 'hp': return { draw: '', hands: [[-4, 24], [14, 22]], noStand: true, knees: 14 };
+      default: return { draw: '', hands: [[-12, 16], [12, 16]] };
     }
   }
 
-  // 奏者（人の形）
+  // 奏者（人の形）。大人の目安：肩幅 約44cm、胸の厚み 約24cm、頭 幅16×奥行20cm、
+  // 座ると ひざは体の中心から約45cm前。椅子の座面 45×44cm、譜面台（机）幅50cm
+  const TROUSERS = '#4a5160', TROUSERS_D = '#2f3540', SHOE = '#1d1d22';
   SS.drawFigure = function (it, fill, opts) {
     const kind = SS.instrumentKind(it.label);
     const ins = instrument(kind);
     // タップしやすいよう、見えない当たり判定
-    let s = '<circle r="32" fill="transparent"/>';
-    // 椅子
-    if (ins.bench) s += `<rect x="-38" y="-26" width="76" height="30" rx="4" fill="#4a4a50" stroke="#2a2a2e" stroke-width="1.5"/>`;
-    else if (ins.stool) s += circ(0, -6, 17, '#d9dde2', '#8a929c', 1.5);
-    else if (!ins.standing) s += `<rect x="-23" y="-30" width="46" height="42" rx="7" fill="#e1e5ea" stroke="#8a929c" stroke-width="1.5"/>`;
-    // 譜面台
+    let s = '<circle r="34" fill="transparent"/>';
+    // 椅子（座面の後ろに背もたれ）
+    if (ins.bench) s += `<rect x="-40" y="-22" width="80" height="34" rx="4" fill="#4a4a50" stroke="#2a2a2e" stroke-width="1.5"/>`;
+    else if (ins.stool) s += circ(0, -4, 17, '#d9dde2', '#8a929c', 1.5);
+    else if (!ins.standing) s += `<rect x="-22.5" y="-24" width="45" height="44" rx="6" fill="#e1e5ea" stroke="#8a929c" stroke-width="1.5"/><rect x="-21" y="-28" width="42" height="6" rx="3" fill="#b9c0c9" stroke="#8a929c" stroke-width="1"/>`;
+    // 譜面台（机 50cm、支柱）
     if (opts.showStands !== false && !ins.noStand) {
-      const st = ins.stand || [0, 56];
-      s += `<g transform="translate(${st[0]} ${st[1]})"><rect x="-25" y="-3" width="50" height="7" rx="2" fill="#5b6472"/>${line(0, 4, 0, 14, '#5b6472', 2)}</g>`;
+      const st = ins.stand || [0, 64];
+      s += `<g transform="translate(${st[0]} ${st[1]})"><rect x="-25" y="-3" width="50" height="6" rx="1.5" fill="#5b6472"/><rect x="-24" y="-3" width="48" height="2" fill="#f4f1e8"/>${line(0, 3, 0, 12, '#5b6472', 2)}${circ(0, 13, 2, '#5b6472')}</g>`;
     }
-    // 腕
-    const arm = '#3f4854';
-    s += line(-17, 3, ins.hands[0][0], ins.hands[0][1], arm, 6.5);
-    s += line(17, 3, ins.hands[1][0], ins.hands[1][1], arm, 6.5);
-    // 体（肩）
-    s += `<ellipse cx="0" cy="0" rx="21" ry="11.5" fill="${fill}" stroke="#39414d" stroke-width="1.8"/>`;
+    // 脚：座っている人は太もも〜ひざ、立っている人は靴だけ見える
+    if (ins.standing) {
+      s += ell(-9, 6, 5, 12, 4, SHOE, '#000', 1) + ell(9, 6, 5, 12, -4, SHOE, '#000', 1);
+    } else {
+      const kx = ins.knees || 11;
+      [-1, 1].forEach(sx => {
+        const hip = [sx * 10, 0], knee = [sx * kx, 42];
+        s += ell(knee[0] + sx * 1, 50, 4.5, 7, 0, SHOE, '#000', 1); // 靴先（ひざの少し先）
+        s += line(hip[0], hip[1], knee[0], knee[1], TROUSERS_D, 15.5) + line(hip[0], hip[1], knee[0], knee[1], TROUSERS, 13);
+        s += circ(knee[0], knee[1], 6.8, TROUSERS, TROUSERS_D, 1.2);
+      });
+    }
+    // 楽器（体より下に来る部分は先に：チェロ・コントラバスなど）
+    const low = ['vc', 'cb', 'tuba', 'bcl', 'hp'].includes(kind);
+    if (low) s += ins.draw;
+    // 腕（ひじで曲がる。上着の袖）
+    const arm = '#3f4854', armD = '#262c35';
+    [-1, 1].forEach((sx, i) => {
+      const sh = [sx * 18, 2], h = ins.hands[i];
+      const mx = (sh[0] + h[0]) / 2, my = (sh[1] + h[1]) / 2;
+      const d = Math.hypot(h[0] - sh[0], h[1] - sh[1]);
+      const bend = Math.max(0, 32 - d) * 0.45 + 4; // 手が近いほどひじが外へ張り出す
+      const el = [mx + sx * bend, my - 2];
+      s += line(sh[0], sh[1], el[0], el[1], armD, 9) + line(sh[0], sh[1], el[0], el[1], arm, 7.5);
+      s += line(el[0], el[1], h[0], h[1], armD, 7.5) + line(el[0], el[1], h[0], h[1], arm, 6);
+    });
+    // 体（肩幅44・胸の厚み24。上着の色＝パートの色）
+    s += `<path d="M-22 -1 C-22 -9 -14 -12 0 -12 C14 -12 22 -9 22 -1 C22 7 14 12 0 12 C-14 12 -22 7 -22 -1Z" fill="${fill}" stroke="#39414d" stroke-width="1.8"/>`;
     // 楽器
-    s += ins.draw;
+    if (!low) s += ins.draw;
     // 手
-    ins.hands.forEach(h => { s += circ(h[0], h[1], 3.2, SKIN, '#b98a66', 1); });
-    // 頭
-    s += circ(0, 2, 9.5, HAIR, '#241c17', 1.2);
+    ins.hands.forEach(h => { s += ell(h[0], h[1], 3.4, 4, 0, SKIN, '#b98a66', 1); });
+    // 頭（幅16×奥行20）と、顔の向きがわかる鼻
+    s += ell(0, 2, 8, 10, 0, HAIR, '#241c17', 1.2);
+    s += ell(0, 12.4, 1.7, 1.4, 0, SKIN, '#b98a66', 0.7);
     return { body: s, standing: !!ins.standing };
   };
 })(window.SS);

@@ -148,7 +148,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 
 /* 選択中の操作バー */
 .ctx-bar {
-  position: absolute; z-index: 20; background: #1f2733; color: #fff; border-radius: 12px;
+  position: absolute; z-index: 20; left: 50%; bottom: 12px; transform: translateX(-50%); width: max-content; background: #1f2733; color: #fff; border-radius: 12px;
   box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 4px; max-width: calc(100% - 16px);
 }
 .ctx-main { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
@@ -314,3 +314,4 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .ov-step .btn { white-space: normal; line-height: 1.25; min-width: 0; padding-left: 4px; padding-right: 4px; }
 #traceTab { overflow-x: hidden; }
 #traceControls .btn { white-space: normal; line-height: 1.25; }
+.tidy-bar[hidden] { display: none; }
