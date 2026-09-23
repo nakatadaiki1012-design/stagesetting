@@ -2006,9 +2006,30 @@
   };
 
   // ------------------------------------------------------------ 画像・印刷・共有
+  // タイトル・サブタイトルの入力欄（「設定」タブと同じ内容。どこで入力しても同じになる）
+  const titleFieldsHTML = () => `
+      <div class="title-fields">
+        <label class="field">タイトル（図のいちばん上に大きく出ます）<input id="mTitle" value="${SS.esc(doc().title)}" placeholder="例: 第30回 定期演奏会"></label>
+        <label class="field">サブタイトル<input id="mSubtitle" value="${SS.esc(doc().subtitle)}" placeholder="例: 第1部 / ○○ホール"></label>
+      </div>`;
+  function bindTitleFields(onChange) {
+    let pushed = false;
+    [['mTitle', 'title'], ['mSubtitle', 'subtitle']].forEach(([id, key]) => {
+      const el = $(id);
+      el.addEventListener('input', () => {
+        if (!pushed) { pushHistory(); pushed = true; }
+        doc()[key] = el.value;
+        renderSettings();
+        scheduleSave();
+        if (onChange) onChange();
+      });
+    });
+  }
+
   $('btnExport').onclick = () => {
     openModal(`
       <h2>画像として保存</h2>
+      ${titleFieldsHTML()}
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
       ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで紙を広げる</label>' : ''}
@@ -2022,6 +2043,7 @@
       <p class="hint small">スマホでは保存した画像が「ファイル」アプリや「ダウンロード」に入ります。</p>
       <div id="exResult"></div>
     `);
+    bindTitleFields(() => { $('exResult').innerHTML = ''; });
     const build = () => SS.render.fullSVG(doc(), renderOpts(), conductor(), {
       legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: $('exUnderlay') && $('exUnderlay').checked, underlayAll: $('exUnderlayAll') && $('exUnderlayAll').checked, pxPerCm: +$('exScale').value,
     });
@@ -2041,8 +2063,19 @@
   };
 
   $('btnPrint').onclick = () => {
-    $('printArea').innerHTML = SS.render.fullSVG(doc(), renderOpts(), conductor(), { legend: true, grid: false, underlay: false, pxPerCm: 1 });
-    setTimeout(() => window.print(), 50);
+    openModal(`
+      <h2>印刷</h2>
+      ${titleFieldsHTML()}
+      <p class="hint small">A4横で印刷します。編成表（人数）も入ります。</p>
+      <div class="btn-row"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
+    `);
+    bindTitleFields();
+    $('prNo').onclick = closeModal;
+    $('prGo').onclick = () => {
+      closeModal();
+      $('printArea').innerHTML = SS.render.fullSVG(doc(), renderOpts(), conductor(), { legend: true, grid: false, underlay: false, pxPerCm: 1 });
+      setTimeout(() => window.print(), 50);
+    };
   };
 
   $('btnShare').onclick = async () => {
