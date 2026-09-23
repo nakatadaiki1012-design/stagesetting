@@ -37,6 +37,7 @@ window.SS = window.SS || {};
     stand:   { name: '譜面台', cat: '基本', w: 50, h: 12, shape: 'rect', fill: '#5b6472', label: '' },
     riser:   { name: '平台 3×6尺', cat: '基本', w: 182, h: 91, shape: 'riser', fill: '#efe3cc', label: '', note: 'サブロク 910×1820mm' },
     riser46: { name: '平台 4×6尺', cat: '基本', w: 182, h: 121, shape: 'riser', fill: '#efe3cc', label: '', note: 'ヨンロク 1212×1820mm' },
+    hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
     text:    { name: '文字', cat: '基本', w: 200, h: 50, shape: 'text', label: 'テキスト', fontSize: 36 },
     box:     { name: '四角', cat: '基本', w: 120, h: 70, shape: 'rect', fill: '#f2f2f2', label: '' },
     circle:  { name: '丸', cat: '基本', w: 80, h: 80, shape: 'circle', fill: '#f2f2f2', label: '' },
@@ -191,6 +192,20 @@ window.SS = window.SS || {};
         case 'cym':
           body += `<circle r="${w / 2}" fill="${fill}" stroke="#9a7a22" stroke-width="1.5"/><circle r="${w / 8}" fill="#c9a83a"/>`;
           break;
+        case 'hina': {
+          const pn = (SS.PANELS && SS.PANELS[it.panel || '36']) || { w: 182, d: 91 };
+          const hv = it.hgt || 21.2;
+          const shade = Math.max(0, Math.min(1, hv / 90));
+          const col = `rgb(${Math.round(236 - 40 * shade)},${Math.round(220 - 45 * shade)},${Math.round(190 - 50 * shade)})`;
+          body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${col}" stroke="#8a6d3b" stroke-width="3"/>`;
+          let p = '';
+          for (let xx = -w / 2 + pn.w; xx < w / 2 - 5; xx += pn.w) p += `M${xx.toFixed(1)} ${-h / 2}V${h / 2}`;
+          for (let yy = -h / 2 + pn.d; yy < h / 2 - 5; yy += pn.d) p += `M${-w / 2} ${yy.toFixed(1)}H${w / 2}`;
+          body += `<path d="${p}" stroke="#b39463" stroke-width="1.5" stroke-dasharray="8 5"/>`;
+          const tag = `${it.step ? it.step + '段 ' : ''}${Math.round(hv)}cm`;
+          text += `<text x="${(x - w / 2 + 10).toFixed(1)}" y="${(y + h / 2 - 12).toFixed(1)}" font-size="22" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}</text>`;
+          break;
+        }
         case 'riser':
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#b89b6a" stroke-width="2.5"/>`;
           break;

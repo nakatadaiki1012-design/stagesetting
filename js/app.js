@@ -375,6 +375,12 @@
         const ly = -vx * Math.sin(a) + vy * Math.cos(a);
         it.w = Math.max(10, Math.round((Math.abs(lx) * 2 - 12) / 5) * 5);
         it.h = Math.max(10, Math.round((Math.abs(ly) * 2 - 12) / 5) * 5);
+        if (it.type === 'hina') {
+          // ひな壇は平台の枚数単位で大きさが変わる
+          const pn = SS.PANELS[it.panel || '36'];
+          it.w = Math.max(1, Math.round(it.w / pn.w)) * pn.w;
+          it.h = Math.max(1, Math.round(it.h / pn.d)) * pn.d;
+        }
         render();
         renderProps(true);
         break;
@@ -626,6 +632,7 @@
       it.w = c.w; it.h = c.h;
       if (c.label !== undefined && it.label === undefined) it.label = c.label;
       if (type === 'text') it.fontSize = c.fontSize;
+      if (type === 'hina') { it.hgt = 21.2; it.panel = '36'; }
     }
     pushHistory();
     doc().items.push(it);
@@ -658,6 +665,20 @@
     return { symmetric: $('optSymmetric').checked, evenRows: $('optEvenRows').checked, minGap: opts().seatR * 2 + 14 };
   }
 
+  // ステージからはみ出したものを内側へ入れる。動かした数を返す
+  function fitInStage(list) {
+    let n = 0;
+    const st = doc().stage;
+    list.forEach(it => {
+      if (it.type === 'text') return;
+      const sz = SS.itemSize(it, renderOpts());
+      const m = it.type === 'player' ? 26 : Math.min(sz.w, sz.h) / 2;
+      const q = SS.render.clampToStage(st, it, m);
+      if (Math.abs(q.x - it.x) > 0.5 || Math.abs(q.y - it.y) > 0.5) { it.x = q.x; it.y = q.y; n++; }
+    });
+    return n;
+  }
+
   function tidyAuto(list, silent) {
     list = list || targetsPlayers();
     if (list.length < 2) { if (!silent) toast('整える奏者がいません'); return; }
@@ -665,6 +686,7 @@
     const shape = G.guessShape(list, c);
     const n = shape === 'arc' ? G.tidyArc(list, c, tidyOpts()) : G.tidyLine(list, c, tidyOpts());
     G.fixOverlap(list, opts().seatR * 2 + 8);
+    fitInStage(list);
     if (!silent) toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました`, true);
   }
 
@@ -683,6 +705,7 @@
         pushHistory();
         const n = G.tidyArc(list, c, tidyOpts());
         G.fixOverlap(list, opts().seatR * 2 + 8);
+        fitInStage(list);
         toast(`${n}列を扇形にそろえました`, true);
         break;
       }
@@ -690,6 +713,7 @@
         const list = targetsPlayers(); if (list.length < 2) return toast('奏者が2人以上必要です');
         pushHistory();
         const n = G.tidyLine(list, c, tidyOpts());
+        fitInStage(list);
         toast(`${n}列を横一列にそろえました`, true);
         break;
       }
@@ -717,6 +741,20 @@
         pushHistory();
         list.forEach(it => { it.x = 2 * c.x - it.x; it.rot = normAngle(-(it.rot || 0)); });
         toast('左右を入れ替えました', true);
+        break;
+      }
+      case 'arrangePerc': {
+        const has = doc().items.some(it => SS.auto.PERC_TYPES.has(it.type) || (it.type === 'player' && SS.partGroup(it.label).id === 'perc'));
+        if (!has) return toast('打楽器（楽器かPercの奏者）がありません');
+        pushHistory();
+        SS.auto.arrangePerc(doc().items, doc().stage, { yTop: 25 });
+        toast('打楽器を舞台奥に並べました', true);
+        break;
+      }
+      case 'fitStage': {
+        pushHistory();
+        const n = fitInStage(doc().items);
+        toast(n ? `${n}個をステージの内側に入れました` : 'はみ出しているものはありません', !!n);
         break;
       }
       case 'alignLeft': case 'alignRight': case 'alignCenterX':
@@ -804,6 +842,13 @@
     if (one && one.type === 'text') {
       h += `<label class="field">文字の大きさ<input id="propFont" type="range" min="12" max="120" value="${one.fontSize || 36}"></label>`;
     }
+    if (one && one.type === 'hina') {
+      const m = SS.hinaMaterials(one);
+      h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
+      h += `<div class="row2"><label class="field">平台<select id="propPanel">${Object.keys(SS.PANELS).map(k => `<option value="${k}"${(one.panel || '36') === k ? ' selected' : ''}>${SS.PANELS[k].name}</option>`).join('')}</select></label>`;
+      h += `<label class="field">枚数（横×奥）<span style="font-size:14px;color:#1f2733;padding:6px 0">${m.across}×${m.deep}＝${m.panels}枚</span></label></div>`;
+      h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
+    }
     if (one && one.type !== 'player' && one.type !== 'text') {
       h += `<div class="row2"><label class="field">幅(cm)<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
     }
@@ -827,6 +872,15 @@
     bind('propW', 'input', el => { if (+el.value >= 10) one.w = +el.value; });
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
     bind('propRot', 'input', el => { one.rot = +el.value; $('propRotVal').textContent = el.value + '°'; });
+    bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
+    bind('propPanel', 'change', el => {
+      one.panel = el.value;
+      // 幅・奥行を平台の大きさの倍数にそろえる
+      const pn = SS.PANELS[one.panel];
+      one.w = Math.max(1, Math.round(one.w / pn.w)) * pn.w;
+      one.h = Math.max(1, Math.round(one.h / pn.d)) * pn.d;
+      renderProps();
+    });
     bind('propColor', 'input', el => sel.forEach(it => { it.color = el.value; }));
     $('propColorReset').onclick = () => { pushHistory(); sel.forEach(it => { delete it.color; }); renderAll(); };
     ['propLabel', 'propName'].forEach(id => {
@@ -847,6 +901,18 @@
       x.parts.forEach(p => { h += `<tr><td data-part="${SS.esc(p.label)}" style="cursor:pointer" title="クリックで選択">　${SS.esc(p.label)}</td><td>${p.n}</td></tr>`; });
     });
     h += '</table><p class="hint small">パート名をクリックすると、そのパートの人をまとめて選べます。</p>';
+    const hinas = doc().items.filter(it => it.type === 'hina').sort((a, b) => (a.hgt || 0) - (b.hgt || 0));
+    if (hinas.length) {
+      const pan = {}, leg = {};
+      h += '<h3 style="margin-top:16px">ひな壇の部材（目安）</h3><ul class="mat-list">';
+      hinas.forEach(it => {
+        const m = SS.hinaMaterials(it);
+        pan[m.panelName] = (pan[m.panelName] || 0) + m.panels;
+        if (m.legs) leg[m.legName] = (leg[m.legName] || 0) + m.legs;
+        h += `<li>${it.step ? it.step + '段目 ' : ''}高さ${SS.heightName(it.hgt || 21.2)}：幅${(it.w / 100).toFixed(1)}m×奥行${(it.h / 100).toFixed(1)}m → 平台${m.panels}枚${m.legs ? '＋' + m.legName + m.legs + '個' : ''}</li>`;
+      });
+      h += '</ul><p class="hint small"><b>合計</b>：' + Object.keys(pan).map(k => `平台${k} ${pan[k]}枚`).concat(Object.keys(leg).map(k => `${k} ${leg[k]}個`)).join('／') + '<br>※足の数は「平台の前後の辺に、つなぎ目ごとに置く」ときの目安です。ホールの備品数を確認してください。</p>';
+    }
     $('countTable').innerHTML = h;
     $('countTable').querySelectorAll('[data-part]').forEach(td => {
       td.onclick = () => {
@@ -866,6 +932,8 @@
     if (document.activeElement !== $('stageW')) $('stageW').value = d.stage.w / 100;
     if (document.activeElement !== $('stageD')) $('stageD').value = d.stage.d / 100;
     $('stageShape').value = d.stage.shape || 'rect';
+    $('stageBWWrap').hidden = d.stage.shape !== 'shell';
+    if (document.activeElement !== $('stageBW')) $('stageBW').value = Math.round(SS.render.backWidth(d.stage)) / 100;
     $('optNames').checked = o.showNames;
     $('optStands').checked = o.showStands;
     $('optNumbers').checked = o.showNumbers;
@@ -885,7 +953,8 @@
   bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
   bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
-  bindSetting('stageShape', 'change', el => { doc().stage.shape = el.value; });
+  bindSetting('stageShape', 'change', el => { doc().stage.shape = el.value; if (el.value === 'shell' && !doc().stage.bw) doc().stage.bw = Math.round(doc().stage.w * 0.7); renderSettings(); });
+  bindSetting('stageBW', 'change', el => { const v = +el.value; if (v >= 2) { doc().stage.bw = Math.min(doc().stage.w, Math.round(v * 100)); doc().hall = ''; updateHallNote(); } });
   bindSetting('optNames', 'change', el => { opts().showNames = el.checked; });
   bindSetting('optStands', 'change', el => { opts().showStands = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
@@ -1495,7 +1564,9 @@
     openModal(`
       <h2>🎼 使い方</h2>
       <ol>
-        <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。</li>
+        <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
+        <li><b>ひな壇</b>：段数と平台（3×6尺／4×6尺）を選ぶと、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
+        <li><b>打楽器</b>：「🥁 打楽器を整列」で舞台奥にきれいに並べ直せます。</li>
         <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。</li>
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
@@ -1521,7 +1592,9 @@
   let lastAutoPush = 0;
   function ens() {
     if (!doc().ensemble) doc().ensemble = SS.auto.defaultState('band');
-    return doc().ensemble;
+    const e = doc().ensemble;
+    if (!e.hina) e.hina = SS.auto.defaultState(e.type).hina;
+    return e;
   }
   function applyAuto(opts2) {
     opts2 = opts2 || {};
@@ -1544,7 +1617,8 @@
     S.sel.clear();
     renderAll();
     if (opts2.fit) fitView();
-    if (!r.fits) toast('このステージだと奥行が足りないかもしれません（はみ出した人は端に寄せています）');
+    if (!r.fits) toast('このステージには入りきりません。ひな壇の段数か人数を減らすか、打楽器を別の場所に置いてください（はみ出した人は端に寄せています）');
+    else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
@@ -1563,6 +1637,26 @@
         <button data-d="-1" aria-label="${SS.esc(k)}を1人減らす">▼</button><b>${n}</b><button data-d="1" aria-label="${SS.esc(k)}を1人増やす">▲</button></div>`;
     }).join('');
     $('ensTotal').textContent = `合計 ${total} 人`;
+    // ひな壇
+    $('ensHornBox').checked = !!st.hornBox;
+    const H = st.hina;
+    document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
+    $('hinaPanel').value = H.panel || '36';
+    $('hinaDeep').value = String(H.deep || 1);
+    const std = [21.2, 42.4, 63.6, 84.8];
+    $('hinaHeights').innerHTML = Array.from({ length: H.steps || 0 }, (_, i) => {
+      const v = (H.heights && H.heights[i]) || std[i];
+      return `<label><b>${i + 1}段</b><select data-hstep="${i}">${SS.RISER_HEIGHTS.map(h => `<option value="${h.v}"${Math.abs(h.v - v) < 0.6 ? ' selected' : ''}>${h.name}：${h.how}</option>`).join('')}</select></label>`;
+    }).join('');
+    $('hinaHeights').querySelectorAll('select').forEach(sel => {
+      sel.onchange = () => {
+        const i = +sel.getAttribute('data-hstep');
+        const hh = ens().hina;
+        hh.heights = (hh.heights || std.slice()).slice();
+        hh.heights[i] = +sel.value;
+        applyAuto();
+      };
+    });
     $('partSteppers').querySelectorAll('.stepper button').forEach(b => {
       const k = b.parentElement.getAttribute('data-part');
       const d = +b.getAttribute('data-d');
@@ -1597,35 +1691,44 @@
     };
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
+  $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; applyAuto(); };
+  document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
+    b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
+  });
+  $('hinaPanel').onchange = e => { ens().hina.panel = e.target.value; applyAuto(); };
+  $('hinaDeep').onchange = e => { ens().hina.deep = +e.target.value; applyAuto(); };
   $('ensPerc').onchange = e => { ens().percInst = e.target.checked; applyAuto(); };
 
   // ------------------------------------------------------------ ホール（ステージ寸法）
   function buildHallSelect() {
     const sel = $('hallSelect');
     const groups = {};
-    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${SS.esc(h.name)}（${h.w}×${h.d}m）</option>`); });
+    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${h.q === 'est' ? '△ ' : '◎ '}${SS.esc(h.name)}（${h.fw}×${h.d}m）</option>`); });
     sel.innerHTML = '<option value="">いまの大きさのまま／手動で設定</option>' +
       Object.keys(groups).map(g => `<optgroup label="${g === '東京' ? '東京都' : g + '県'}">${groups[g].join('')}</optgroup>`).join('');
     sel.onchange = () => {
       const h = SS.HALLS[+sel.value];
       if (!h) { doc().hall = ''; updateHallNote(); return; }
       pushHistory();
-      doc().stage.w = Math.round(h.w * 100);
+      doc().stage.w = Math.round(h.fw * 100);
+      doc().stage.bw = Math.round(h.bw * 100);
       doc().stage.d = Math.round(h.d * 100);
+      doc().stage.shape = 'shell';
       doc().hall = h.name;
       updateHallNote();
       if (doc().items.some(it => it.auto)) applyAuto({ fit: true });
       else { renderAll(); fitView(); }
-      toast(`${h.name}（間口${h.w}m×奥行${h.d}m）にしました`, true);
+      toast(`${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
     };
   }
   function updateHallNote() {
     const h = SS.HALLS.find(x => x.name === doc().hall);
     const sel = $('hallSelect');
     sel.value = h ? String(SS.HALLS.indexOf(h)) : '';
+    const st = doc().stage;
     $('hallNote').innerHTML = h
-      ? `間口${h.w}m × 奥行${h.d}m${h.note ? '（' + SS.esc(h.note) + '）' : ''}。<a href="${h.src}" target="_blank" rel="noopener">出典</a>。反射板を置くと奥行が短くなることがあります。本番前にホールの図面で確認してください。`
-      : `いまのステージ：幅${doc().stage.w / 100}m × 奥行${doc().stage.d / 100}m`;
+      ? `<b class="${h.q === 'est' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら「設定」タブで直してください。`
+      : `いまのステージ：前の幅${st.w / 100}m／奥の幅${Math.round(SS.render.backWidth(st)) / 100}m／奥行${st.d / 100}m`;
   }
   $('btn3d').onclick = () => SS.view3d.open(null);
   SS.app = { doc, conductor, players, toast, selected };

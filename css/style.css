@@ -274,3 +274,14 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .v3-bar .check { color: #fff; margin: 0 6px; }
 .v3-hint { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); color: #fff; background: rgba(0,0,0,.45); padding: 6px 14px; border-radius: 16px; font-size: 12.5px; text-align: center; max-width: 92%; }
 .v3-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; pointer-events: none; }
+
+.q-ok { color: #1f8a4c; }
+.q-est { color: #c26a00; }
+
+.seg5 { grid-template-columns: repeat(5, 1fr); }
+.hina-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0 10px; background: #fbf8f2; }
+.hina-box h4 { margin: 0 0 6px; color: var(--text); }
+.hina-heights { display: flex; flex-direction: column; gap: 4px; }
+.hina-heights label { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 6px; font-size: 12.5px; }
+.hina-heights select { font: inherit; font-size: 12.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; }
+.mat-list { font-size: 12.5px; line-height: 1.7; margin: 4px 0 0; padding-left: 18px; }

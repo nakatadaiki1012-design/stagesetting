@@ -4,13 +4,50 @@ window.SS = window.SS || {};
 (function (SS) {
   const R = {};
 
+  // 奥（y=0）の幅。反射板の形（shell）では stage.bw、台形は幅の80%
+  R.backWidth = function (stage) {
+    if (stage.shape === 'shell') return Math.min(stage.w, stage.bw || stage.w * 0.7);
+    if (stage.shape === 'trapezoid') return stage.w * 0.8;
+    return stage.w;
+  };
   R.stagePath = function (stage) {
     const w = stage.w, d = stage.d;
     switch (stage.shape) {
       case 'apron': return `M0 0H${w}V${d}Q${w / 2} ${d + d * 0.28} 0 ${d}Z`;
-      case 'trapezoid': return `M${w * 0.1} 0H${w * 0.9}L${w} ${d}H0Z`;
+      case 'trapezoid': case 'shell': {
+        const b = R.backWidth(stage);
+        return `M${(w - b) / 2} 0H${(w + b) / 2}L${w} ${d}H0Z`;
+      }
       default: return `M0 0H${w}V${d}H0Z`;
     }
+  };
+  // 奥行 y の位置で使える左右の範囲 [左, 右]
+  R.xRange = function (stage, y) {
+    const b = R.backWidth(stage);
+    const t = Math.max(0, Math.min(1, y / stage.d));
+    const half = (b + (stage.w - b) * t) / 2;
+    return [stage.w / 2 - half, stage.w / 2 + half];
+  };
+  // 点がステージの内側（margin だけ内側）に入るように寄せる
+  R.clampToStage = function (stage, p, margin) {
+    margin = margin || 0;
+    const y = Math.max(margin, Math.min(stage.d - margin, p.y));
+    const [l, r] = R.xRange(stage, y);
+    return { x: Math.max(l + margin, Math.min(r - margin, p.x)), y };
+  };
+  R.insideStage = function (stage, p, margin) {
+    const q = R.clampToStage(stage, p, margin || 0);
+    return Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5;
+  };
+  R.stagePoly = function (stage) {
+    const w = stage.w, d = stage.d, b = R.backWidth(stage);
+    if (stage.shape === 'apron') {
+      const pts = [[0, 0], [w, 0], [w, d]];
+      for (let i = 1; i < 24; i++) { const t = i / 24; pts.push([w * (1 - t), d + 2 * t * (1 - t) * d * 0.28]); }
+      pts.push([0, d]);
+      return pts;
+    }
+    return [[(w - b) / 2, 0], [(w + b) / 2, 0], [w, d], [0, d]];
   };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
 
@@ -24,7 +61,7 @@ window.SS = window.SS || {};
     return s;
   };
 
-  const LAYER = { riser: 0, text: 3, player: 2 };
+  const LAYER = { riser: 0, riser46: 0, hina: 0, text: 3, player: 2 };
   R.sortedItems = items => items.map((it, i) => ({ it, i })).sort((a, b) => ((LAYER[a.it.type] ?? 1) - (LAYER[b.it.type] ?? 1)) || a.i - b.i).map(o => o.it);
 
   R.seatNumbers = function (doc, conductor) {

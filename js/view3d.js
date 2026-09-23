@@ -13,6 +13,7 @@ window.SS = window.SS || {};
   let hiddenHead = null;
   let labelsOn = true;
   let stageW = 14, stageD = 9;
+  V.clothes = 'black';
 
   function loadThree() {
     if (window.THREE) return Promise.resolve(window.THREE);
@@ -30,11 +31,13 @@ window.SS = window.SS || {};
   function mat(color, opt) {
     const key = color + JSON.stringify(opt || {});
     if (!matCache.has(key)) {
-      matCache.set(key, new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.6, metalness: 0 }, opt || {})));
+      const o = Object.assign({ roughness: 0.6, metalness: 0 }, opt || {});
+      o.color = new T.Color(color).convertSRGBToLinear();
+      matCache.set(key, new T.MeshStandardMaterial(o));
     }
     return matCache.get(key);
   }
-  const METAL = { metalness: 0.75, roughness: 0.3 };
+  const METAL = { metalness: 0.9, roughness: 0.22 };
   function mesh(geo, color, opt) {
     const m = new T.Mesh(geo, mat(color, opt));
     m.castShadow = true; m.receiveShadow = true;
@@ -49,112 +52,319 @@ window.SS = window.SS || {};
     m.position.set(x, y, z); g.add(m); return m;
   }
   function sph(g, r, color, x, y, z, opt) {
-    const m = mesh(new T.SphereGeometry(r, 18, 14), color, opt);
+    const m = mesh(new T.SphereGeometry(r, 20, 16), color, opt);
     m.position.set(x, y, z); g.add(m); return m;
   }
-  // 2点を結ぶ円柱（楽器の管など）
-  function tube(g, a, b, r, color, opt) {
+  // 2点を結ぶ円柱（楽器の管・腕など）
+  function tube(g, a, b, r, color, opt, r2) {
     const va = new T.Vector3(...a), vb = new T.Vector3(...b);
     const len = va.distanceTo(vb);
-    const m = mesh(new T.CylinderGeometry(r, r, len, 12), color, opt);
+    const m = mesh(new T.CylinderGeometry(r2 == null ? r : r2, r, len, 12), color, opt);
     m.position.copy(va.clone().add(vb).multiplyScalar(0.5));
     m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
     g.add(m); return m;
   }
   function bellCone(g, at, dir, r, len, color) {
-    const m = mesh(new T.CylinderGeometry(r, r * 0.25, len, 20, 1, true), color, Object.assign({ side: T.DoubleSide }, METAL));
+    const m = mesh(new T.CylinderGeometry(r, r * 0.22, len, 24, 1, true), color, Object.assign({ side: T.DoubleSide }, METAL));
     const va = new T.Vector3(...at), vd = new T.Vector3(...dir).normalize();
     m.position.copy(va.clone().add(vd.clone().multiplyScalar(-len / 2)));
     m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), vd);
     g.add(m); return m;
   }
 
-  const GOLD = '#d4ab45', SILVER = '#cfd4da', BLACKW = '#1e1e22', WOOD = '#8a5228', SKIN = '#f0c8a2', HAIR = '#3b2f28', PANTS = '#2e3440';
+  // 木目・板のテクスチャ（その場で描く）
+  const texCache = {};
+  function planksTexture(base, plankPx, vertical) {
+    const key = base + plankPx + vertical;
+    if (texCache[key]) return texCache[key];
+    const cv = document.createElement('canvas');
+    cv.width = 1024; cv.height = 1024;
+    const x = cv.getContext('2d');
+    const c = new T.Color(base);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < 1024 / plankPx; i++) {
+      const k = 0.86 + rnd() * 0.24;
+      x.fillStyle = `rgb(${Math.min(255, c.r * 255 * k) | 0},${Math.min(255, c.g * 255 * k) | 0},${Math.min(255, c.b * 255 * k) | 0})`;
+      if (vertical) x.fillRect(i * plankPx, 0, plankPx, 1024); else x.fillRect(0, i * plankPx, 1024, plankPx);
+      // 木目
+      x.strokeStyle = 'rgba(60,35,15,.10)';
+      for (let j = 0; j < 6; j++) {
+        x.beginPath();
+        const o = i * plankPx + rnd() * plankPx;
+        if (vertical) { x.moveTo(o, 0); x.bezierCurveTo(o + 6, 300, o - 6, 700, o + 3, 1024); } else { x.moveTo(0, o); x.bezierCurveTo(300, o + 6, 700, o - 6, 1024, o + 3); }
+        x.stroke();
+      }
+      x.fillStyle = 'rgba(40,25,10,.35)';
+      if (vertical) x.fillRect(i * plankPx, 0, 2, 1024); else x.fillRect(0, i * plankPx, 1024, 2);
+      // 板の継ぎ目
+      const cut = rnd() * 1024;
+      if (vertical) x.fillRect(i * plankPx, cut, plankPx, 2); else x.fillRect(cut, i * plankPx, 2, plankPx);
+    }
+    const t = new T.CanvasTexture(cv);
+    t.wrapS = t.wrapT = T.RepeatWrapping;
+    t.encoding = T.sRGBEncoding;
+    t.anisotropy = 8;
+    texCache[key] = t;
+    return t;
+  }
+
+  const GOLD = '#d9b04a', SILVER = '#d8dde3', BLACKW = '#161618', WOOD = '#7e4520', HAIRS = ['#2b211b', '#3b2f28', '#1c1714', '#4a3526', '#2a2522'];
+  const SKINS = ['#f1c9a5', '#e8b995', '#f5d3b3', '#dcae88'];
+  function hashId(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); }
+
+  // 腕（肩→ひじ→手）
+  function arm(g, sh, hand, color, skin) {
+    const mid = [(sh[0] + hand[0]) / 2 + Math.sign(sh[0]) * 0.07, Math.min(sh[1], hand[1]) - 0.1, (sh[2] + hand[2]) / 2 - 0.02];
+    tube(g, sh, mid, 0.045, color, { roughness: 0.8 }, 0.05);
+    tube(g, mid, hand, 0.037, color, { roughness: 0.8 }, 0.043);
+    sph(g, 0.034, skin, hand[0], hand[1], hand[2]);
+  }
 
   // 奏者（人＋楽器）
-  function makePlayer(it, color) {
+  function makePlayer(it, partColor) {
     const g = new T.Group();
     const kind = SS.instrumentKind(it.label);
     const standing = kind === 'perc' || kind === 'bass';
     const stool = kind === 'cb' || kind === 'drs';
     const bench = kind === 'pf';
-    const seatY = stool ? 0.62 : 0.45;
+    const seatY = stool ? 0.64 : 0.46;
+    const hsh = hashId(it.id || it.label);
+    const skin = SKINS[hsh % SKINS.length];
+    const hairC = HAIRS[(hsh >> 3) % HAIRS.length];
+    const longHair = (hsh >> 5) % 3 === 0;
+    const cloth = V.clothes === 'part' ? partColor : '#17181c';
+    const pants = V.clothes === 'part' ? '#2e3440' : '#141417';
     const head = [];
     if (!standing) {
-      if (bench) box(g, 0.75, 0.05, 0.35, '#2a2a2e', 0, 0.48, -0.08);
-      else if (stool) cyl(g, 0.17, 0.17, 0.05, '#555', 0, seatY, -0.05);
-      else {
-        box(g, 0.44, 0.05, 0.42, '#3d4250', 0, seatY, -0.05);
-        box(g, 0.44, 0.42, 0.04, '#3d4250', 0, seatY + 0.26, -0.26);
+      if (bench) {
+        box(g, 0.78, 0.07, 0.36, '#1d1d20', 0, 0.49, -0.08, { roughness: 0.4 });
+        [[-0.34, -0.22], [0.34, -0.22], [-0.34, 0.06], [0.34, 0.06]].forEach(p => box(g, 0.04, 0.46, 0.04, '#1d1d20', p[0], 0.23, p[1]));
+      } else if (stool) {
+        cyl(g, 0.17, 0.17, 0.06, '#222', 0, seatY, -0.05);
+        [0, 2.1, 4.2].forEach(a => tube(g, [Math.sin(a) * 0.05, seatY, -0.05 + Math.cos(a) * 0.05], [Math.sin(a) * 0.22, 0, -0.05 + Math.cos(a) * 0.22], 0.012, '#555', METAL));
+      } else {
+        // オーケストラ椅子（黒い座面・背もたれ・金属の脚）
+        box(g, 0.45, 0.06, 0.44, '#1c1d22', 0, seatY, -0.05, { roughness: 0.7 });
+        const back = box(g, 0.43, 0.36, 0.05, '#1c1d22', 0, seatY + 0.3, -0.27, { roughness: 0.7 });
+        back.rotation.x = -0.12;
+        [[-0.19, -0.24], [0.19, -0.24], [-0.19, 0.14], [0.19, 0.14]].forEach(p => cyl(g, 0.012, 0.012, seatY, '#8c9096', p[0], seatY / 2, p[1], METAL, 8));
+        [-0.19, 0.19].forEach(xx => tube(g, [xx, seatY, -0.24], [xx, seatY + 0.5, -0.29], 0.012, '#8c9096', METAL));
       }
-      [[-0.18, -0.22], [0.18, -0.22], [-0.18, 0.12], [0.18, 0.12]].forEach(p => cyl(g, 0.012, 0.012, seatY, '#777', p[0], seatY / 2, p[1]));
-      // 太もも・すね
-      box(g, 0.34, 0.14, 0.42, PANTS, 0, seatY + 0.09, 0.1);
-      box(g, 0.3, seatY, 0.12, PANTS, 0, seatY / 2, 0.3);
+      // 太もも・すね・くつ
+      [-0.1, 0.1].forEach(xx => {
+        tube(g, [xx, seatY + 0.09, -0.08], [xx * 1.2, seatY + 0.08, 0.3], 0.075, pants, { roughness: 0.85 });
+        tube(g, [xx * 1.2, seatY + 0.08, 0.3], [xx * 1.25, 0.06, 0.34], 0.058, pants, { roughness: 0.85 });
+        box(g, 0.1, 0.06, 0.24, '#0d0d0f', xx * 1.25, 0.03, 0.4, { roughness: 0.35 });
+      });
     } else {
-      cyl(g, 0.07, 0.06, 0.85, PANTS, -0.09, 0.43, 0);
-      cyl(g, 0.07, 0.06, 0.85, PANTS, 0.09, 0.43, 0);
+      [-0.1, 0.1].forEach(xx => {
+        tube(g, [xx, 0.9, 0], [xx, 0.06, 0.02], 0.07, pants, { roughness: 0.85 }, 0.06);
+        box(g, 0.1, 0.06, 0.26, '#0d0d0f', xx, 0.03, 0.08, { roughness: 0.35 });
+      });
     }
-    const hipY = standing ? 0.88 : seatY + 0.12;
-    const torsoH = 0.56;
-    cyl(g, 0.19, 0.15, torsoH, color, 0, hipY + torsoH / 2, -0.02);
+    const hipY = standing ? 0.92 : seatY + 0.14;
+    const torsoH = 0.55;
+    // 胴体（上がやや広い）
+    const torso = cyl(g, 0.2, 0.16, torsoH, cloth, 0, hipY + torsoH / 2, -0.03, { roughness: 0.85 }, 24);
+    torso.scale.set(1, 1, 0.62);
+    sph(g, 0.1, cloth, -0.17, hipY + torsoH - 0.05, -0.03, { roughness: 0.85 });
+    sph(g, 0.1, cloth, 0.17, hipY + torsoH - 0.05, -0.03, { roughness: 0.85 });
+    // えり（白）
+    const collar = cyl(g, 0.065, 0.07, 0.05, V.clothes === 'part' ? '#eeeeee' : '#f2f2f2', 0, hipY + torsoH + 0.005, -0.01, { roughness: 0.9 });
+    void collar;
+    cyl(g, 0.05, 0.055, 0.1, skin, 0, hipY + torsoH + 0.05, -0.01);
     const neckY = hipY + torsoH;
-    const headY = neckY + 0.14;
-    head.push(sph(g, 0.105, SKIN, 0, headY, 0));
-    const hair = sph(g, 0.112, HAIR, 0, headY + 0.03, -0.025);
-    hair.scale.set(1, 0.85, 1);
+    const headY = neckY + 0.17;
+    const hd = sph(g, 0.1, skin, 0, headY, 0.005);
+    hd.scale.set(0.92, 1.08, 1);
+    head.push(hd);
+    const hair = sph(g, 0.108, hairC, 0, headY + 0.035, -0.022, { roughness: 0.9 });
+    hair.scale.set(0.98, 0.9, 1.02);
     head.push(hair);
-    const mouth = [0, headY - 0.05, 0.1];
-    // 楽器
-    const my = mouth[1];
+    if (longHair) head.push(box(g, 0.2, 0.22, 0.08, hairC, 0, headY - 0.07, -0.08, { roughness: 0.9 }));
+    const shL = [0.19, neckY - 0.06, -0.02], shR = [-0.19, neckY - 0.06, -0.02];
+    const my = headY - 0.05, mouth = [0, my, 0.1];
+    // 楽器と手の位置
+    let hands = [[-0.12, hipY + 0.05, 0.25], [0.12, hipY + 0.05, 0.25]];
     switch (kind) {
-      case 'tp': tube(g, mouth, [0, my - 0.06, 0.5], 0.025, GOLD, METAL); bellCone(g, [0, my - 0.07, 0.62], [0, -0.1, 1], 0.065, 0.14, GOLD); break;
-      case 'tb': case 'btb':
-        tube(g, mouth, [0.02, my - 0.18, 0.95], 0.012, GOLD, METAL); tube(g, [0.06, my, 0.1], [0.06, my - 0.18, 1.0], 0.012, GOLD, METAL);
-        bellCone(g, [0.16, my - 0.05, 0.55], [0, -0.15, 1], kind === 'btb' ? 0.13 : 0.11, 0.25, GOLD); break;
+      case 'tp': {
+        tube(g, mouth, [0, my - 0.07, 0.44], 0.02, GOLD, METAL);
+        box(g, 0.05, 0.09, 0.08, GOLD, 0, my - 0.1, 0.24, METAL);
+        bellCone(g, [0, my - 0.08, 0.6], [0, -0.12, 1], 0.062, 0.16, GOLD);
+        hands = [[-0.02, my - 0.1, 0.24], [0.04, my - 0.12, 0.2]];
+        break;
+      }
+      case 'tb': case 'btb': {
+        tube(g, mouth, [0.0, my - 0.16, 0.95], 0.01, SILVER, METAL);
+        tube(g, [0.05, my - 0.01, 0.1], [0.05, my - 0.17, 0.95], 0.01, SILVER, METAL);
+        tube(g, [0.0, my - 0.16, 0.95], [0.05, my - 0.17, 0.95], 0.01, SILVER, METAL);
+        tube(g, [0.0, my - 0.02, 0.1], [0.14, my - 0.02, 0.1], 0.012, GOLD, METAL);
+        tube(g, [0.14, my - 0.02, 0.1], [0.15, my - 0.07, 0.42], 0.014, GOLD, METAL);
+        bellCone(g, [0.15, my - 0.08, 0.6], [0, -0.1, 1], kind === 'btb' ? 0.125 : 0.108, 0.3, GOLD);
+        hands = [[0.025, my - 0.12, 0.58], [0.1, my - 0.05, 0.18]];
+        break;
+      }
       case 'hr': {
-        const tor = mesh(new T.TorusGeometry(0.13, 0.025, 10, 28), GOLD, METAL);
-        tor.position.set(-0.12, hipY + 0.35, 0.18); tor.rotation.y = Math.PI / 2.4; g.add(tor);
-        bellCone(g, [-0.28, hipY + 0.12, -0.02], [-0.2, -0.2, -1], 0.15, 0.22, GOLD); break;
+        const tor = mesh(new T.TorusGeometry(0.13, 0.022, 10, 32), GOLD, METAL);
+        tor.position.set(-0.08, my - 0.18, 0.2); tor.rotation.y = Math.PI / 2.3; g.add(tor);
+        tube(g, mouth, [-0.06, my - 0.1, 0.2], 0.008, GOLD, METAL);
+        bellCone(g, [-0.3, hipY + 0.1, 0.02], [-0.25, -0.45, -1], 0.155, 0.26, GOLD);
+        hands = [[-0.28, hipY + 0.15, 0.06], [-0.02, my - 0.2, 0.24]];
+        break;
       }
-      case 'tuba': cyl(g, 0.17, 0.2, 0.75, GOLD, 0.06, hipY + 0.35, 0.2, METAL); bellCone(g, [0.18, headY + 0.25, 0.1], [0.1, 1, 0], 0.26, 0.3, GOLD); break;
-      case 'euph': cyl(g, 0.11, 0.13, 0.5, GOLD, 0.05, hipY + 0.3, 0.2, METAL); bellCone(g, [0.16, headY + 0.1, 0.12], [0.1, 1, 0], 0.15, 0.2, GOLD); break;
-      case 'fl': tube(g, [0.03, my, 0.08], [-0.62, my - 0.04, 0.14], 0.012, SILVER, METAL); break;
-      case 'picc': tube(g, [0.03, my, 0.08], [-0.33, my - 0.03, 0.12], 0.01, SILVER, METAL); break;
+      case 'tuba': {
+        const body = cyl(g, 0.16, 0.2, 0.72, GOLD, 0.07, hipY + 0.34, 0.2, METAL, 24); void body;
+        bellCone(g, [0.2, headY + 0.3, 0.12], [0.12, 1, -0.05], 0.27, 0.34, GOLD);
+        tube(g, mouth, [0.05, my - 0.1, 0.2], 0.012, GOLD, METAL);
+        hands = [[-0.05, hipY + 0.3, 0.33], [0.2, hipY + 0.35, 0.28]];
+        break;
+      }
+      case 'euph': {
+        cyl(g, 0.1, 0.13, 0.5, GOLD, 0.06, hipY + 0.28, 0.2, METAL, 20);
+        bellCone(g, [0.18, headY + 0.1, 0.14], [0.15, 1, 0], 0.15, 0.22, GOLD);
+        tube(g, mouth, [0.04, my - 0.1, 0.2], 0.01, GOLD, METAL);
+        hands = [[-0.02, hipY + 0.3, 0.3], [0.16, hipY + 0.32, 0.26]];
+        break;
+      }
+      case 'fl': case 'picc': {
+        const L = kind === 'fl' ? 0.66 : 0.33;
+        tube(g, [0.06, my + 0.01, 0.08], [0.06 - L, my - 0.04, 0.15], 0.011, SILVER, METAL);
+        hands = [[0.02, my - 0.04, 0.12], [-L * 0.55, my - 0.05, 0.15]];
+        break;
+      }
       case 'ob': case 'cl': case 'eh': case 'ssx': {
-        const c = kind === 'ssx' ? GOLD : kind === 'eh' ? '#4b3526' : BLACKW;
-        tube(g, mouth, [0, my - 0.52, 0.42], 0.018, c, kind === 'ssx' ? METAL : undefined);
-        bellCone(g, [0, my - 0.56, 0.45], [0, -0.8, 0.6], 0.035, 0.06, kind === 'ssx' ? GOLD : BLACKW); break;
+        const c = kind === 'ssx' ? GOLD : kind === 'eh' ? '#3d2a1c' : BLACKW;
+        const mo = kind === 'ssx' ? METAL : { roughness: 0.3 };
+        tube(g, mouth, [0, my - 0.5, 0.4], 0.016, c, mo, 0.02);
+        bellCone(g, [0, my - 0.55, 0.44], [0, -0.8, 0.6], 0.036, 0.07, c);
+        hands = [[0, my - 0.17, 0.22], [0, my - 0.36, 0.32]];
+        break;
       }
-      case 'bcl': tube(g, mouth, [0, 0.35, 0.3], 0.025, BLACKW); bellCone(g, [0, 0.3, 0.38], [0, 0.4, 1], 0.07, 0.1, SILVER); break;
+      case 'bcl': {
+        tube(g, mouth, [0, 0.36, 0.3], 0.024, BLACKW, { roughness: 0.3 });
+        bellCone(g, [0.02, 0.3, 0.4], [0, 0.4, 1], 0.07, 0.12, SILVER);
+        hands = [[0, my - 0.3, 0.22], [0, 0.55, 0.28]];
+        break;
+      }
       case 'asx': case 'tsx': case 'bsx': {
-        const r = kind === 'bsx' ? 0.07 : kind === 'tsx' ? 0.05 : 0.04;
-        const len = kind === 'bsx' ? 0.75 : kind === 'tsx' ? 0.62 : 0.5;
-        tube(g, mouth, [-0.08, my - 0.1, 0.2], 0.012, GOLD, METAL);
-        tube(g, [-0.1, my - 0.12, 0.2], [-0.14, my - 0.12 - len, 0.24], r, GOLD, METAL);
-        bellCone(g, [-0.14, my - 0.08 - len * 0.55, 0.3], [0, 0.6, 0.8], r * 1.7, 0.12, GOLD); break;
+        const r = kind === 'bsx' ? 0.065 : kind === 'tsx' ? 0.048 : 0.04;
+        const len = kind === 'bsx' ? 0.72 : kind === 'tsx' ? 0.6 : 0.48;
+        tube(g, mouth, [-0.07, my - 0.12, 0.2], 0.011, GOLD, METAL);
+        tube(g, [-0.08, my - 0.12, 0.2], [-0.13, my - 0.12 - len, 0.24], r, GOLD, METAL, r * 0.7);
+        bellCone(g, [-0.13, my - 0.05 - len * 0.62, 0.32], [0, 0.6, 0.8], r * 1.8, 0.14, GOLD);
+        hands = [[-0.09, my - 0.2, 0.22], [-0.12, my - 0.12 - len * 0.7, 0.27]];
+        break;
       }
-      case 'fg': tube(g, [0.12, hipY + 0.05, 0.2], [-0.15, headY + 0.45, 0.02], 0.035, WOOD); break;
+      case 'fg': {
+        tube(g, [0.12, hipY + 0.05, 0.2], [-0.16, headY + 0.45, 0.0], 0.034, WOOD, { roughness: 0.35 });
+        tube(g, mouth, [-0.02, my - 0.08, 0.14], 0.005, SILVER, METAL);
+        hands = [[0.05, hipY + 0.2, 0.18], [-0.07, my - 0.12, 0.12]];
+        break;
+      }
       case 'vn': case 'va': {
         const s = kind === 'va' ? 1.12 : 1;
-        const b = box(g, 0.2 * s, 0.05, 0.36 * s, WOOD, 0.13, neckY - 0.02, 0.17);
+        const b = box(g, 0.2 * s, 0.045, 0.36 * s, WOOD, 0.13, neckY - 0.01, 0.17, { roughness: 0.3 });
         b.rotation.y = -0.5; b.rotation.z = 0.3;
-        tube(g, [-0.3, neckY - 0.05, 0.2], [0.3, neckY + 0.02, 0.05], 0.004, '#c9b58a'); break;
+        tube(g, [-0.32, neckY - 0.03, 0.22], [0.3, neckY + 0.03, 0.05], 0.004, '#c9b58a');
+        hands = [[0.28 * s, neckY - 0.02, 0.33 * s], [-0.18, neckY - 0.03, 0.2]];
+        break;
       }
-      case 'vc': { const b = box(g, 0.42, 0.72, 0.2, WOOD, 0, 0.62, 0.34); b.rotation.x = -0.25; tube(g, [0, 1.0, 0.27], [0.02, 1.35, 0.18], 0.02, '#222'); break; }
-      case 'cb': { const b = box(g, 0.6, 1.1, 0.24, WOOD, 0.08, 0.72, 0.36); b.rotation.x = -0.12; tube(g, [0.08, 1.27, 0.3], [0.1, 1.85, 0.24], 0.025, '#222'); break; }
-      case 'gt': case 'bass': { const b = box(g, 0.34, 0.08, 0.26, kind === 'bass' ? '#6b2a2a' : WOOD, -0.08, hipY + 0.2, 0.16); tube(g, [0.05, hipY + 0.22, 0.16], [0.5, hipY + 0.35, 0.14], 0.02, WOOD); void b; break; }
+      case 'vc': {
+        const b = box(g, 0.42, 0.72, 0.2, WOOD, 0, 0.62, 0.36, { roughness: 0.3 }); b.rotation.x = -0.25;
+        tube(g, [0, 1.0, 0.28], [0.02, 1.35, 0.18], 0.02, '#1a1a1a');
+        tube(g, [0, 0.26, 0.42], [0, 0.0, 0.5], 0.006, '#888', METAL);
+        tube(g, [-0.36, 0.72, 0.36], [0.24, 0.66, 0.4], 0.004, '#c9b58a');
+        hands = [[0.05, 1.1, 0.24], [-0.22, 0.72, 0.38]];
+        break;
+      }
+      case 'cb': {
+        const b = box(g, 0.6, 1.1, 0.24, WOOD, 0.08, 0.72, 0.38, { roughness: 0.3 }); b.rotation.x = -0.12;
+        tube(g, [0.08, 1.27, 0.3], [0.1, 1.85, 0.24], 0.025, '#1a1a1a');
+        hands = [[0.1, 1.45, 0.28], [-0.2, 0.75, 0.42]];
+        break;
+      }
+      case 'gt': case 'bass': {
+        box(g, 0.34, 0.08, 0.26, kind === 'bass' ? '#6b2a2a' : WOOD, -0.08, hipY + 0.2, 0.16, { roughness: 0.3 });
+        tube(g, [0.05, hipY + 0.22, 0.16], [0.5, hipY + 0.35, 0.14], 0.02, WOOD);
+        hands = [[-0.08, hipY + 0.22, 0.24], [0.35, hipY + 0.32, 0.18]];
+        break;
+      }
+      case 'perc': case 'drs': {
+        [-1, 1].forEach(s => {
+          tube(g, [s * 0.12, hipY + 0.3, 0.3], [s * 0.15, hipY + 0.22, 0.62], 0.006, '#c9a36b');
+          sph(g, 0.022, '#e8e0d0', s * 0.15, hipY + 0.22, 0.62);
+        });
+        hands = [[-0.12, hipY + 0.3, 0.3], [0.12, hipY + 0.3, 0.3]];
+        break;
+      }
+      case 'pf': hands = [[-0.12, 0.74, 0.34], [0.12, 0.74, 0.34]]; break;
       default: break;
     }
-    // 譜面台
+    // 右手は -x 側、左手は +x 側
+    const hr = hands[0][0] <= hands[1][0] ? hands[0] : hands[1];
+    const hl = hands[0][0] <= hands[1][0] ? hands[1] : hands[0];
+    arm(g, shR, hr, cloth, skin);
+    arm(g, shL, hl, cloth, skin);
+    // 譜面台（楽譜つき）
     const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
     if (!noStand && V.showStands) {
-      const sz = kind === 'tb' || kind === 'btb' ? [-0.26, 0.58] : kind === 'vc' ? [0, 0.66] : kind === 'cb' ? [-0.12, 0.7] : [0, 0.56];
-      cyl(g, 0.01, 0.01, 1.05, '#444', sz[0], 0.52, sz[1]);
-      const desk = box(g, 0.5, 0.32, 0.015, '#2f333b', sz[0], 1.12, sz[1] - 0.04);
-      desk.rotation.x = -0.45;
+      const sz = kind === 'tb' || kind === 'btb' ? [-0.28, 0.6] : kind === 'vc' ? [0, 0.7] : kind === 'cb' ? [-0.12, 0.74] : [0, 0.58];
+      [0, 2.1, 4.2].forEach(a => tube(g, [sz[0], 0.3, sz[1]], [sz[0] + Math.sin(a) * 0.22, 0.0, sz[1] + Math.cos(a) * 0.22], 0.008, '#222'));
+      cyl(g, 0.009, 0.009, 0.86, '#222', sz[0], 0.55, sz[1]);
+      // 楽譜は奏者の方を向く（上が奥に倒れる）
+      const desk = new T.Group();
+      desk.position.set(sz[0], 1.12, sz[1] + 0.03);
+      desk.rotation.x = 0.42;
+      box(desk, 0.5, 0.34, 0.012, '#1a1a1d', 0, 0, 0, { roughness: 0.5 });
+      box(desk, 0.44, 0.3, 0.004, '#f4f1e8', 0, 0.01, -0.009, { roughness: 0.95 });
+      box(desk, 0.5, 0.03, 0.05, '#1a1a1d', 0, -0.17, -0.02);
+      g.add(desk);
     }
     return { g, head };
+  }
+
+  // 平台の高さ：ひな壇(hina)は it.hgt。昔の平台は前から 21, 42, 64cm…
+  function riserHeights(items) {
+    const map = new Map();
+    const rs = items.filter(it => it.type === 'riser' || it.type === 'riser46');
+    const ys = [...new Set(rs.map(r => Math.round(r.y / 30)))].sort((a, b) => b - a);
+    const std = [21.2, 42.4, 63.6, 84.8];
+    rs.forEach(r => map.set(r, (r.hgt || std[Math.min(3, ys.indexOf(Math.round(r.y / 30)))]) / 100));
+    items.filter(it => it.type === 'hina').forEach(h => map.set(h, (h.hgt || 21.2) / 100));
+    return map;
+  }
+  function heightAt(x, y, rh) {
+    let h = 0;
+    rh.forEach((hh, r) => {
+      const a = -(r.rot || 0) * Math.PI / 180;
+      const dx = x - r.x, dy = y - r.y;
+      const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+      if (Math.abs(lx) <= (r.w || 182) / 2 + 2 && Math.abs(ly) <= (r.h || 91) / 2 + 2) h = Math.max(h, hh);
+    });
+    return h;
+  }
+
+  // ひな壇（平台＋足＋まわりの黒い幕）
+  function makeRiser(g, w, d, hgt, panelD) {
+    const top = 0.121;
+    const woodTex = planksTexture('#c89a62', 64, false);
+    const topMat = new T.MeshStandardMaterial({ map: woodTex, roughness: 0.55 });
+    woodTex.repeat.set(w / 1.2, d / 1.2);
+    const slab = new T.Mesh(new T.BoxGeometry(w, top, d), [mat('#8a6a44'), mat('#8a6a44'), topMat, mat('#6a4f30'), mat('#8a6a44'), mat('#8a6a44')]);
+    slab.position.y = hgt - top / 2;
+    slab.castShadow = true; slab.receiveShadow = true;
+    g.add(slab);
+    // 平台のつなぎ目
+    for (let x = -w / 2 + 1.82; x < w / 2 - 0.05; x += 1.82) box(g, 0.006, 0.002, d, '#5a4128', x, hgt + 0.001, 0);
+    for (let z = -d / 2 + panelD; z < d / 2 - 0.05; z += panelD) box(g, w, 0.002, 0.006, '#5a4128', 0, hgt + 0.001, z);
+    if (hgt > 0.13) {
+      // 足（箱馬）は見えないよう幕で囲う
+      const skirt = mat('#0e0e10', { roughness: 0.95 });
+      const hs = hgt - top;
+      [[0, d / 2 - 0.005, w, 0.01], [0, -d / 2 + 0.005, w, 0.01]].forEach(p => { const m = new T.Mesh(new T.BoxGeometry(p[2], hs, p[3]), skirt); m.position.set(p[0], hs / 2, p[1]); m.receiveShadow = true; g.add(m); });
+      [[-w / 2 + 0.005], [w / 2 - 0.005]].forEach(p => { const m = new T.Mesh(new T.BoxGeometry(0.01, hs, d), skirt); m.position.set(p[0], hs / 2, 0); g.add(m); });
+    }
   }
 
   // 楽器・台など
@@ -163,45 +373,89 @@ window.SS = window.SS || {};
     const c = SS.CATALOG[it.type] || SS.CATALOG.box;
     const w = (it.w || c.w || 80) / 100, d = (it.h || c.h || 60) / 100;
     switch (it.type) {
-      case 'podium': box(g, w, 0.2, d, '#9a7448', 0, 0.1, 0); box(g, 0.6, 1.05, 0.03, '#333', 0, 0.2 + 0.55, -d / 2 + 0.05).rotation.x = 0; break;
-      case 'riser': case 'riser46': box(g, w, riserH, d, '#c49a64', 0, riserH / 2, 0); break;
-      case 'timp32': case 'timp29': case 'timp26': case 'timp23': case 'timp': {
-        const r = Math.min(w, d) / 2 * 0.92;
-        cyl(g, r, r * 0.55, 0.55, '#b87333', 0, 0.42, 0, METAL, 28);
-        cyl(g, r * 1.02, r * 1.02, 0.02, '#f3ead7', 0, 0.71, 0, { roughness: 0.9 }, 28);
-        [0, 2.1, 4.2].forEach(a => cyl(g, 0.015, 0.015, 0.2, '#666', Math.sin(a) * r * 0.5, 0.1, Math.cos(a) * r * 0.5));
+      case 'podium': {
+        makeRiser(g, w, d, 0.2, d);
+        // 指揮者用の譜面台
+        cyl(g, 0.02, 0.02, 0.9, '#222', 0, 0.65, -d / 2 + 0.12);
+        const desk = box(g, 0.65, 0.45, 0.015, '#1a1a1d', 0, 1.25, -d / 2 + 0.14); desk.rotation.x = -0.35;
+        box(g, 0.58, 0.4, 0.005, '#f4f1e8', 0, 1.25, -d / 2 + 0.152).rotation.x = -0.35;
         break;
       }
-      case 'marimba': case 'marimba43': box(g, w, 0.06, d * 0.8, '#7a3f22', 0, 0.9, 0); box(g, w * 0.98, 0.5, d * 0.5, '#555', 0, 0.55, 0, METAL); break;
-      case 'xylo': case 'vib': case 'glock': case 'keyboard': box(g, w, 0.07, d, color, 0, 0.88, 0, it.type === 'vib' || it.type === 'glock' ? METAL : undefined); box(g, w * 0.9, 0.05, d * 0.7, '#444', 0, 0.3, 0); [-1, 1].forEach(s => box(g, 0.05, 0.6, 0.05, '#555', s * w * 0.4, 0.55, 0)); break;
-      case 'chimes': box(g, w, 0.05, 0.05, '#555', 0, 1.9, 0); for (let i = 0; i < 18; i++) cyl(g, 0.02, 0.02, 1.2 - i * 0.03, '#d8dce2', -w / 2 + 0.08 + i * (w - 0.16) / 17, 1.3 - i * 0.015, i % 2 ? 0.06 : -0.06, METAL, 10); [-1, 1].forEach(s => box(g, 0.05, 1.9, 0.05, '#555', s * w / 2, 0.95, 0)); break;
-      case 'bd': { const m = cyl(g, 0.45, 0.45, 0.41, '#e8e8e8', 0, 0.75, 0, undefined, 30); m.rotation.z = Math.PI / 2; box(g, 0.1, 0.5, 0.5, '#555', 0, 0.25, 0); break; }
-      case 'sd': cyl(g, 0.18, 0.18, 0.14, '#ddd', 0, 0.68, 0, METAL); cyl(g, 0.012, 0.012, 0.6, '#555', 0, 0.3, 0); break;
-      case 'cym': cyl(g, 0.23, 0.23, 0.01, '#e0c050', 0, 1.0, 0, METAL); cyl(g, 0.012, 0.012, 1.0, '#555', 0, 0.5, 0); break;
-      case 'tam': cyl(g, 0.45, 0.45, 0.02, '#b08a3a', 0, 1.1, 0, METAL).rotation.x = Math.PI / 2; box(g, w, 0.05, 0.05, '#444', 0, 1.65, 0); break;
-      case 'drums': { const b = cyl(g, 0.28, 0.28, 0.4, '#c33', 0, 0.3, 0.25); b.rotation.x = Math.PI / 2; cyl(g, 0.18, 0.18, 0.2, '#c33', -0.3, 0.7, 0.1); cyl(g, 0.2, 0.2, 0.22, '#c33', 0.35, 0.5, 0); cyl(g, 0.2, 0.2, 0.01, '#e0c050', -0.5, 1.05, -0.2, METAL); cyl(g, 0.23, 0.23, 0.01, '#e0c050', 0.55, 1.1, -0.2, METAL); break; }
+      case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
+      case 'hina': makeRiser(g, w, d, riserH, ((SS.PANELS[it.panel || '36'] || { d: 91 }).d) / 100); break;
+      case 'timp32': case 'timp29': case 'timp26': case 'timp23': case 'timp': {
+        const r = Math.min(w, d) / 2 * 0.9;
+        const bowl = mesh(new T.SphereGeometry(r, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), '#b87333', METAL);
+        bowl.scale.set(1, 0.85, 1); bowl.position.y = 0.72; g.add(bowl);
+        cyl(g, r * 1.04, r * 1.04, 0.05, '#9a9da3', 0, 0.72, 0, METAL, 32);
+        cyl(g, r, r, 0.012, '#f3ead7', 0, 0.75, 0, { roughness: 0.85 }, 32);
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; tube(g, [Math.sin(a) * r * 1.02, 0.74, Math.cos(a) * r * 1.02], [Math.sin(a) * r * 0.9, 0.5, Math.cos(a) * r * 0.9], 0.008, '#b0b3b8', METAL); }
+        [0, 2.1, 4.2].forEach(a => tube(g, [Math.sin(a) * r * 0.5, 0.35, Math.cos(a) * r * 0.5], [Math.sin(a) * r * 0.85, 0.02, Math.cos(a) * r * 0.85], 0.02, '#555', METAL));
+        box(g, 0.12, 0.05, 0.25, '#333', 0, 0.03, r * 0.9);
+        break;
+      }
+      case 'marimba': case 'marimba43': case 'xylo': case 'vib': case 'glock': {
+        // 鍵盤（2列）と共鳴管
+        const n = Math.max(20, Math.round(w / 0.045));
+        const metalBars = it.type === 'vib' || it.type === 'glock';
+        const barMat = mat(metalBars ? '#c8ccd2' : '#7a3a1c', metalBars ? METAL : { roughness: 0.45 });
+        const barH = 0.9;
+        const low = it.type.startsWith('marimba') ? 1 : 0.8;
+        const geo = new T.BoxGeometry(1, 1, 1);
+        const inst = new T.InstancedMesh(geo, barMat, n * 2);
+        const m4 = new T.Matrix4();
+        let k = 0;
+        for (let i = 0; i < n; i++) {
+          const t = i / (n - 1);
+          // 奏者から見て左（+x）が低音で長い鍵盤
+          const len = (d * 0.42) * (0.55 + 0.45 * (low * t + (1 - low) * 0.5));
+          const x = -w / 2 + 0.04 + t * (w - 0.08);
+          m4.compose(new T.Vector3(x, barH, -d * 0.22), new T.Quaternion(), new T.Vector3(w / n * 0.8, 0.022, len)); inst.setMatrixAt(k++, m4);
+          m4.compose(new T.Vector3(x + w / n * 0.5, barH + 0.02, d * 0.22), new T.Quaternion(), new T.Vector3(w / n * 0.8, 0.022, len * 0.9)); inst.setMatrixAt(k++, m4);
+        }
+        inst.castShadow = true;
+        g.add(inst);
+        box(g, w, 0.04, d * 0.95, '#3a2a1c', 0, barH - 0.04, 0);
+        if (it.type !== 'glock') for (let i = 0; i < n; i += 2) { const t = i / (n - 1); const L = 0.1 + 0.55 * t * (it.type.startsWith('marimba') ? 1 : 0.4); cyl(g, 0.02, 0.02, L, '#a8a09a', -w / 2 + 0.04 + t * (w - 0.08), barH - 0.06 - L / 2, 0, METAL, 8); }
+        [-1, 1].forEach(sx => { box(g, 0.05, barH, 0.05, '#333', sx * (w / 2 - 0.06), barH / 2, -d * 0.3); box(g, 0.05, barH, 0.05, '#333', sx * (w / 2 - 0.06), barH / 2, d * 0.3); });
+        break;
+      }
+      case 'keyboard': box(g, w, 0.08, d, '#222', 0, 0.85, 0); box(g, w * 0.9, 0.02, d * 0.5, '#f5f5f5', 0, 0.9, d * 0.18); [-1, 1].forEach(s => tube(g, [s * w * 0.35, 0.83, 0], [s * w * 0.3, 0, 0], 0.015, '#444')); break;
+      case 'chimes': {
+        box(g, w, 0.05, 0.05, '#555', 0, 1.9, 0, METAL);
+        for (let i = 0; i < 18; i++) cyl(g, 0.019, 0.019, 1.3 - i * 0.03, '#e2d8b8', -w / 2 + 0.08 + i * (w - 0.16) / 17, 1.85 - (1.3 - i * 0.03) / 2, i % 2 ? 0.06 : -0.06, METAL, 12);
+        [-1, 1].forEach(s => box(g, 0.05, 1.9, 0.05, '#555', s * w / 2, 0.95, 0, METAL));
+        box(g, w, 0.04, d, '#444', 0, 0.05, 0);
+        break;
+      }
+      case 'bd': { const m = cyl(g, 0.46, 0.46, 0.41, '#efeae0', 0, 0.78, 0, { roughness: 0.6 }, 36); m.rotation.z = Math.PI / 2; [-0.2, 0.2].forEach(x => { const r = cyl(g, 0.47, 0.47, 0.04, '#6b3a1c', x, 0.78, 0, undefined, 36); r.rotation.z = Math.PI / 2; }); box(g, 0.5, 0.06, 0.5, '#444', 0, 0.2, 0); tube(g, [0, 0.2, 0], [0, 0.4, 0], 0.03, '#444'); break; }
+      case 'sd': cyl(g, 0.18, 0.18, 0.14, '#ddd', 0, 0.7, 0, METAL, 28); cyl(g, 0.175, 0.175, 0.005, '#f8f8f5', 0, 0.775, 0); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.6, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
+      case 'cym': cyl(g, 0.23, 0.02, 0.03, '#e2c35a', 0, 1.02, 0, METAL, 32); cyl(g, 0.012, 0.012, 1.0, '#555', 0, 0.5, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.2, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
+      case 'tam': { const m = cyl(g, 0.45, 0.45, 0.02, '#b08a3a', 0, 1.1, 0, METAL, 36); m.rotation.x = Math.PI / 2; box(g, w, 0.05, 0.05, '#333', 0, 1.62, 0); [-1, 1].forEach(s => box(g, 0.05, 1.62, 0.05, '#333', s * w / 2, 0.81, 0)); break; }
+      case 'drums': { const b = cyl(g, 0.28, 0.28, 0.4, '#8c1d24', 0, 0.3, 0.25, { roughness: 0.3 }); b.rotation.x = Math.PI / 2; cyl(g, 0.18, 0.18, 0.2, '#8c1d24', -0.3, 0.7, 0.1, { roughness: 0.3 }); cyl(g, 0.2, 0.2, 0.22, '#8c1d24', 0.35, 0.5, 0, { roughness: 0.3 }); cyl(g, 0.2, 0.02, 0.02, '#e2c35a', -0.5, 1.05, -0.2, METAL); cyl(g, 0.23, 0.02, 0.02, '#e2c35a', 0.55, 1.1, -0.2, METAL); break; }
       case 'piano': case 'pianoFull': {
         const sh = new T.Shape();
         const hw = w / 2, hd = d / 2;
         sh.moveTo(-hw, hd); sh.lineTo(-hw, -hd + w * 0.1); sh.quadraticCurveTo(-hw, -hd, -hw + w * 0.25, -hd);
         sh.quadraticCurveTo(hw, -hd + d * 0.02, hw * 0.55, -hd + d * 0.45); sh.quadraticCurveTo(hw, hd * 0.3, hw, hd); sh.lineTo(-hw, hd);
-        const geo = new T.ExtrudeGeometry(sh, { depth: 0.35, bevelEnabled: false });
-        const m = mesh(geo, '#111', { roughness: 0.25, metalness: 0.1 });
+        const geo = new T.ExtrudeGeometry(sh, { depth: 0.33, bevelEnabled: false });
+        const m = mesh(geo, '#0c0c0e', { roughness: 0.12, metalness: 0.2 });
         m.rotation.x = Math.PI / 2; m.position.y = 1.0; g.add(m);
-        [[-hw + 0.1, hd - 0.1], [hw - 0.15, hd - 0.1], [0, -hd + 0.4]].forEach(p => cyl(g, 0.05, 0.04, 0.65, '#111', p[0], 0.32, p[1]));
-        box(g, w, 0.1, 0.18, '#f5f5f5', 0, 0.72, hd - 0.02);
-        const lid = mesh(geo, '#151515', { roughness: 0.25 });
-        lid.rotation.x = Math.PI / 2; lid.rotation.z = 0; lid.position.y = 1.0; lid.scale.set(1, 1, 0.05);
-        const pivot = new T.Group(); pivot.position.set(-hw, 1.0, 0); lid.position.set(hw, 0, 0); pivot.add(lid); pivot.rotation.z = 0.6; g.add(pivot);
+        [[-hw + 0.1, hd - 0.1], [hw - 0.15, hd - 0.1], [0, -hd + 0.4]].forEach(p => cyl(g, 0.055, 0.04, 0.67, '#0c0c0e', p[0], 0.33, p[1], { roughness: 0.15 }));
+        box(g, w, 0.12, 0.2, '#0c0c0e', 0, 0.72, hd + 0.02, { roughness: 0.15 });
+        box(g, w * 0.92, 0.02, 0.15, '#f7f7f2', 0, 0.79, hd + 0.03);
+        const lid = mesh(geo, '#0c0c0e', { roughness: 0.12, metalness: 0.2 });
+        lid.rotation.x = Math.PI / 2; lid.scale.set(1, 1, 0.05);
+        const pivot = new T.Group(); pivot.position.set(-hw, 1.0, 0); lid.position.set(hw, 0, 0); pivot.add(lid); pivot.rotation.z = 0.62; g.add(pivot);
         break;
       }
-      case 'upright': box(g, w, 1.25, d, '#1a1a1a', 0, 0.62, 0, { roughness: 0.3 }); break;
-      case 'harp': { const b = box(g, 0.08, 1.8, d, '#c9a060', 0, 0.9, 0); b.rotation.x = 0.15; tube(g, [0, 1.75, -d / 2], [0, 1.6, d / 2], 0.04, '#c9a060'); box(g, w, 0.12, 0.35, '#c9a060', 0, 0.06, -d / 3); break; }
-      case 'amp': box(g, w, 0.5, d, '#2a2a2a', 0, 0.25, 0); break;
-      case 'mic': cyl(g, 0.01, 0.01, 1.5, '#333', 0, 0.75, 0); sph(g, 0.03, '#555', 0, 1.52, 0); break;
-      case 'chair': box(g, 0.44, 0.05, 0.42, '#3d4250', 0, 0.45, 0); box(g, 0.44, 0.42, 0.04, '#3d4250', 0, 0.71, -0.2); break;
-      case 'stand': case 'cstand': cyl(g, 0.01, 0.01, 1.05, '#444', 0, 0.52, 0); box(g, w, 0.35, 0.015, '#2f333b', 0, 1.12, 0).rotation.x = -0.45; break;
-      case 'table': box(g, w, 0.04, d, '#8a6d4a', 0, 0.8, 0); [-1, 1].forEach(sx => [-1, 1].forEach(sz => box(g, 0.04, 0.8, 0.04, '#555', sx * (w / 2 - 0.05), 0.4, sz * (d / 2 - 0.05)))); break;
+      case 'upright': box(g, w, 1.25, d, '#0c0c0e', 0, 0.62, 0, { roughness: 0.15 }); box(g, w * 0.9, 0.02, 0.15, '#f7f7f2', 0, 0.75, d / 2 + 0.07); break;
+      case 'harp': { const b = box(g, 0.08, 1.8, d * 0.9, '#c9a060', 0, 0.9, 0, { roughness: 0.35 }); b.rotation.x = 0.15; tube(g, [0, 1.8, -d / 2], [0, 1.6, d / 2], 0.045, '#c9a060'); tube(g, [0, 0.1, d / 2 - 0.05], [0, 1.65, d / 2 - 0.05], 0.035, '#d8b36a', { roughness: 0.3 }); box(g, w, 0.12, 0.35, '#c9a060', 0, 0.06, -d / 3); break; }
+      case 'amp': box(g, w, 0.5, d, '#1d1d1f', 0, 0.25, 0); box(g, w * 0.85, 0.3, 0.005, '#333', 0, 0.28, d / 2 + 0.003); break;
+      case 'mic': cyl(g, 0.01, 0.01, 1.5, '#222', 0, 0.75, 0, METAL); sph(g, 0.03, '#555', 0, 1.52, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.02, 0], [Math.sin(a) * 0.25, 0.0, Math.cos(a) * 0.25], 0.01, '#222')); break;
+      case 'chair': box(g, 0.45, 0.06, 0.44, '#1c1d22', 0, 0.46, 0); box(g, 0.43, 0.36, 0.05, '#1c1d22', 0, 0.76, -0.2); [[-0.19, -0.2], [0.19, -0.2], [-0.19, 0.18], [0.19, 0.18]].forEach(p => cyl(g, 0.012, 0.012, 0.46, '#8c9096', p[0], 0.23, p[1], METAL, 8)); break;
+      case 'stand': case 'cstand': cyl(g, 0.01, 0.01, 0.9, '#222', 0, 0.45, 0); box(g, w, 0.34, 0.012, '#1a1a1d', 0, 1.12, 0).rotation.x = 0.42; break;
+      case 'table': box(g, w, 0.04, d, '#1a1a1d', 0, 0.8, 0); box(g, w * 0.95, 0.005, d * 0.9, '#3a2a4a', 0, 0.823, 0); [-1, 1].forEach(sx => [-1, 1].forEach(sz => box(g, 0.035, 0.8, 0.035, '#555', sx * (w / 2 - 0.05), 0.4, sz * (d / 2 - 0.05)))); break;
       case 'circle': cyl(g, w / 2, w / 2, 0.5, color, 0, 0.25, 0); break;
       case 'text': return null;
       default: box(g, w, 0.5, d, color, 0, 0.25, 0);
@@ -225,23 +479,19 @@ window.SS = window.SS || {};
     return sp;
   }
 
-  // 平台の高さ：前（客席側）から 20cm, 40cm, 60cm… と上がる（it.hgt があればそれを使う）
-  function riserHeights(items) {
-    const rs = items.filter(it => it.type === 'riser' || it.type === 'riser46');
-    const ys = [...new Set(rs.map(r => Math.round(r.y / 30)))].sort((a, b) => b - a);
-    const map = new Map();
-    rs.forEach(r => map.set(r, (r.hgt || (ys.indexOf(Math.round(r.y / 30)) + 1) * 20) / 100));
-    return map;
-  }
-  function heightAt(x, y, rh) {
-    let h = 0;
-    rh.forEach((hh, r) => {
-      const a = -(r.rot || 0) * Math.PI / 180;
-      const dx = x - r.x, dy = y - r.y;
-      const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
-      if (Math.abs(lx) <= (r.w || 182) / 2 && Math.abs(ly) <= (r.h || 91) / 2) h = Math.max(h, hh);
+  // 金属の映り込み用の環境（まわりの明るさ）
+  function makeEnvironment() {
+    const pm = new T.PMREMGenerator(renderer);
+    const env = new T.Scene();
+    const room = new T.Mesh(new T.BoxGeometry(30, 16, 30), new T.MeshBasicMaterial({ color: '#3a2c20', side: T.BackSide }));
+    env.add(room);
+    [[0, 7.5, 4, 14, 3], [-8, 5, -6, 6, 2], [8, 5, -6, 6, 2], [0, 6, 12, 18, 2]].forEach(p => {
+      const l = new T.Mesh(new T.PlaneGeometry(p[3], p[4]), new T.MeshBasicMaterial({ color: '#fff4dd' }));
+      l.position.set(p[0], p[1], p[2]); l.lookAt(0, 0, 0); env.add(l);
     });
-    return h;
+    const rt = pm.fromScene(env, 0.04);
+    pm.dispose();
+    return rt.texture;
   }
 
   // ---------------------------------------------------------------- シーン
@@ -249,68 +499,121 @@ window.SS = window.SS || {};
     const doc = SS.app.doc();
     const o = doc.options;
     V.showStands = o.showStands !== false;
-    stageW = doc.stage.w / 100; stageD = doc.stage.d / 100;
+    const st = doc.stage;
+    const W = st.w / 100, D = st.d / 100;
+    stageW = W; stageD = D;
     scene = new T.Scene();
-    scene.background = new T.Color('#1d1f25');
-    scene.fog = new T.Fog('#1d1f25', 30, 70);
-    const hemi = new T.HemisphereLight('#fff4e0', '#3a3530', 0.75);
-    scene.add(hemi);
-    const key = new T.DirectionalLight('#fff1d6', 0.9);
-    key.position.set(stageW * 0.3, 14, stageD + 8);
+    scene.background = new T.Color('#0d0e11');
+    scene.fog = new T.Fog('#0d0e11', 35, 80);
+    scene.environment = makeEnvironment();
+    scene.add(new T.HemisphereLight('#fff1dc', '#2a2420', 0.35));
+    // 舞台照明（前明かりと天井の明かり）
+    const key = new T.DirectionalLight('#fff0d8', 0.75);
+    key.position.set(W * 0.5, 16, D + 10);
+    key.target.position.set(W / 2, 0, D * 0.45);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.02;
     const sc = key.shadow.camera;
-    sc.left = -stageW; sc.right = stageW; sc.top = stageD; sc.bottom = -stageD; sc.near = 1; sc.far = 60;
-    key.target.position.set(stageW / 2, 0, stageD / 2);
+    sc.left = -W * 0.75; sc.right = W * 0.75; sc.top = D * 0.9; sc.bottom = -D * 0.9; sc.near = 2; sc.far = 50;
     scene.add(key); scene.add(key.target);
-    const fill = new T.DirectionalLight('#cfe0ff', 0.35);
-    fill.position.set(-5, 8, -4); scene.add(fill);
+    [-0.3, 0.5, 1.3].forEach(fx => {
+      const sp = new T.SpotLight('#ffe7c4', 0.55, 40, 0.55, 0.6, 1.2);
+      sp.position.set(W * fx, 11, D + 6);
+      sp.target.position.set(W / 2 + (fx - 0.5) * W * 0.3, 0, D * 0.4);
+      scene.add(sp); scene.add(sp.target);
+    });
+    for (let i = 0; i < 3; i++) {
+      const pl = new T.PointLight('#fff2dd', 0.35, 18, 1.6);
+      pl.position.set(W * (0.25 + i * 0.25), 6.5, D * 0.45);
+      scene.add(pl);
+    }
 
-    // ステージ
-    const st = doc.stage;
-    const pts = [];
-    const W = st.w / 100, D = st.d / 100;
-    if (st.shape === 'apron') {
-      pts.push([0, 0], [W, 0], [W, D]);
-      for (let i = 1; i < 24; i++) { const t = i / 24; const x = W * (1 - t); const y = D + 2 * t * (1 - t) * D * 0.28; pts.push([x, y]); }
-      pts.push([0, D]);
-    } else if (st.shape === 'trapezoid') pts.push([W * 0.1, 0], [W * 0.9, 0], [W, D], [0, D]);
-    else pts.push([0, 0], [W, 0], [W, D], [0, D]);
-    const shape = new T.Shape(pts.map(p => new T.Vector2(p[0], p[1])));
+    // ステージの床（板張り）
+    const poly = SS.render.stagePoly(st).map(p => [p[0] / 100, p[1] / 100]);
+    const shape = new T.Shape(poly.map(p => new T.Vector2(p[0], p[1])));
     const sg = new T.ExtrudeGeometry(shape, { depth: 1.0, bevelEnabled: false });
-    const stageMesh = new T.Mesh(sg, [mat('#b98a55', { roughness: 0.55 }), mat('#3b2a1c')]);
+    const floorTex = planksTexture('#c08d55', 48, true);
+    floorTex.repeat.set(1 / 2.2, 1 / 2.2);
+    const floorMat = new T.MeshStandardMaterial({ map: floorTex, roughness: 0.42, metalness: 0.02 });
+    const stageMesh = new T.Mesh(sg, [floorMat, mat('#141414')]);
     stageMesh.rotation.x = Math.PI / 2;
     stageMesh.receiveShadow = true;
     scene.add(stageMesh);
-    // 床の板目（うすい線）
-    const grid = new T.GridHelper(Math.max(W, D) * 2, Math.round(Math.max(W, D) * 2 / 0.9), '#a57a48', '#a57a48');
-    grid.position.set(W / 2, 0.002, D / 2);
-    grid.material.transparent = true; grid.material.opacity = 0.25;
-    scene.add(grid);
-    // 奥の壁・横の壁
-    const wallH = 9;
-    box(scene, W + 2, wallH, 0.3, '#6e5238', W / 2, wallH / 2 - 1, -0.15);
-    [-0.15, W + 0.15].forEach(x => box(scene, 0.3, wallH, D + 1, '#5c4530', x, wallH / 2 - 1, D / 2 - 0.5));
-    // 客席
-    const floor = new T.Mesh(new T.PlaneGeometry(W + 20, 40), mat('#2b2724'));
+
+    // 音響反射板（奥・左右の壁と天井の板）
+    const shellH = 7.5;
+    const wallTex = planksTexture('#a8743f', 90, true);
+    const wallMat = () => { const m = new T.MeshStandardMaterial({ map: wallTex.clone(), roughness: 0.5 }); m.map.needsUpdate = true; return m; };
+    const bl = poly[0], br = poly[1], fr = [W, D], fl = [0, D];
+    const wall = (a, b, depthOff) => {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const m = wallMat();
+      m.map.repeat.set(len / 4, shellH / 4);
+      const w = new T.Mesh(new T.BoxGeometry(len, shellH, 0.25), m);
+      w.position.set((a[0] + b[0]) / 2, shellH / 2, (a[1] + b[1]) / 2);
+      w.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+      w.translateZ(depthOff);
+      w.receiveShadow = true;
+      scene.add(w);
+      // 縦の目地
+      const n = Math.floor(len / 1.2);
+      for (let i = 1; i < n; i++) {
+        const t = i / n;
+        const rib = new T.Mesh(new T.BoxGeometry(0.05, shellH, 0.05), mat('#6f4b28'));
+        rib.position.set(a[0] + (b[0] - a[0]) * t, shellH / 2, a[1] + (b[1] - a[1]) * t);
+        rib.rotation.y = w.rotation.y;
+        rib.translateZ(depthOff * 0.2);
+        scene.add(rib);
+      }
+    };
+    wall(bl, br, -0.13);
+    if (st.shape !== 'apron') {
+      wall(fl, bl, -0.13);
+      wall(br, fr, -0.13);
+    }
+    // 天井反射板（3枚、少し傾ける）
+    for (let i = 0; i < 3; i++) {
+      const z = D * (0.2 + i * 0.3);
+      const [l, r] = SS.render.xRange(st, z * 100).map(v => v / 100);
+      const p = mesh(new T.BoxGeometry(r - l, 0.1, D * 0.28), '#a8743f', { roughness: 0.5 });
+      p.position.set((l + r) / 2, shellH + 0.1 - i * 0.25, z);
+      p.rotation.x = 0.12;
+      p.castShadow = false;
+      scene.add(p);
+      // 照明の帯
+      const strip = new T.Mesh(new T.BoxGeometry((r - l) * 0.8, 0.04, 0.12), new T.MeshBasicMaterial({ color: '#fff3d6' }));
+      strip.position.set((l + r) / 2, shellH - 0.02 - i * 0.25, z + D * 0.15);
+      scene.add(strip);
+    }
+    // ステージの前のふち
+    box(scene, W + 2, 0.9, 0.1, '#1a1410', W / 2, -0.55, D + 0.06);
+
+    // 客席（床・いす・壁）
+    const floor = new T.Mesh(new T.PlaneGeometry(W + 24, 40), mat('#3a2426', { roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, -1.0, D + 20); floor.receiveShadow = true;
     scene.add(floor);
-    const seatGeo = new T.BoxGeometry(0.5, 0.9, 0.5);
-    const seats = [];
-    for (let row = 0; row < 18; row++) {
-      const z = D + 3 + row * 1.0;
-      const y = -1.0 + 0.45 + row * 0.12;
-      for (let x = 0.8; x < W - 0.5; x += 0.56) { if (Math.abs(x - W / 2) < 0.6) continue; seats.push([x, y, z]); }
+    const seatPos = [];
+    for (let row = 0; row < 20; row++) {
+      const z = D + 2.8 + row * 0.95;
+      const y = -1.0 + row * 0.14;
+      for (let x = -2; x < W + 2; x += 0.55) { if (Math.abs(x - W / 2) < 0.7) continue; seatPos.push([x, y, z]); }
     }
-    const inst = new T.InstancedMesh(seatGeo, mat('#7a1f2b', { roughness: 0.8 }), seats.length);
+    const cushion = new T.InstancedMesh(new T.BoxGeometry(0.48, 0.12, 0.45), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
+    const back = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.6, 0.08), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
     const m4 = new T.Matrix4();
-    seats.forEach((p, i) => { m4.makeTranslation(p[0], p[1], p[2]); inst.setMatrixAt(i, m4); });
-    scene.add(inst);
+    seatPos.forEach((p, i) => {
+      m4.makeTranslation(p[0], p[1] + 0.45, p[2]); cushion.setMatrixAt(i, m4);
+      m4.makeTranslation(p[0], p[1] + 0.75, p[2] + 0.24); back.setMatrixAt(i, m4);
+    });
+    scene.add(cushion); scene.add(back);
+    [-3, W + 3].forEach(x => box(scene, 0.3, 10, 30, '#2a1f1a', x, 4, D + 15));
 
     // 部品
     playerGroups = new Map();
     const rh = riserHeights(doc.items);
-    const ropts = { colorBy: o.colorBy, figure: true };
+    const ropts = { colorBy: true, figure: true };
     doc.items.forEach(it => {
       const color = SS.itemColor(it, ropts);
       const x = it.x / 100, z = it.y / 100;
@@ -322,7 +625,7 @@ window.SS = window.SS || {};
         p.g.rotation.y = rot;
         if (it.label) {
           const sp = labelSprite(it.label);
-          sp.position.set(0, 1.75, 0);
+          sp.position.set(0, 1.78, 0);
           sp.userData.isLabel = true;
           sp.visible = labelsOn;
           p.g.add(sp);
@@ -331,9 +634,10 @@ window.SS = window.SS || {};
         scene.add(p.g);
         playerGroups.set(it.id, { g: p.g, head: p.head, it, base });
       } else {
+        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina';
         const g = makeItem(it, color, rh.get(it) || 0.2);
         if (!g) return;
-        const base = (it.type === 'riser' || it.type === 'riser46') ? 0 : heightAt(it.x, it.y, rh);
+        const base = isRiser ? 0 : heightAt(it.x, it.y, rh);
         g.position.set(x, base, z);
         g.rotation.y = rot;
         scene.add(g);
@@ -474,6 +778,7 @@ window.SS = window.SS || {};
       if (o.geometry) o.geometry.dispose();
       if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose();
     });
+    if (scene.environment) scene.environment.dispose();
     matCache.forEach(m => m.dispose());
     matCache.clear();
     scene = null;
@@ -496,6 +801,10 @@ window.SS = window.SS || {};
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = T.PCFSoftShadowMap;
+      renderer.outputEncoding = T.sRGBEncoding;
+      renderer.toneMapping = T.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+      renderer.physicallyCorrectLights = false;
       camera = new T.PerspectiveCamera(50, 1, 0.05, 200);
     }
     if (!bound) {
@@ -508,6 +817,7 @@ window.SS = window.SS || {};
       window.addEventListener('resize', resize);
       document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => setCam(b.getAttribute('data-cam')); });
       $('v3close').onclick = V.close;
+      $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); if (id) setCam('seat', id); };
       $('v3labels').onchange = e => {
         labelsOn = e.target.checked;
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) o.visible = labelsOn; });
