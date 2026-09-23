@@ -37,6 +37,8 @@
       items: (doc.items || []).map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })),
       underlay: doc.underlay || null,
       options: Object.assign(defaultOptions(), doc.options || {}),
+      ensemble: doc.ensemble || null,
+      hall: doc.hall || '',
     };
     return d;
   }
@@ -55,7 +57,7 @@
   // ------------------------------------------------------------ 元に戻す
   function snapshot() {
     const d = doc();
-    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options });
+    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall });
   }
   function pushHistory() {
     S.undo.push(snapshot());
@@ -69,6 +71,8 @@
     S.doc.underlay = u;
     S.sel = new Set([...S.sel].filter(id => byId(id)));
     renderAll();
+    renderSteppers();
+    updateHallNote();
   }
   function undo() { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); }
   function redo() { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); }
@@ -515,6 +519,7 @@
     const one = sel.length === 1 ? sel[0] : null;
     $('ctxCount').textContent = sel.length > 1 ? sel.length + '個' : (one.type === 'player' ? (one.label || '奏者') : (SS.CATALOG[one.type] || {}).name || '');
     $('ctxRow').hidden = !(one && one.type === 'player');
+    $('ctx3d').hidden = !(one && one.type === 'player');
     const ed = $('ctxEdit');
     if (!ed.hidden) {
       const allP = sel.every(it => it.type === 'player');
@@ -531,6 +536,7 @@
       const sel = selected();
       if (a === 'edit') { $('ctxEdit').hidden = !$('ctxEdit').hidden; positionCtxBar(); if (!$('ctxEdit').hidden) $('ctxLabel').focus(); return; }
       if (a === 'row') { selectRowOf(sel[0].id); renderOverlay(); renderProps(); return; }
+      if (a === 'view3d') { SS.view3d.open(sel[0].id); return; }
       if (a === 'rotL' || a === 'rotR') {
         pushHistory();
         sel.forEach(it => { it.rot = normAngle((it.rot || 0) + (a === 'rotL' ? -15 : 15)); });
@@ -877,8 +883,8 @@
   }
   bindSetting('docTitle', 'input', el => { doc().title = el.value; });
   bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
-  bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) doc().stage.w = Math.round(v * 100); });
-  bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) doc().stage.d = Math.round(v * 100); });
+  bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
+  bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageShape', 'change', el => { doc().stage.shape = el.value; });
   bindSetting('optNames', 'change', el => { opts().showNames = el.checked; });
   bindSetting('optStands', 'change', el => { opts().showStands = el.checked; });
@@ -954,6 +960,7 @@
     S.sel.clear();
     closePanels();
     renderAll();
+    updateHallNote();
     fitView();
     toast('「' + t.name + '」を読み込みました', true);
   }
@@ -1365,6 +1372,8 @@
     S.doc = normalize(d);
     S.sel.clear();
     renderAll();
+    renderSteppers();
+    updateHallNote();
     fitView();
     if (msg) toast(msg);
   }
@@ -1486,7 +1495,9 @@
     openModal(`
       <h2>🎼 使い方</h2>
       <ol>
-        <li><b>ひな形を選ぶ</b>：左の「ひな形」から近い編成を選ぶと、すぐに配置図ができます。</li>
+        <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。</li>
+        <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。</li>
+        <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
         <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列をまとめて選択。</li>
         <li><b>部品を足す</b>：「部品」で押してから、置きたい場所をタップ。楽器は実寸（cm）です。</li>
@@ -1506,10 +1517,124 @@
     `);
   }
 
+  // ------------------------------------------------------------ かんたん編成（人数を変えると自動で並べる）
+  let lastAutoPush = 0;
+  function ens() {
+    if (!doc().ensemble) doc().ensemble = SS.auto.defaultState('band');
+    return doc().ensemble;
+  }
+  function applyAuto(opts2) {
+    opts2 = opts2 || {};
+    const st = ens();
+    if (Date.now() - lastAutoPush > 1500) pushHistory();
+    lastAutoPush = Date.now();
+    const d = doc();
+    // 今の名前を、パートごとに覚えておく
+    const names = {};
+    d.items.filter(it => it.type === 'player' && it.name).forEach(it => { (names[it.label] = names[it.label] || []).push(it.name); });
+    const hadAuto = d.items.some(it => it.auto);
+    const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp']);
+    d.items = d.items.filter(it => (hadAuto ? !it.auto : keepTypes.has(it.type)));
+    const r = SS.auto.build(st, d.stage);
+    r.items.forEach(it => {
+      it.id = newId();
+      if (it.type === 'player' && names[it.label] && names[it.label].length) it.name = names[it.label].shift();
+      d.items.push(it);
+    });
+    S.sel.clear();
+    renderAll();
+    if (opts2.fit) fitView();
+    if (!r.fits) toast('このステージだと奥行が足りないかもしれません（はみ出した人は端に寄せています）');
+  }
+
+  const HOLD_DELAY = 380, HOLD_REPEAT = 110;
+  function renderSteppers() {
+    const st = ens();
+    const e = SS.auto.ENSEMBLES[st.type];
+    document.querySelectorAll('#ensType [data-ens]').forEach(b => b.classList.toggle('on', b.getAttribute('data-ens') === st.type));
+    $('ensAntiWrap').hidden = st.type === 'band';
+    $('ensAnti').checked = !!st.antiphonal;
+    $('ensPerc').checked = st.percInst !== false;
+    $('ensPerc').parentElement.hidden = st.type === 'strings';
+    let total = 0;
+    $('partSteppers').innerHTML = e.parts.map(([k]) => {
+      const n = st.counts[k] || 0; total += n;
+      return `<div class="stepper${n ? '' : ' zero'}" data-part="${k}"><span class="nm"><i style="background:${SS.partGroup(k).color}"></i>${SS.esc(k)}</span>
+        <button data-d="-1" aria-label="${SS.esc(k)}を1人減らす">▼</button><b>${n}</b><button data-d="1" aria-label="${SS.esc(k)}を1人増やす">▲</button></div>`;
+    }).join('');
+    $('ensTotal').textContent = `合計 ${total} 人`;
+    $('partSteppers').querySelectorAll('.stepper button').forEach(b => {
+      const k = b.parentElement.getAttribute('data-part');
+      const d = +b.getAttribute('data-d');
+      let timer = null;
+      const step = () => {
+        const st2 = ens();
+        const v = Math.max(0, Math.min(40, (st2.counts[k] || 0) + d));
+        if (v === (st2.counts[k] || 0)) return;
+        st2.counts[k] = v;
+        const box = b.parentElement;
+        box.querySelector('b').textContent = v;
+        box.classList.toggle('zero', !v);
+        $('ensTotal').textContent = `合計 ${Object.values(st2.counts).reduce((a, x) => a + x, 0)} 人`;
+        applyAuto();
+      };
+      // 押しっぱなしで連続して増減
+      b.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        step();
+        timer = setTimeout(function rpt() { step(); timer = setTimeout(rpt, HOLD_REPEAT); }, HOLD_DELAY);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => clearTimeout(timer)));
+    });
+  }
+  document.querySelectorAll('#ensType [data-ens]').forEach(b => {
+    b.onclick = () => {
+      const t = b.getAttribute('data-ens');
+      const prev = ens();
+      doc().ensemble = Object.assign(SS.auto.defaultState(t), { percInst: prev.percInst });
+      renderSteppers();
+      applyAuto({ fit: true });
+    };
+  });
+  $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
+  $('ensPerc').onchange = e => { ens().percInst = e.target.checked; applyAuto(); };
+
+  // ------------------------------------------------------------ ホール（ステージ寸法）
+  function buildHallSelect() {
+    const sel = $('hallSelect');
+    const groups = {};
+    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${SS.esc(h.name)}（${h.w}×${h.d}m）</option>`); });
+    sel.innerHTML = '<option value="">いまの大きさのまま／手動で設定</option>' +
+      Object.keys(groups).map(g => `<optgroup label="${g === '東京' ? '東京都' : g + '県'}">${groups[g].join('')}</optgroup>`).join('');
+    sel.onchange = () => {
+      const h = SS.HALLS[+sel.value];
+      if (!h) { doc().hall = ''; updateHallNote(); return; }
+      pushHistory();
+      doc().stage.w = Math.round(h.w * 100);
+      doc().stage.d = Math.round(h.d * 100);
+      doc().hall = h.name;
+      updateHallNote();
+      if (doc().items.some(it => it.auto)) applyAuto({ fit: true });
+      else { renderAll(); fitView(); }
+      toast(`${h.name}（間口${h.w}m×奥行${h.d}m）にしました`, true);
+    };
+  }
+  function updateHallNote() {
+    const h = SS.HALLS.find(x => x.name === doc().hall);
+    const sel = $('hallSelect');
+    sel.value = h ? String(SS.HALLS.indexOf(h)) : '';
+    $('hallNote').innerHTML = h
+      ? `間口${h.w}m × 奥行${h.d}m${h.note ? '（' + SS.esc(h.note) + '）' : ''}。<a href="${h.src}" target="_blank" rel="noopener">出典</a>。反射板を置くと奥行が短くなることがあります。本番前にホールの図面で確認してください。`
+      : `いまのステージ：幅${doc().stage.w / 100}m × 奥行${doc().stage.d / 100}m`;
+  }
+  $('btn3d').onclick = () => SS.view3d.open(null);
+  SS.app = { doc, conductor, players, toast, selected };
+
   // ------------------------------------------------------------ 起動
   async function init() {
     buildTemplates();
     buildPalette();
+    buildHallSelect();
     setMode('select');
     let loaded = false;
     const m = /#d=([A-Za-z0-9_-]+)/.exec(location.hash);
@@ -1538,6 +1663,8 @@
       $('traceStatus').textContent = '自動で読み取るには、もう一度画像を選んでください';
     }
     renderAll();
+    renderSteppers();
+    updateHallNote();
     fitView();
     let resizeTimer = null;
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(fitView, 150); });

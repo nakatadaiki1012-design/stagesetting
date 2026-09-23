@@ -16,6 +16,7 @@
     <button class="btn" id="btnRedo" title="やり直す (Ctrl+Y)">↷<span class="lbl">進む</span></button>
     <span class="sep"></span>
     <button class="btn" id="btnFile" title="保存・読み込み">💾<span class="lbl">保存/開く</span></button>
+    <button class="btn accent3d" id="btn3d" title="3Dで見る">🧊<span class="lbl">3D</span></button>
     <button class="btn" id="btnExport" title="画像として保存">🖼<span class="lbl">画像</span></button>
     <button class="btn" id="btnPrint" title="印刷">🖨<span class="lbl">印刷</span></button>
     <button class="btn" id="btnShare" title="共有リンクをコピー">🔗<span class="lbl">共有</span></button>
@@ -27,13 +28,31 @@
   <!-- 左パネル -->
   <aside class="panel left" id="leftPanel">
     <nav class="tabs" data-group="left">
-      <button class="tab active" data-tab="tplTab">ひな形</button>
+      <button class="tab active" data-tab="autoTab">かんたん編成</button>
+      <button class="tab" data-tab="tplTab">ひな形</button>
       <button class="tab" data-tab="partsTab">部品</button>
       <button class="tab" data-tab="quickTab">一括作成</button>
       <button class="tab" data-tab="traceTab">トレース</button>
     </nav>
 
-    <section class="tabpane active" id="tplTab">
+    <section class="tabpane active" id="autoTab">
+      <label class="field">ホール（ステージの大きさ）
+        <select id="hallSelect"></select>
+      </label>
+      <p class="hint small" id="hallNote"></p>
+      <div class="seg" id="ensType">
+        <button data-ens="band">吹奏楽</button><button data-ens="orch">オーケストラ</button><button data-ens="strings">弦楽</button>
+      </div>
+      <div class="ens-opts">
+        <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
+        <label class="check" id="ensAntiWrap"><input type="checkbox" id="ensAnti"> 対向配置</label>
+      </div>
+      <p class="hint small">▲▼で人数を変えると、すぐに並べ直します。名前は同じパートの人に引き継がれます。</p>
+      <div id="partSteppers" class="steppers"></div>
+      <div class="ens-total" id="ensTotal"></div>
+    </section>
+
+    <section class="tabpane" id="tplTab">
       <p class="hint">ひな形を選ぶと、すぐに配置図ができます。あとは動かしたり消したりするだけ。</p>
       <div id="templateList" class="card-list"></div>
     </section>
@@ -140,6 +159,7 @@
         <button data-ctx="rotR" title="右に15°回す">↻<small>回転</small></button>
         <button data-ctx="faceConductor" title="指揮者の方を向く">👀<small>指揮者へ</small></button>
         <button data-ctx="row" id="ctxRow" title="同じ列の人をまとめて選ぶ">⋯<small>列を選択</small></button>
+        <button data-ctx="view3d" id="ctx3d" title="この席に座って3Dで見る">🧊<small>この席から</small></button>
         <button data-ctx="duplicate" title="複製">⧉<small>複製</small></button>
         <button data-ctx="delete" class="danger" title="削除">🗑<small>削除</small></button>
       </div>
@@ -247,11 +267,31 @@
   </div>
 </div>
 
+<div class="view3d hidden" id="view3d">
+  <canvas id="c3d"></canvas>
+  <div class="v3-top">
+    <b id="v3title">3Dビュー</b>
+    <button class="btn" id="v3close">✕ 閉じる</button>
+  </div>
+  <div class="v3-bar">
+    <button class="btn" data-cam="audience">🪑 客席から</button>
+    <button class="btn" data-cam="conductor">🎼 指揮者から</button>
+    <button class="btn" data-cam="top">⬇ 真上</button>
+    <button class="btn" data-cam="orbit">🔄 自由に回す</button>
+    <label class="check"><input type="checkbox" id="v3labels" checked> パート名</label>
+  </div>
+  <div class="v3-hint" id="v3hint">ドラッグで見回す・ピンチ/ホイールで前後。<b>奏者をタップするとその席に座れます</b>。</div>
+  <div class="v3-loading" id="v3loading">3Dを準備しています…</div>
+</div>
+
 <div id="printArea"></div>
 
 <script src="js/catalog.js"></script>
 <script src="js/figures.js"></script>
 <script src="js/templates.js"></script>
+<script src="js/halls.js"></script>
+<script src="js/autolayout.js"></script>
+<script src="js/view3d.js"></script>
 <script src="js/geometry.js"></script>
 <script src="js/trace.js"></script>
 <script src="js/io.js"></script>
