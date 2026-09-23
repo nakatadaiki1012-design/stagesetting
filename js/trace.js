@@ -362,6 +362,115 @@ window.SS = window.SS || {};
     return { x: median(cands.map(f => f.x)), y: median(cands.map(f => f.y)) };
   };
 
+  // ステージの外枠（いちばん大きな四角い線）を探して四隅を返す
+  T.findFrame = function (prep) {
+    const { w, h, ink } = prep;
+    let th = Math.max(35, Math.min(170, otsu(ink)));
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) mask[i] = ink[i] > th ? 1 : 0;
+    const { labels, comps } = components(mask, w, h);
+    let best = null;
+    comps.forEach(c => {
+      if (c.w < w * 0.35 || c.h < h * 0.3) return;
+      // 画像のふち全体（写真の影など）は除く
+      if (c.w > w * 0.985 && c.h > h * 0.985) return;
+      const score = c.w * c.h;
+      if (!best || score > best.score) best = { c, score };
+    });
+    if (!best) return null;
+    const c = best.c;
+    let tl = null, tr = null, br = null, bl = null;
+    for (let y = c.miny; y <= c.maxy; y++) {
+      for (let x = c.minx; x <= c.maxx; x++) {
+        if (labels[y * w + x] !== c.id) continue;
+        const a = x + y, b = x - y;
+        if (!tl || a < tl.a) tl = { x, y, a };
+        if (!br || a > br.a) br = { x, y, a };
+        if (!tr || b > tr.b) tr = { x, y, b };
+        if (!bl || b < bl.b) bl = { x, y, b };
+      }
+    }
+    const pts = [tl, tr, br, bl].map(p => ({ x: p.x, y: p.y }));
+    // つぶれた四角形は使わない
+    const area = Math.abs(polyArea(pts));
+    if (area < w * h * 0.08) return null;
+    return pts;
+  };
+  function polyArea(p) {
+    let a = 0;
+    for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i].x * q.y - q.x * p[i].y; }
+    return a / 2;
+  }
+
+  // 四隅 corners（左上・右上・右下・左下）の中身を、まっすぐな長方形に引き伸ばす（ゆがみ補正）
+  T.warp = function (src, corners, outW, outH) {
+    const Hm = homography([[0, 0], [outW, 0], [outW, outH], [0, outH]], corners.map(p => [p.x, p.y]));
+    const sw = src.width, sh = src.height;
+    const sd = src.getContext('2d').getImageData(0, 0, sw, sh).data;
+    const out = document.createElement('canvas');
+    out.width = outW; out.height = outH;
+    const octx = out.getContext('2d');
+    const od = octx.createImageData(outW, outH);
+    const D = od.data;
+    for (let v = 0; v < outH; v++) {
+      for (let u = 0; u < outW; u++) {
+        const z = Hm[6] * u + Hm[7] * v + 1;
+        const x = (Hm[0] * u + Hm[1] * v + Hm[2]) / z;
+        const y = (Hm[3] * u + Hm[4] * v + Hm[5]) / z;
+        const o = (v * outW + u) * 4;
+        if (x < 0 || y < 0 || x >= sw - 1 || y >= sh - 1) { D[o] = D[o + 1] = D[o + 2] = 255; D[o + 3] = 255; continue; }
+        const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0;
+        const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4;
+        for (let ch = 0; ch < 3; ch++) {
+          D[o + ch] = (sd[i00 + ch] * (1 - fx) + sd[i10 + ch] * fx) * (1 - fy) + (sd[i01 + ch] * (1 - fx) + sd[i11 + ch] * fx) * fy;
+        }
+        D[o + 3] = 255;
+      }
+    }
+    octx.putImageData(od, 0, 0);
+    return out;
+  };
+
+  // 4点対応から射影変換を求める（from → to）
+  function homography(from, to) {
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const [u, v] = from[i], [x, y] = to[i];
+      A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
+      A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
+    }
+    // ガウスの消去法
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      let piv = i;
+      for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[piv][i])) piv = r;
+      [A[i], A[piv]] = [A[piv], A[i]]; [b[i], b[piv]] = [b[piv], b[i]];
+      for (let r = 0; r < n; r++) {
+        if (r === i) continue;
+        const f = A[r][i] / A[i][i];
+        for (let k = i; k < n; k++) A[r][k] -= f * A[i][k];
+        b[r] -= f * b[i];
+      }
+    }
+    return b.map((v, i) => v / A[i][i]);
+  }
+
+  // 画像をキャンバスにする（大きすぎるときは縮小、回転もできる）
+  T.toCanvas = function (img, maxDim, rotate90) {
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const k = Math.min(1, (maxDim || 2400) / Math.max(iw, ih));
+    const w = Math.round(iw * k), h = Math.round(ih * k);
+    const c = document.createElement('canvas');
+    const rot = ((rotate90 || 0) % 4 + 4) % 4;
+    c.width = rot % 2 ? h : w; c.height = rot % 2 ? w : h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate(rot * Math.PI / 2);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    return c;
+  };
+
   // 文字認識（Tesseract.js を必要なときだけ読み込む）
   let tessPromise = null;
   function loadTesseract() {

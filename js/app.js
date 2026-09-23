@@ -25,7 +25,7 @@
 
   // ------------------------------------------------------------ 文書
   function defaultOptions() {
-    return { showNames: true, showStands: true, showNumbers: false, grid: true, snap: false, colorBy: true, seatR: 24 };
+    return { showNames: true, showStands: true, showNumbers: false, grid: true, snap: false, colorBy: true, seatR: 24, figure: true, guides: true };
   }
   function normalize(doc) {
     doc = doc || {};
@@ -80,7 +80,7 @@
   // ------------------------------------------------------------ 描画
   function renderOpts() {
     const o = opts();
-    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid };
+    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, figure: o.figure };
   }
 
   function render() {
@@ -123,11 +123,20 @@
       }
       s += '</g>';
     }
+    if (drag && drag.guides) {
+      const gs = `stroke="#e8467c" stroke-width="${1.6 / k}" stroke-dasharray="${8 / k} ${5 / k}" fill="none"`;
+      drag.guides.forEach(g => {
+        if (g.kind === 'x') s += `<line x1="${g.v}" y1="-200" x2="${g.v}" y2="${doc().stage.d + 200}" ${gs}/>`;
+        if (g.kind === 'y') s += `<line x1="-200" y1="${g.v}" x2="${doc().stage.w + 200}" y2="${g.v}" ${gs}/>`;
+        if (g.kind === 'r') s += `<circle cx="${g.c.x}" cy="${g.c.y}" r="${g.v}" ${gs}/>`;
+      });
+    }
     if (marquee) {
       const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
       s += `<rect x="${x}" y="${y}" width="${Math.abs(marquee.x1 - marquee.x0)}" height="${Math.abs(marquee.y1 - marquee.y0)}" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.5 / k}" stroke-dasharray="${5 / k}"/>`;
     }
     layerOverlay.innerHTML = s;
+    positionCtxBar();
   }
 
   function applyView() {
@@ -191,12 +200,14 @@
 
   // ------------------------------------------------------------ 通知・ダイアログ
   let toastTimer = null;
-  function toast(msg) {
+  function toast(msg, withUndo) {
     const t = $('toast');
-    t.textContent = msg;
+    t.innerHTML = SS.esc(msg) + (withUndo ? ' <button class="toast-undo" id="toastUndo">元に戻す</button>' : '');
+    t.classList.toggle('has-btn', !!withUndo);
     t.classList.add('show');
+    if (withUndo) $('toastUndo').onclick = () => { undo(); t.classList.remove('show'); };
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => t.classList.remove('show'), withUndo ? 4500 : 2600);
   }
   SS.toast = toast;
 
@@ -239,6 +250,13 @@
     const itemEl = e.target.closest && e.target.closest('.item');
     const start = { sx: e.clientX, sy: e.clientY, w };
 
+    if (S.placing && !handle) {
+      const type = S.placing;
+      setPlacing(null);
+      addItem(type, null, w);
+      pointers.delete(e.pointerId);
+      return;
+    }
     if (e.button === 1 || S.mode === 'pan' || spaceDown) {
       drag = { kind: 'pan', start, last: { x: e.clientX, y: e.clientY } };
       return;
@@ -324,6 +342,11 @@
             dy = Math.round((p.y + dy) / SNAP) * SNAP - p.y;
           }
         }
+        drag.guides = null;
+        if (opts().guides && !opts().snap && !e.altKey) {
+          const g = smartSnap(drag, dx, dy);
+          dx = g.dx; dy = g.dy; drag.guides = g.guides;
+        }
         selected().forEach(it => {
           const o = drag.orig.get(it.id);
           if (o) { it.x = o.x + dx; it.y = o.y + dy; }
@@ -382,8 +405,15 @@
       S.sel.clear();
     }
     if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
-      // クリックだけ → その1つを選ぶ
-      S.sel = new Set([drag.primary]);
+      // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ
+      const now = Date.now();
+      if (lastTap && lastTap.id === drag.primary && now - lastTap.t < 400) {
+        selectRowOf(drag.primary);
+        lastTap = null;
+      } else {
+        S.sel = new Set([drag.primary]);
+        lastTap = { id: drag.primary, t: now };
+      }
     }
     drag = null;
     renderOverlay();
@@ -409,14 +439,127 @@
     zoomAt(f, sx, sy);
   }, { passive: false });
 
-  svg.addEventListener('dblclick', e => {
-    const itemEl = e.target.closest && e.target.closest('.item');
-    if (!itemEl) return;
-    // ダブルクリックでパート名を編集
-    openRightTab('selTab');
-    openPanel('rightPanel');
-    setTimeout(() => { const el = $('propLabel'); if (el) { el.focus(); el.select(); } }, 50);
+  let lastTap = null;
+
+  // 同じ列（指揮者からの距離が同じくらい）の奏者をまとめて選ぶ
+  function selectRowOf(id) {
+    const it = byId(id);
+    if (!it || it.type !== 'player') { S.sel = new Set([id]); return; }
+    const rows = G.arcRows(players(), conductor());
+    const row = rows.find(r => r.includes(it)) || [it];
+    S.sel = new Set(row.map(p => p.id));
+    toast(`この列の${row.length}人を選びました`);
+  }
+
+  // ドラッグ中に、ほかの部品と位置をそろえる（ガイド線）
+  function smartSnap(d, dx, dy) {
+    const th = 9 / S.view.k;
+    const p0 = d.orig.get(d.primary);
+    const prim = byId(d.primary);
+    if (!p0 || !prim) return { dx, dy, guides: null };
+    const px = p0.x + dx, py = p0.y + dy;
+    const others = doc().items.filter(it => !S.sel.has(it.id) && it.type !== 'riser' && it.type !== 'text');
+    const guides = [];
+    if (prim.type === 'player') {
+      const c = conductor();
+      const pol = G.polar({ x: px, y: py }, c);
+      let best = null;
+      others.forEach(o => {
+        if (o.type !== 'player') return;
+        const q = G.polar(o, c);
+        if (Math.abs(q.t - pol.t) > 0.9) return;
+        const diff = Math.abs(q.r - pol.r);
+        if (diff < th && (!best || diff < best.diff)) best = { r: q.r, diff };
+      });
+      if (best) {
+        const q = G.fromPolar(best.r, pol.t, c);
+        guides.push({ kind: 'r', v: best.r, c });
+        return { dx: q.x - p0.x, dy: q.y - p0.y, guides };
+      }
+    }
+    let bx = null, by = null;
+    others.forEach(o => {
+      const ddx = Math.abs(o.x - px), ddy = Math.abs(o.y - py);
+      if (ddx < th && (!bx || ddx < bx.d)) bx = { v: o.x, d: ddx };
+      if (ddy < th && (!by || ddy < by.d)) by = { v: o.y, d: ddy };
+    });
+    if (bx) { dx = bx.v - p0.x; guides.push({ kind: 'x', v: bx.v }); }
+    if (by) { dy = by.v - p0.y; guides.push({ kind: 'y', v: by.v }); }
+    return { dx, dy, guides: guides.length ? guides : null };
+  }
+
+  // ------------------------------------------------------------ 選んだものの近くに出る操作バー
+  const ctxBar = $('ctxBar');
+  function positionCtxBar() {
+    const sel = selected();
+    if (!sel.length || (drag && drag.kind !== 'marquee') || S.placing) { ctxBar.hidden = true; return; }
+    const o = renderOpts();
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    sel.forEach(it => {
+      const sz = SS.itemSize(it, o);
+      const r = Math.max(sz.w, sz.h) / 2 + 10;
+      x0 = Math.min(x0, it.x - r); x1 = Math.max(x1, it.x + r);
+      y0 = Math.min(y0, it.y - r); y1 = Math.max(y1, it.y + r);
+    });
+    const k = S.view.k, v = S.view;
+    const wrapR = $('stageWrap').getBoundingClientRect();
+    ctxBar.hidden = false;
+    const bw = ctxBar.offsetWidth, bh = ctxBar.offsetHeight;
+    let left = (x0 + x1) / 2 * k + v.tx - bw / 2;
+    let top = y0 * k + v.ty - bh - 10;
+    if (top < 8) top = y1 * k + v.ty + 10;
+    left = Math.max(8, Math.min(wrapR.width - bw - 8, left));
+    top = Math.max(8, Math.min(wrapR.height - bh - 70, top));
+    ctxBar.style.left = left + 'px';
+    ctxBar.style.top = top + 'px';
+    const one = sel.length === 1 ? sel[0] : null;
+    $('ctxCount').textContent = sel.length > 1 ? sel.length + '個' : (one.type === 'player' ? (one.label || '奏者') : (SS.CATALOG[one.type] || {}).name || '');
+    $('ctxRow').hidden = !(one && one.type === 'player');
+    const ed = $('ctxEdit');
+    if (!ed.hidden) {
+      const allP = sel.every(it => it.type === 'player');
+      $('ctxName').parentElement.hidden = !one || one.type !== 'player';
+      $('ctxLabel').placeholder = allP ? 'パート名 (例 Fl1)' : '表示する文字';
+      if (document.activeElement !== $('ctxLabel')) $('ctxLabel').value = sel.every(it => it.label === sel[0].label) ? (sel[0].label || '') : '';
+      if (one && document.activeElement !== $('ctxName')) $('ctxName').value = one.name || '';
+    }
+  }
+  ctxBar.addEventListener('pointerdown', e => e.stopPropagation());
+  ctxBar.querySelectorAll('[data-ctx]').forEach(b => {
+    b.onclick = () => {
+      const a = b.getAttribute('data-ctx');
+      const sel = selected();
+      if (a === 'edit') { $('ctxEdit').hidden = !$('ctxEdit').hidden; positionCtxBar(); if (!$('ctxEdit').hidden) $('ctxLabel').focus(); return; }
+      if (a === 'row') { selectRowOf(sel[0].id); renderOverlay(); renderProps(); return; }
+      if (a === 'rotL' || a === 'rotR') {
+        pushHistory();
+        sel.forEach(it => { it.rot = normAngle((it.rot || 0) + (a === 'rotL' ? -15 : 15)); });
+        render(); renderProps(); return;
+      }
+      act(a);
+    };
   });
+  ['ctxLabel', 'ctxName'].forEach(id => {
+    const el = $(id);
+    el.addEventListener('focus', () => pushHistory());
+    el.addEventListener('input', () => {
+      const sel = selected();
+      if (id === 'ctxLabel') sel.forEach(it => { it.label = el.value; });
+      else if (sel[0]) sel[0].name = el.value;
+      render(); renderCounts();
+    });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); });
+  });
+
+  // ------------------------------------------------------------ 置く場所をタップして追加
+  function setPlacing(type) {
+    S.placing = type;
+    $('placeHint').hidden = !type;
+    if (type) $('placeHintText').textContent = `「${SS.CATALOG[type].name}」を置きたい場所をタップ`;
+    svg.classList.toggle('placing', !!type);
+    positionCtxBar();
+  }
+  $('placeCancel').onclick = () => setPlacing(null);
 
   function normAngle(a) {
     a = ((a + 180) % 360 + 360) % 360 - 180;
@@ -428,7 +571,7 @@
   document.addEventListener('keydown', e => {
     const tag = (document.activeElement && document.activeElement.tagName) || '';
     const typing = /INPUT|TEXTAREA|SELECT/.test(tag);
-    if (e.key === 'Escape') { closeModal(); if (!typing) { S.sel.clear(); renderOverlay(); renderProps(); } return; }
+    if (e.key === 'Escape') { setPlacing(null); closeModal(); if (!typing) { S.sel.clear(); renderOverlay(); renderProps(); } return; }
     if (typing) return;
     const mod = e.ctrlKey || e.metaKey;
     if (e.code === 'Space') { spaceDown = true; svg.classList.add('panning'); e.preventDefault(); return; }
@@ -462,13 +605,13 @@
   document.addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; svg.classList.toggle('panning', S.mode === 'pan'); } });
 
   // ------------------------------------------------------------ 追加・複製
-  function addItem(type, extra) {
+  function addItem(type, extra, at) {
     const c = SS.CATALOG[type];
     const r = svg.getBoundingClientRect();
-    const center = toWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const center = at || toWorld(r.left + r.width / 2, r.top + r.height / 2);
     // 既にあるものと重ならないよう少しずらす
     let p = { x: center.x, y: center.y };
-    for (let i = 0; i < 30 && doc().items.some(it => Math.hypot(it.x - p.x, it.y - p.y) < 40); i++) { p.x += 30; p.y += 20; }
+    if (!at) for (let i = 0; i < 30 && doc().items.some(it => Math.hypot(it.x - p.x, it.y - p.y) < 40); i++) { p.x += 30; p.y += 20; }
     const it = Object.assign({ id: newId(), type, x: Math.round(p.x), y: Math.round(p.y), rot: 0 }, extra || {});
     if (type === 'player') {
       it.label = it.label || '';
@@ -516,7 +659,7 @@
     const shape = G.guessShape(list, c);
     const n = shape === 'arc' ? G.tidyArc(list, c, tidyOpts()) : G.tidyLine(list, c, tidyOpts());
     G.fixOverlap(list, opts().seatR * 2 + 8);
-    if (!silent) toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました`);
+    if (!silent) toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました`, true);
   }
 
   function act(name) {
@@ -534,14 +677,14 @@
         pushHistory();
         const n = G.tidyArc(list, c, tidyOpts());
         G.fixOverlap(list, opts().seatR * 2 + 8);
-        toast(`${n}列を扇形にそろえました`);
+        toast(`${n}列を扇形にそろえました`, true);
         break;
       }
       case 'tidyLine': {
         const list = targetsPlayers(); if (list.length < 2) return toast('奏者が2人以上必要です');
         pushHistory();
         const n = G.tidyLine(list, c, tidyOpts());
-        toast(`${n}列を横一列にそろえました`);
+        toast(`${n}列を横一列にそろえました`, true);
         break;
       }
       case 'faceConductor': {
@@ -567,7 +710,7 @@
         const list = sel.length ? sel : doc().items.filter(it => it.type !== 'podium');
         pushHistory();
         list.forEach(it => { it.x = 2 * c.x - it.x; it.rot = normAngle(-(it.rot || 0)); });
-        toast('左右を入れ替えました');
+        toast('左右を入れ替えました', true);
         break;
       }
       case 'alignLeft': case 'alignRight': case 'alignCenterX':
@@ -600,6 +743,7 @@
         if (!needSel(1)) return;
         pushHistory();
         doc().items = doc().items.filter(it => !S.sel.has(it.id));
+        toast(`${S.sel.size}個を削除しました`, true);
         S.sel.clear();
         break;
       }
@@ -723,6 +867,8 @@
     $('optSnap').checked = o.snap;
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
+    $('optFigure').checked = o.figure;
+    $('optGuides').checked = o.guides;
   }
   function bindSetting(id, ev, fn) {
     const el = $(id);
@@ -741,6 +887,8 @@
   bindSetting('optSnap', 'change', el => { opts().snap = el.checked; });
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
+  bindSetting('optFigure', 'change', el => { opts().figure = el.checked; });
+  bindSetting('optGuides', 'change', el => { opts().guides = el.checked; });
 
   // ------------------------------------------------------------ パネル・タブ
   document.querySelectorAll('.tabs').forEach(nav => {
@@ -807,7 +955,7 @@
     closePanels();
     renderAll();
     fitView();
-    toast('「' + t.name + '」を読み込みました');
+    toast('「' + t.name + '」を読み込みました', true);
   }
 
   function buildTemplates() {
@@ -825,20 +973,24 @@
   function buildPalette() {
     const pal = $('palette');
     const cats = {};
-    Object.keys(SS.CATALOG).forEach(k => { const c = SS.CATALOG[k]; (cats[c.cat] = cats[c.cat] || []).push(k); });
+    Object.keys(SS.CATALOG).forEach(k => { const c = SS.CATALOG[k]; if (c.cat) (cats[c.cat] = cats[c.cat] || []).push(k); });
     let h = '';
     Object.keys(cats).forEach(cat => {
       h += `<h4>${cat}</h4><div class="palette-grid">`;
-      cats[cat].forEach(k => { h += `<button class="pal-item" data-type="${k}">${SS.iconFor(k)}<span>${SS.CATALOG[k].name}</span></button>`; });
+      cats[cat].forEach(k => {
+        const c = SS.CATALOG[k];
+        const size = c.w ? `${c.w}×${c.h}cm` : '';
+        h += `<button class="pal-item" draggable="true" data-type="${k}" title="${SS.esc(c.note || size)}">${SS.iconFor(k)}<span>${c.name}${size ? `<small>${size}</small>` : ''}</span></button>`;
+      });
       h += '</div>';
     });
     pal.innerHTML = h;
     pal.querySelectorAll('[data-type]').forEach(b => {
       b.onclick = () => {
-        addItem(b.getAttribute('data-type'));
+        setPlacing(b.getAttribute('data-type'));
         closePanels();
-        toast('追加しました。ドラッグで動かせます');
       };
+      b.addEventListener('dragstart', e => { e.dataTransfer.setData('text/x-stage-item', b.getAttribute('data-type')); e.dataTransfer.effectAllowed = 'copy'; });
     });
   }
 
@@ -912,23 +1064,128 @@
     if (!file || !/^image\//.test(file.type)) return toast('画像ファイルを選んでください');
     try {
       toast('画像を読み込んでいます…');
-      const { img, dataURL } = await SS.trace.loadImageFromFile(file);
-      const prep = SS.trace.prepare(img);
-      S.trace = { prep, result: null };
-      const st = doc().stage;
-      const k = Math.min(st.w / prep.w, st.d / prep.h);
-      const u = { src: dataURL, w: prep.w * k, h: prep.h * k, opacity: +$('underlayOpacity').value / 100 };
-      u.x = (st.w - u.w) / 2; u.y = (st.d - u.h) / 2;
-      doc().underlay = u;
+      const { img } = await SS.trace.loadImageFromFile(file);
+      S.traceSrc = { img, rot: 0 };
+      setTraceImage(SS.trace.toCanvas(img, 2400, 0), false);
       $('traceControls').classList.remove('hidden');
       openTab('leftPanel', 'traceTab');
-      openPanel('leftPanel');
-      runDetect();
-      render();
+      // ステージの外枠が見つかったら、四隅合わせの画面を自動で開く
+      const frame = SS.trace.findFrame(S.trace.prep);
+      if (frame) openCropEditor(frame, true);
+      else { openPanel('leftPanel'); toast('画像を読み込みました。「✂ トリミング・四隅合わせ」で範囲を決められます'); }
     } catch (err) {
       toast(err.message || '画像を読み込めませんでした');
     }
   }
+
+  // 解析する画像（キャンバス）を決めて、下絵として置く
+  function setTraceImage(canvas, framed) {
+    const prep = SS.trace.prepare(canvas);
+    S.trace = { prep, result: null, canvas, framed };
+    const st = doc().stage;
+    const u = { src: canvas.toDataURL('image/jpeg', 0.85), opacity: +$('underlayOpacity').value / 100 };
+    if (framed) { u.x = 0; u.y = 0; u.w = st.w; u.h = st.d; }
+    else {
+      const k = Math.min(st.w / prep.w, st.d / prep.h);
+      u.w = prep.w * k; u.h = prep.h * k; u.x = (st.w - u.w) / 2; u.y = (st.d - u.h) / 2;
+    }
+    doc().underlay = u;
+    $('traceScale').checked = !framed;
+    runDetect();
+    render();
+  }
+
+  // ------------------------------------------------------------ トリミング・四隅合わせ
+  function openCropEditor(corners, auto) {
+    if (!S.traceSrc) return toast('先に画像を選んでください');
+    let src = SS.trace.toCanvas(S.traceSrc.img, 2400, S.traceSrc.rot);
+    const prepScale = () => {
+      // findFrame は解析用（縮小）画像の座標なので、元画像の座標に直す
+      const pw = S.trace && S.trace.prep ? S.trace.prep.w : src.width;
+      return src.width / pw;
+    };
+    let pts;
+    if (corners) { const k = prepScale(); pts = corners.map(p => ({ x: p.x * k, y: p.y * k })); }
+    else pts = [{ x: 0, y: 0 }, { x: src.width, y: 0 }, { x: src.width, y: src.height }, { x: 0, y: src.height }];
+    const st = doc().stage;
+    openModal(`
+      <h2>✂ トリミング・四隅合わせ</h2>
+      <p class="hint">${auto ? '<b>ステージの枠を自動で見つけました。</b>' : ''}青い4つの点を、ステージの<b>四隅</b>に合わせてください（ドラッグで動かせます）。斜めから撮った写真も、まっすぐに直します。</p>
+      <div class="crop-wrap" id="cropWrap"><canvas id="cropCanvas"></canvas><svg id="cropSvg"></svg></div>
+      <div class="btn-row">
+        <button class="btn" id="cropAuto">🔍 枠を自動で探す</button>
+        <button class="btn" id="cropAll">画像全体</button>
+        <button class="btn" id="cropRot">⟳ 90°回転</button>
+      </div>
+      <div class="row2">
+        <label class="field">この枠の実際の幅(m)<input id="cropW" type="number" step="0.5" min="3" max="60" value="${st.w / 100}"></label>
+        <label class="field">奥行(m)<input id="cropD" type="number" step="0.5" min="2" max="50" value="${st.d / 100}"></label>
+      </div>
+      <p class="hint small">枠の中がステージ全体になり、ステージの大きさも上の数字に変わります。</p>
+      <div class="btn-row"><button class="btn primary" id="cropOk">この範囲で決定</button><button class="btn" id="cropCancel">やめる</button></div>
+    `);
+    const cv = $('cropCanvas'), svgEl = $('cropSvg');
+    const draw = () => {
+      cv.width = src.width; cv.height = src.height;
+      cv.getContext('2d').drawImage(src, 0, 0);
+      svgEl.setAttribute('viewBox', `0 0 ${src.width} ${src.height}`);
+      const hr = Math.max(src.width, src.height) / 45;
+      const poly = pts.map(p => `${p.x},${p.y}`).join(' ');
+      svgEl.innerHTML = `<path d="M0 0H${src.width}V${src.height}H0Z M${pts.map(p => `${p.x} ${p.y}`).join(' L')}Z" fill="rgba(0,0,0,.45)" fill-rule="evenodd"/>
+        <polygon points="${poly}" fill="none" stroke="#4d8dff" stroke-width="${hr / 4}"/>` +
+        pts.map((p, i) => `<circle class="crop-handle" data-i="${i}" cx="${p.x}" cy="${p.y}" r="${hr}" fill="rgba(77,141,255,.35)" stroke="#fff" stroke-width="${hr / 5}"/>`).join('');
+    };
+    draw();
+    let dragI = -1;
+    const toImg = e => {
+      const r = svgEl.getBoundingClientRect();
+      return { x: Math.max(0, Math.min(src.width, (e.clientX - r.left) / r.width * src.width)), y: Math.max(0, Math.min(src.height, (e.clientY - r.top) / r.height * src.height)) };
+    };
+    svgEl.addEventListener('pointerdown', e => {
+      const p = toImg(e);
+      // いちばん近い点をつかむ（点を正確に押さなくてもよい）
+      let bi = 0, bd = Infinity;
+      pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } });
+      dragI = bi;
+      svgEl.setPointerCapture(e.pointerId);
+      pts[dragI] = p; draw();
+    });
+    svgEl.addEventListener('pointermove', e => { if (dragI >= 0) { pts[dragI] = toImg(e); draw(); } });
+    svgEl.addEventListener('pointerup', () => { dragI = -1; });
+    $('cropAuto').onclick = () => {
+      const tmp = SS.trace.prepare(src);
+      const f = SS.trace.findFrame(tmp);
+      if (!f) return toast('枠が見つかりませんでした。点を手で動かしてください');
+      const k = src.width / tmp.w;
+      pts = f.map(p => ({ x: p.x * k, y: p.y * k })); draw();
+    };
+    $('cropAll').onclick = () => { pts = [{ x: 0, y: 0 }, { x: src.width, y: 0 }, { x: src.width, y: src.height }, { x: 0, y: src.height }]; draw(); };
+    $('cropRot').onclick = () => {
+      S.traceSrc.rot = (S.traceSrc.rot + 1) % 4;
+      src = SS.trace.toCanvas(S.traceSrc.img, 2400, S.traceSrc.rot);
+      pts = [{ x: 0, y: 0 }, { x: src.width, y: 0 }, { x: src.width, y: src.height }, { x: 0, y: src.height }];
+      draw();
+    };
+    $('cropCancel').onclick = () => { closeModal(); openPanel('leftPanel'); };
+    $('cropOk').onclick = () => {
+      const W = +$('cropW').value, D = +$('cropD').value;
+      if (!(W >= 3 && D >= 2)) return toast('幅と奥行を入れてください');
+      pushHistory();
+      doc().stage.w = Math.round(W * 100); doc().stage.d = Math.round(D * 100);
+      // 出力の大きさ：実際の縦横比に合わせる
+      const outW = Math.min(2000, Math.round(Math.max(dist(pts[0], pts[1]), dist(pts[3], pts[2]))));
+      const outH = Math.max(50, Math.round(outW * D / W));
+      const warped = SS.trace.warp(src, pts, outW, outH);
+      closeModal();
+      setTraceImage(warped, true);
+      renderAll();
+      fitView();
+      openPanel('leftPanel');
+      toast('ステージの枠に合わせました。赤い丸（見つかった椅子）を確認して「取り込む」を押してください');
+    };
+  }
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  $('btnCrop').onclick = () => openCropEditor(null, false);
 
   function runDetect() {
     if (!S.trace) return;
@@ -978,7 +1235,19 @@
     const u = d.underlay;
     let toW;
     let center = null;
-    if ($('traceScale').checked && seats.length >= 3) {
+    if (S.trace.framed) {
+      // 枠＝ステージなので、そのまま当てはめる
+      const kx = d.stage.w / prep.w, ky = d.stage.d / prep.h;
+      toW = p => ({ x: p.x * kx, y: p.y * ky });
+      const spacing = SS.trace.typicalSpacing(seats) || res.s0 * 1.5;
+      const cImg = SS.trace.estimateCenter(seats, spacing);
+      if (cImg) {
+        for (let i = seats.length - 1; i >= 0; i--) if (Math.hypot(seats[i].x - cImg.x, seats[i].y - cImg.y) < spacing * 0.8) seats.splice(i, 1);
+        center = toW(cImg);
+        center.y = Math.min(center.y, d.stage.d - 50);
+      }
+      u.x = 0; u.y = 0; u.w = d.stage.w; u.h = d.stage.d;
+    } else if ($('traceScale').checked && seats.length >= 3) {
       const spacing = SS.trace.typicalSpacing(seats) || res.s0 * 1.5;
       const cm = 75 / spacing; // となりの席との間隔を約75cmとみなす
       const all = seats.concat(boxes);
@@ -1024,10 +1293,18 @@
       d.items.push({ id: newId(), type: 'box', x: q.x, y: q.y, rot: 0, w: Math.round(b.w * scale), h: Math.round(b.h * scale), label: (b.label || '').slice(0, 12) });
     });
     if ($('traceTidy').checked && newPlayers.length >= 3) {
-      // もともと列がはっきりしているときだけ整える（崩れるのを防ぐ）
-      const shape = G.guessShape(newPlayers, c);
-      if (G.rowSpread(newPlayers, c, shape) < 22) tidyAuto(newPlayers, true);
-      else G.fixOverlap(newPlayers, opts().seatR * 2 + 8);
+      // となり同士でつながる「列」ごとに、きれいに並んでいる列だけを整える（位置は下絵からずらさない）
+      const sp = SS.trace.typicalSpacing(newPlayers) || 75;
+      let n = 0;
+      SS.trace.chainRows(newPlayers, sp).forEach(row => {
+        if (row.length < 4) return;
+        const rs = row.map(p => G.polar(p, c).r), ys = row.map(p => p.y);
+        const sd = a => { const m = G.mean(a); return Math.sqrt(G.mean(a.map(v => (v - m) ** 2))); };
+        const o = { symmetric: false, evenRows: false, minGap: opts().seatR * 2 + 14 };
+        if (sd(rs) < 22 && sd(rs) <= sd(ys)) { G.tidyArc(row, c, o); n++; }
+        else if (sd(ys) < 18) { G.tidyLine(row, c, o); n++; }
+      });
+      G.fixOverlap(newPlayers, opts().seatR * 2 + 8);
     }
     S.sel = new Set(newPlayers.map(it => it.id));
     closePanels();
@@ -1063,6 +1340,8 @@
   document.addEventListener('dragover', e => { e.preventDefault(); });
   document.addEventListener('drop', e => {
     e.preventDefault();
+    const itemType = e.dataTransfer && e.dataTransfer.getData('text/x-stage-item');
+    if (itemType) { setPlacing(null); addItem(itemType, null, toWorld(e.clientX, e.clientY)); return; }
     dragDepth = 0;
     $('dropHint').classList.remove('show');
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
@@ -1208,11 +1487,12 @@
       <h2>🎼 使い方</h2>
       <ol>
         <li><b>ひな形を選ぶ</b>：左の「ひな形」から近い編成を選ぶと、すぐに配置図ができます。</li>
-        <li><b>動かす</b>：丸（奏者）をドラッグ。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
-        <li><b>パート名・名前</b>：選ぶと右の「選択中」で入力。ダブルクリックでも編集できます。</li>
+        <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
+        <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列をまとめて選択。</li>
+        <li><b>部品を足す</b>：「部品」で押してから、置きたい場所をタップ。楽器は実寸（cm）です。</li>
         <li><b>✨ きれいに整える</b>：ざっくり置いたあと押すと、列を自動で見つけて<b>扇形（または横一列）・等間隔・指揮者向き</b>にそろえます。</li>
         <li><b>まとめて作る</b>：「一括作成」で「8,10,12」のように人数を入れると扇形の席が一気にできます。パート名や名前もまとめて入れられます。</li>
-        <li><b>トレース</b>：いま使っている配置図の画像（写真・スクショ）を読み込むと、椅子の位置を自動で読み取ります。</li>
+        <li><b>トレース</b>：いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
         <li><b>保存・共有</b>：上のボタンから画像保存・印刷・共有リンクが作れます。作業中の内容は自動で保存されます。</li>
       </ol>
       <h3 style="font-size:14px">便利なキー（パソコン）</h3>

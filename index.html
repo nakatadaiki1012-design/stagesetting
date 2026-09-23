@@ -39,7 +39,7 @@
     </section>
 
     <section class="tabpane" id="partsTab">
-      <p class="hint">押すと画面の中央に追加されます。</p>
+      <p class="hint">部品を押してから、ステージの置きたい場所をタップ。パソコンならドラッグして置くこともできます。大きさは実寸（cm）です。</p>
       <div id="palette" class="palette"></div>
     </section>
 
@@ -82,6 +82,7 @@
       <p class="hint small">画像をこの画面にドラッグ＆ドロップ、または貼り付け（Ctrl+V）でもOK。</p>
 
       <div id="traceControls" class="hidden">
+        <button class="btn wide" id="btnCrop">✂ トリミング・四隅合わせ（枠の自動読み取り）</button>
         <div class="trace-thumb"><canvas id="tracePreview"></canvas></div>
         <p id="traceStatus" class="status"></p>
         <label class="field">読み取りの感度 <span id="sensVal"></span><input type="range" id="traceSens" min="-60" max="60" value="0"></label>
@@ -131,6 +132,24 @@
     <div class="tidy-bar">
       <button class="btn primary" id="btnTidy" title="列を見つけて、間隔・向きをそろえます">✨ きれいに整える</button>
     </div>
+    <div class="ctx-bar" id="ctxBar" hidden>
+      <div class="ctx-main">
+        <span class="ctx-count" id="ctxCount"></span>
+        <button data-ctx="edit" title="パート名・名前を入力">✏️<small>名前</small></button>
+        <button data-ctx="rotL" title="左に15°回す">↺<small>回転</small></button>
+        <button data-ctx="rotR" title="右に15°回す">↻<small>回転</small></button>
+        <button data-ctx="faceConductor" title="指揮者の方を向く">👀<small>指揮者へ</small></button>
+        <button data-ctx="row" id="ctxRow" title="同じ列の人をまとめて選ぶ">⋯<small>列を選択</small></button>
+        <button data-ctx="duplicate" title="複製">⧉<small>複製</small></button>
+        <button data-ctx="delete" class="danger" title="削除">🗑<small>削除</small></button>
+      </div>
+      <div class="ctx-edit" id="ctxEdit" hidden>
+        <label>パート<input id="ctxLabel" list="partListCtx" autocomplete="off"></label>
+        <label>名前<input id="ctxName" autocomplete="off"></label>
+        <datalist id="partListCtx"><option value="Fl"><option value="Ob"><option value="Cl1"><option value="Cl2"><option value="A.Sx"><option value="T.Sx"><option value="B.Sx"><option value="Hr"><option value="Tp"><option value="Tb"><option value="Euph"><option value="Tuba"><option value="Perc"><option value="Vn1"><option value="Vn2"><option value="Va"><option value="Vc"><option value="Cb"></datalist>
+      </div>
+    </div>
+    <div class="place-hint" id="placeHint" hidden><span id="placeHintText"></span><button id="placeCancel">やめる</button></div>
     <div class="drop-hint" id="dropHint">ここに画像をドロップしてトレース</div>
     <div class="toast" id="toast"></div>
   </section>
@@ -200,11 +219,13 @@
         </select>
       </label>
       <h3>表示</h3>
+      <label class="check"><input type="checkbox" id="optFigure"> 奏者を「人の形」で表示（オフで○）</label>
       <label class="check"><input type="checkbox" id="optNames"> 名前を表示</label>
       <label class="check"><input type="checkbox" id="optStands"> 譜面台を表示</label>
       <label class="check"><input type="checkbox" id="optNumbers"> 席番号を表示</label>
       <label class="check"><input type="checkbox" id="optGrid"> 方眼（50cm）を表示</label>
       <label class="check"><input type="checkbox" id="optSnap"> 方眼にぴったり合わせる</label>
+      <label class="check"><input type="checkbox" id="optGuides"> 動かすとき、ほかの人と位置をそろえる（ガイド線）</label>
       <label class="check"><input type="checkbox" id="optColor"> パートごとに色分け</label>
       <label class="field">奏者の丸の大きさ<input type="range" id="optSeatSize" min="16" max="40"></label>
     </section>
@@ -229,6 +250,7 @@
 <div id="printArea"></div>
 
 <script src="js/catalog.js"></script>
+<script src="js/figures.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/geometry.js"></script>
 <script src="js/trace.js"></script>
