@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ステージ配置図メーカー</title>
+<meta name="description" content="吹奏楽・オーケストラのステージ配置図をかんたんに作れるWebアプリ">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🎼 <span>ステージ配置図メーカー</span></div>
+  <div class="topbar-actions">
+    <button class="btn" id="btnUndo" title="元に戻す (Ctrl+Z)">↶<span class="lbl">戻す</span></button>
+    <button class="btn" id="btnRedo" title="やり直す (Ctrl+Y)">↷<span class="lbl">進む</span></button>
+    <span class="sep"></span>
+    <button class="btn" id="btnFile" title="保存・読み込み">💾<span class="lbl">保存/開く</span></button>
+    <button class="btn" id="btnExport" title="画像として保存">🖼<span class="lbl">画像</span></button>
+    <button class="btn" id="btnPrint" title="印刷">🖨<span class="lbl">印刷</span></button>
+    <button class="btn" id="btnShare" title="共有リンクをコピー">🔗<span class="lbl">共有</span></button>
+    <button class="btn" id="btnHelp" title="使い方">？</button>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- 左パネル -->
+  <aside class="panel left" id="leftPanel">
+    <nav class="tabs" data-group="left">
+      <button class="tab active" data-tab="tplTab">ひな形</button>
+      <button class="tab" data-tab="partsTab">部品</button>
+      <button class="tab" data-tab="quickTab">一括作成</button>
+      <button class="tab" data-tab="traceTab">トレース</button>
+    </nav>
+
+    <section class="tabpane active" id="tplTab">
+      <p class="hint">ひな形を選ぶと、すぐに配置図ができます。あとは動かしたり消したりするだけ。</p>
+      <div id="templateList" class="card-list"></div>
+    </section>
+
+    <section class="tabpane" id="partsTab">
+      <p class="hint">押すと画面の中央に追加されます。</p>
+      <div id="palette" class="palette"></div>
+    </section>
+
+    <section class="tabpane" id="quickTab">
+      <h3>扇形・列をまとめて作る</h3>
+      <p class="hint">各列の人数をカンマ区切りで（前の列から）。</p>
+      <label class="field">各列の人数<input id="genRows" value="8,10,12,14"></label>
+      <div class="row2">
+        <label class="field">形
+          <select id="genShape"><option value="arc">扇形</option><option value="line">まっすぐ</option></select>
+        </label>
+        <label class="field">となりの間隔(cm)<input id="genSpacing" type="number" value="75" min="40" max="200"></label>
+      </div>
+      <div class="row2">
+        <label class="field">指揮者からの距離(cm)<input id="genR0" type="number" value="180" min="60" max="1000"></label>
+        <label class="field">列の間隔(cm)<input id="genGap" type="number" value="110" min="50" max="400"></label>
+      </div>
+      <label class="field">パート名（任意）<textarea id="genParts" rows="3" placeholder="例: Fl×4, Ob×2, Cl1×3, Cl2×3 ...&#10;左前から順に割り当てます"></textarea></label>
+      <label class="check"><input type="checkbox" id="genReplace"> いまある奏者を消して作り直す</label>
+      <button class="btn primary wide" id="btnGenerate">この内容で並べる</button>
+
+      <hr>
+      <h3>パートをまとめて割り当て</h3>
+      <p class="hint">選んだ席（何も選ばなければ全員）に、<b>前の列の左から順に</b>パート名を付けます。</p>
+      <textarea id="assignSpec" rows="3" placeholder="例: Fl1×2, Fl2×2, Picc, Ob×2, Cl1×3"></textarea>
+      <button class="btn wide" id="btnAssign">パートを割り当て</button>
+
+      <hr>
+      <h3>名前をまとめて入力</h3>
+      <p class="hint">1行に1人。「パート 名前」と書くとそのパートの席へ、名前だけなら前の列の左から順に入ります。</p>
+      <textarea id="namesSpec" rows="5" placeholder="Fl1 山田&#10;Fl2 佐藤&#10;Cl1 鈴木"></textarea>
+      <label class="check"><input type="checkbox" id="namesClear" checked> いまの名前を先に消す</label>
+      <button class="btn wide" id="btnNames">名前を入れる</button>
+    </section>
+
+    <section class="tabpane" id="traceTab">
+      <h3>既存の配置図から自動トレース</h3>
+      <p class="hint">紙の配置図の写真やスクリーンショット、PDFを画像にしたものを読み込むと、椅子（丸や四角）を自動で見つけて配置します。</p>
+      <label class="btn wide filebtn">📷 画像を選ぶ<input type="file" id="traceFile" accept="image/*" hidden></label>
+      <p class="hint small">画像をこの画面にドラッグ＆ドロップ、または貼り付け（Ctrl+V）でもOK。</p>
+
+      <div id="traceControls" class="hidden">
+        <div class="trace-thumb"><canvas id="tracePreview"></canvas></div>
+        <p id="traceStatus" class="status"></p>
+        <label class="field">読み取りの感度 <span id="sensVal"></span><input type="range" id="traceSens" min="-60" max="60" value="0"></label>
+        <label class="field">椅子の大きさ <span id="sizeVal">自動</span><input type="range" id="traceSize" min="0" max="80" value="0"></label>
+        <label class="check"><input type="checkbox" id="traceSplit" checked> くっついた椅子を分ける</label>
+        <label class="check"><input type="checkbox" id="traceBoxes"> 大きな図形（打楽器など）も取り込む</label>
+        <label class="check"><input type="checkbox" id="traceScale" checked> 縮尺と指揮者の位置を自動で合わせる</label>
+        <label class="check"><input type="checkbox" id="traceTidy" checked> 取り込んだ後にきれいに整える</label>
+        <label class="check"><input type="checkbox" id="traceOcr"> 文字（パート名）も読み取る <span class="small">※ネット接続が必要・少し時間がかかります</span></label>
+        <label class="check"><input type="checkbox" id="traceReplace" checked> いまの配置（指揮台以外）を消して置き換える</label>
+        <button class="btn primary wide" id="btnTraceApply">この内容で取り込む</button>
+        <hr>
+        <h4>下絵（なぞり用）</h4>
+        <label class="field">濃さ<input type="range" id="underlayOpacity" min="0" max="100" value="45"></label>
+        <label class="check"><input type="checkbox" id="underlayEdit"> 下絵を動かす・拡大する（ドラッグ／ホイール）</label>
+        <div class="row2">
+          <button class="btn" id="btnUnderlayFit">ステージに合わせる</button>
+          <button class="btn danger" id="btnUnderlayRemove">下絵を消す</button>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <!-- キャンバス -->
+  <section class="stage-wrap" id="stageWrap">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="gridPat" width="50" height="50" patternUnits="userSpaceOnUse">
+          <path d="M50 0H0V50" fill="none" stroke="#d8dde6" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <g id="viewport">
+        <g id="layerStage"></g>
+        <g id="layerUnderlay"></g>
+        <g id="layerItems"></g>
+        <g id="layerOverlay"></g>
+      </g>
+    </svg>
+    <div class="float-tools">
+      <button class="btn round" id="modeSelect" title="選択モード">👆</button>
+      <button class="btn round" id="modePan" title="画面を動かすモード">✋</button>
+      <span class="sep"></span>
+      <button class="btn round" id="zoomIn" title="拡大">＋</button>
+      <button class="btn round" id="zoomOut" title="縮小">－</button>
+      <button class="btn round" id="zoomFit" title="全体を表示">⤢</button>
+    </div>
+    <div class="tidy-bar">
+      <button class="btn primary" id="btnTidy" title="列を見つけて、間隔・向きをそろえます">✨ きれいに整える</button>
+    </div>
+    <div class="drop-hint" id="dropHint">ここに画像をドロップしてトレース</div>
+    <div class="toast" id="toast"></div>
+  </section>
+
+  <!-- 右パネル -->
+  <aside class="panel right" id="rightPanel">
+    <nav class="tabs" data-group="right">
+      <button class="tab active" data-tab="selTab">選択中</button>
+      <button class="tab" data-tab="countTab">編成表</button>
+      <button class="tab" data-tab="setTab">設定</button>
+    </nav>
+
+    <section class="tabpane active" id="selTab">
+      <div id="selInfo" class="hint">何も選ばれていません。<br>部品をクリック（タップ）すると選べます。<br>何もないところをドラッグすると範囲で選べます。</div>
+      <div id="selProps"></div>
+
+      <h3>整える</h3>
+      <p class="hint small">選んだもの（何も選ばなければ奏者全員）が対象です。</p>
+      <div class="tool-grid">
+        <button class="btn" data-act="tidyArc" title="同じ列の人を同じ円の上に等間隔で並べます">◠ 扇形にそろえる</button>
+        <button class="btn" data-act="tidyLine" title="同じ列の人を横一直線に等間隔で並べます">▭ 横一列にそろえる</button>
+        <button class="btn" data-act="faceConductor" title="指揮者の方を向かせます">👀 指揮者を向く</button>
+        <button class="btn" data-act="faceFront" title="客席の方を向かせます">⬇ 正面を向く</button>
+        <button class="btn" data-act="fixOverlap" title="重なっている人を少しずつ離します">↔ 重なりを直す</button>
+        <button class="btn" data-act="mirror" title="指揮者を中心に左右を入れ替えます">⇋ 左右反転</button>
+      </div>
+      <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
+      <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>
+      <h4>位置合わせ（2つ以上選択）</h4>
+      <div class="tool-grid six">
+        <button class="btn" data-act="alignLeft" title="左端にそろえる">⇤</button>
+        <button class="btn" data-act="alignCenterX" title="左右中央にそろえる">⇹</button>
+        <button class="btn" data-act="alignRight" title="右端にそろえる">⇥</button>
+        <button class="btn" data-act="alignTop" title="上端にそろえる">⤒</button>
+        <button class="btn" data-act="alignCenterY" title="上下中央にそろえる">⇕</button>
+        <button class="btn" data-act="alignBottom" title="下端にそろえる">⤓</button>
+        <button class="btn span3" data-act="distH" title="横方向に等間隔">横に等間隔</button>
+        <button class="btn span3" data-act="distV" title="縦方向に等間隔">縦に等間隔</button>
+      </div>
+      <h4>操作</h4>
+      <div class="tool-grid">
+        <button class="btn" data-act="duplicate">⧉ 複製</button>
+        <button class="btn danger" data-act="delete">🗑 削除</button>
+        <button class="btn" data-act="selectAll">全部選ぶ</button>
+        <button class="btn" data-act="selectSamePart">同じパートを選ぶ</button>
+      </div>
+    </section>
+
+    <section class="tabpane" id="countTab">
+      <div id="countTable"></div>
+    </section>
+
+    <section class="tabpane" id="setTab">
+      <h3>タイトル</h3>
+      <label class="field">タイトル<input id="docTitle" placeholder="例: 第30回 定期演奏会"></label>
+      <label class="field">サブタイトル<input id="docSubtitle" placeholder="例: 第1部 / ○○ホール"></label>
+      <h3>ステージの大きさ</h3>
+      <div class="row2">
+        <label class="field">幅(m)<input id="stageW" type="number" step="0.5" min="4" max="40"></label>
+        <label class="field">奥行(m)<input id="stageD" type="number" step="0.5" min="3" max="30"></label>
+      </div>
+      <label class="field">ステージの形
+        <select id="stageShape">
+          <option value="rect">四角</option>
+          <option value="apron">前が丸い（張り出し）</option>
+          <option value="trapezoid">台形（奥がせまい）</option>
+        </select>
+      </label>
+      <h3>表示</h3>
+      <label class="check"><input type="checkbox" id="optNames"> 名前を表示</label>
+      <label class="check"><input type="checkbox" id="optStands"> 譜面台を表示</label>
+      <label class="check"><input type="checkbox" id="optNumbers"> 席番号を表示</label>
+      <label class="check"><input type="checkbox" id="optGrid"> 方眼（50cm）を表示</label>
+      <label class="check"><input type="checkbox" id="optSnap"> 方眼にぴったり合わせる</label>
+      <label class="check"><input type="checkbox" id="optColor"> パートごとに色分け</label>
+      <label class="field">奏者の丸の大きさ<input type="range" id="optSeatSize" min="16" max="40"></label>
+    </section>
+  </aside>
+</main>
+
+<!-- スマホ用ボトムバー -->
+<nav class="bottombar">
+  <button data-open="leftPanel">📋 作る</button>
+  <button id="btnTidyMobile">✨ 整える</button>
+  <button data-open="rightPanel">⚙ 編集</button>
+</nav>
+
+<!-- ダイアログ -->
+<div class="modal hidden" id="modal">
+  <div class="modal-box">
+    <button class="modal-close" id="modalClose">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<script src="js/catalog.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/io.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
