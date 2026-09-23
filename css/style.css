@@ -218,13 +218,18 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 }
 @media (max-width: 820px) {
   .brand span { display: none; }
+  /* スマホ：パネルは画面の下半分に出す（上半分で舞台図の変化が見える） */
   .panel {
-    position: fixed; top: 50px; bottom: 56px; width: min(340px, 92vw); z-index: 50;
-    box-shadow: 0 8px 30px rgba(0,0,0,.2); transition: transform .25s;
+    position: fixed; left: 0; right: 0; bottom: 56px; top: auto; width: auto; height: 50vh; height: 50dvh; z-index: 50;
+    border: none; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.18);
+    transform: translateY(calc(100% + 80px)); visibility: hidden;
+    transition: transform .25s, visibility 0s .25s;
   }
-  .panel.left { left: 0; transform: translateX(-105%); }
-  .panel.right { right: 0; transform: translateX(105%); }
-  .panel.open { transform: translateX(0); }
+  .panel.left, .panel.right { transform: translateY(calc(100% + 80px)); }
+  .panel.open { visibility: visible; transition: transform .25s, visibility 0s; }
+  .panel.open { transform: translateY(0); }
+  .panel::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 2px; background: #cfd5de; margin: 6px auto 0; flex: 0 0 auto; }
   .bottombar {
     display: flex; flex: 0 0 56px; background: #fff; border-top: 1px solid var(--line);
   }

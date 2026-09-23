@@ -184,8 +184,17 @@
   }
 
   function fitView(extra) {
-    const r = svg.getBoundingClientRect();
-    if (!r.width || !r.height) return;
+    const r0 = svg.getBoundingClientRect();
+    if (!r0.width || !r0.height) return;
+    // スマホで下のパネルが開いているときは、パネルに隠れていない上の部分に舞台図を合わせる
+    const sheet = document.querySelector('.panel.open');
+    const r = { width: r0.width, height: r0.height };
+    if (sheet && window.matchMedia('(max-width: 820px)').matches) {
+      // 開く途中（動いている間）でも正しく測れるよう、開き終わったときの位置で計算する
+      const bar = document.querySelector('.bottombar');
+      const top = window.innerHeight - (bar ? bar.offsetHeight : 56) - sheet.offsetHeight;
+      if (top > r0.top + 120) r.height = top - r0.top + 50; // 下の 60px は余白として差し引かれる
+    }
     const st = doc().stage;
     const mx = opts().dims ? 110 : 80;
     let x0 = -mx, y0 = -95, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
@@ -1220,6 +1229,12 @@
   const isMobile = () => window.matchMedia('(max-width: 820px)').matches;
   function openPanel(id) { if (isMobile()) { closePanels(); $(id).classList.add('open'); } }
   function closePanels() { document.querySelectorAll('.panel.open').forEach(p => p.classList.remove('open')); }
+  // スマホでパネルを開け閉めしたら、見える部分に舞台図を合わせ直す
+  let sheetOpen = false;
+  new MutationObserver(() => {
+    const open = !!document.querySelector('.panel.open');
+    if (open !== sheetOpen && isMobile()) { sheetOpen = open; setTimeout(fitView, 30); }
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
   document.querySelectorAll('[data-open]').forEach(b => {
     b.onclick = () => {
       const p = $(b.getAttribute('data-open'));
