@@ -21,7 +21,8 @@ window.SS = window.SS || {};
       const s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
       s.onload = () => resolve(window.THREE);
-      s.onerror = () => reject(new Error('3Dの部品を読み込めませんでした。インターネットにつながっているか確認してください。'));
+      // 失敗した script は取りのぞく（次に3Dを開いたとき、もう一度読み込みを試す）
+      s.onerror = () => { s.remove(); reject(new Error('3Dの部品を読み込めませんでした。インターネットにつながっているか確認して、「✕ 閉じる」で戻ってから、もう一度 3D を押してください。')); };
       document.head.appendChild(s);
     });
   }
@@ -1027,8 +1028,14 @@ window.SS = window.SS || {};
     scene = null;
   }
 
-  let bound = false;
+  let bound = false, closeBound = false;
   V.open = async function (playerId) {
+    // 閉じるボタンと Esc は、読み込みの前に登録する（読み込みに失敗しても閉じられるように）
+    if (!closeBound) {
+      closeBound = true;
+      $('v3close').onclick = V.close;
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('view3d').classList.contains('hidden')) V.close(); });
+    }
     $('view3d').classList.remove('hidden');
     $('v3loading').hidden = false;
     $('v3loading').textContent = '3Dを準備しています…';
@@ -1038,6 +1045,7 @@ window.SS = window.SS || {};
       $('v3loading').textContent = err.message;
       return;
     }
+    if ($('view3d').classList.contains('hidden')) return; // 読み込み中に閉じられた
     const cv = $('c3d');
     if (!renderer) {
       renderer = new T.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
@@ -1059,13 +1067,11 @@ window.SS = window.SS || {};
       cv.addEventListener('wheel', e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); }, { passive: false });
       window.addEventListener('resize', resize);
       document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => setCam(b.getAttribute('data-cam')); });
-      $('v3close').onclick = V.close;
       $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); if (id) setCam('seat', id); };
       $('v3labels').onchange = e => {
         labelsOn = e.target.checked;
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) o.visible = labelsOn; });
       };
-      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('view3d').classList.contains('hidden')) V.close(); });
     }
     disposeScene();
     buildScene();
