@@ -241,7 +241,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 
 /* 選択枠はクリックを邪魔しない（回転・大きさのつまみだけ反応） */
 #layerOverlay * { pointer-events: none; }
-#layerOverlay [data-handle] { pointer-events: all; }
+#layerOverlay [data-handle], #layerOverlay [data-handle] circle { pointer-events: all; }
 
 /* かんたん編成 */
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin: 4px 0 8px; }

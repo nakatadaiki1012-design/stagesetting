@@ -100,6 +100,28 @@
     scheduleSave();
   }
 
+  // 舞台の大きさをドラッグで変えるつまみ（前の幅・奥の幅・奥行）
+  function stageHandlesSVG(k) {
+    if (S.underlayEdit || S.placing) return '';
+    const st = doc().stage;
+    const bw = SS.render.backWidth(st), cx = st.w / 2;
+    const r = 11 / k, hit = 24 / k;
+    const knob = (kind, x, y, arrow, title) =>
+      `<g data-handle="${kind}" style="cursor:${arrow === '↕' ? 'ns-resize' : 'ew-resize'}"><title>${title}</title>` +
+      `<circle cx="${x}" cy="${y}" r="${hit}" fill="transparent"/>` +
+      `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#3b6bb5" stroke-width="${2.5 / k}"/>` +
+      `<text x="${x}" y="${y}" dy="0.36em" text-anchor="middle" font-size="${14 / k}" font-weight="700" fill="#3b6bb5" pointer-events="none">${arrow}</text></g>`;
+    let s = '';
+    s += knob('stageW', 0, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+    s += knob('stageW', st.w, st.d, '↔', 'ドラッグで舞台の前の幅を変える');
+    s += knob('stageD', cx + Math.min(260, st.w * 0.2), st.d, '↕', 'ドラッグで舞台の奥行を変える');
+    if (bw < st.w - 1) {
+      s += knob('stageBW', cx - bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
+      s += knob('stageBW', cx + bw / 2, 0, '↔', 'ドラッグで舞台の奥の幅を変える');
+    }
+    return s;
+  }
+
   function renderOverlay(marquee) {
     const k = S.view.k;
     let s = '';
@@ -127,6 +149,7 @@
       }
       s += '</g>';
     }
+    s += stageHandlesSVG(k);
     if (drag && drag.guides) {
       const gs = `stroke="#e8467c" stroke-width="${1.6 / k}" stroke-dasharray="${8 / k} ${5 / k}" fill="none"`;
       drag.guides.forEach(g => {
@@ -269,6 +292,12 @@
       drag = { kind: 'pan', start, last: { x: e.clientX, y: e.clientY } };
       return;
     }
+    if (handle && /^stage/.test(handle.getAttribute('data-handle'))) {
+      pushHistory();
+      const st = doc().stage;
+      drag = { kind: handle.getAttribute('data-handle'), start, w0: st.w, d0: st.d, auto: doc().items.some(it => it.auto) };
+      return;
+    }
     if (handle) {
       const it = selected()[0];
       if (!it) return;
@@ -389,6 +418,12 @@
         renderProps(true);
         break;
       }
+      case 'stageW':
+      case 'stageBW':
+      case 'stageD': {
+        dragStage(drag, w);
+        break;
+      }
       case 'underlay': {
         const u = doc().underlay;
         u.x = drag.ox + (w.x - drag.start.w.x);
@@ -414,6 +449,12 @@
     if (drag.kind === 'pinch') {
       if (pointers.size < 2) drag = null;
       return;
+    }
+    if (/^stage/.test(drag.kind)) {
+      const st = doc().stage;
+      if (drag.auto) applyAuto({ noHistory: true });
+      fitView();
+      toast(`舞台：前の幅 ${st.w / 100}m・奥の幅 ${Math.round(SS.render.backWidth(st)) / 100}m・奥行 ${st.d / 100}m`);
     }
     if (drag.kind === 'pan' && drag.tapClear && !drag.didMove) {
       S.sel.clear();
@@ -454,6 +495,39 @@
   }, { passive: false });
 
   let lastTap = null;
+
+  // 舞台のつまみをドラッグ：10cm単位。自動配置ならその場で並べ直す
+  let stageRAF = 0;
+  function dragStage(dr, w) {
+    const st = doc().stage;
+    const oldW = st.w, oldD = st.d;
+    const cx = oldW / 2;
+    const r10 = v => Math.round(v / 10) * 10;
+    if (dr.kind === 'stageW') {
+      st.w = Math.max(400, Math.min(6000, r10(Math.abs(w.x - cx) * 2)));
+      if (st.bw) st.bw = Math.min(st.bw, st.w);
+    } else if (dr.kind === 'stageBW') {
+      st.bw = Math.max(200, Math.min(st.w, r10(Math.abs(w.x - cx) * 2)));
+    } else {
+      st.d = Math.max(300, Math.min(5000, r10(w.y)));
+    }
+    if (st.w === oldW && st.d === oldD && dr.kind !== 'stageBW') return;
+    doc().hall = '';
+    const dx = (st.w - oldW) / 2, dy = st.d - oldD;
+    if (dr.auto) {
+      // 自動配置：いったん中心をずらして表示し、描画のタイミングで並べ直す
+      doc().items.forEach(it => { it.x += dx; it.y += dy; });
+      render();
+      cancelAnimationFrame(stageRAF);
+      stageRAF = requestAnimationFrame(() => applyAuto({ noHistory: true, quiet: true }));
+    } else {
+      // 手で置いた配置：真ん中と舞台際（指揮者）からの位置を保つ
+      doc().items.forEach(it => { it.x += dx; it.y += dy; });
+      render();
+    }
+    renderSettings();
+    updateHallNote();
+  }
 
   // 同じ列（指揮者からの距離が同じくらい）の奏者をまとめて選ぶ
   function selectRowOf(id) {
@@ -1041,7 +1115,8 @@
     pushHistory();
     const made = t.make();
     const keep = doc();
-    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay });
+    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null });
+    renderSteppers();
     S.sel.clear();
     closePanels();
     renderAll();
@@ -1583,6 +1658,8 @@
         <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
         <li><b>ひな壇</b>：段数と平台（3×6尺／4×6尺）を選ぶと、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
         <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
+        <li><b>舞台の大きさ</b>：舞台の角と前の縁にある <b>↔ ↕ の丸いつまみ</b>をドラッグすると、前の幅・奥の幅・奥行をその場で変えられます（10cm単位）。自動配置なら、すぐに並べ直します。</li>
+        <li><b>並び方</b>：かんたん編成の「並び方」で、<b>標準・Cl下手/Sax上手・昔ながら・ドイツ式</b>を選べます。「ひな形」にも、コンクールA（55人）や小編成などの型があります。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
         <li><b>低音を上手の外側に</b>：かんたん編成のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。</li>
         <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
@@ -1618,7 +1695,7 @@
   function applyAuto(opts2) {
     opts2 = opts2 || {};
     const st = ens();
-    if (Date.now() - lastAutoPush > 1500) pushHistory();
+    if (!opts2.noHistory && Date.now() - lastAutoPush > 1500) pushHistory();
     lastAutoPush = Date.now();
     const d = doc();
     // 今の名前を、パートごとに覚えておく
@@ -1636,7 +1713,9 @@
     S.sel.clear();
     renderAll();
     if (opts2.fit) fitView();
+    if (opts2.quiet) return;
     if (!r.fits) toast('このステージには入りきりません。ひな壇の段数か人数を減らすか、打楽器を別の場所に置いてください（はみ出した人は端に寄せています）');
+    else if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
     else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
   }
@@ -1661,6 +1740,9 @@
     $('ensHornBox').checked = !!st.hornBox;
     $('ensLowOuter').checked = !!st.lowOuter;
     $('lowOuterWrap').hidden = st.type !== 'band';
+    $('bandLayoutWrap').hidden = st.type !== 'band';
+    if (!$('bandLayout').options.length) $('bandLayout').innerHTML = Object.keys(SS.auto.BAND_LAYOUTS).map(k => `<option value="${k}">${SS.esc(SS.auto.BAND_LAYOUTS[k].name)}</option>`).join('');
+    $('bandLayout').value = st.layout || 'std';
     $('percPlace').value = st.percPlace || 'back';
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
@@ -1717,6 +1799,7 @@
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
   $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; applyAuto(); };
   $('ensLowOuter').onchange = e => { ens().lowOuter = e.target.checked; applyAuto(); };
+  $('bandLayout').onchange = e => { ens().layout = e.target.value; applyAuto(); };
   $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
@@ -1783,7 +1866,7 @@
     }
     if (!loaded) {
       const t = SS.TEMPLATES[0].make();
-      S.doc = normalize({ stage: t.stage, items: t.items });
+      S.doc = normalize({ stage: t.stage, items: t.items, ensemble: t.ensemble || null });
       try { if (!localStorage.getItem('stagesetting.helped')) { localStorage.setItem('stagesetting.helped', '1'); setTimeout(showHelp, 400); } } catch (e) { /* ignore */ }
     }
     if (S.doc.underlay) {

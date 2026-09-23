@@ -2,15 +2,6 @@
 window.SS = window.SS || {};
 
 (function (SS) {
-  function arcRows(rows, c, r0, gap, spacing) {
-    const G = SS.geo;
-    const out = [];
-    rows.forEach((labels, ri) => {
-      const pts = G.generate([labels.length], { shape: 'arc', r0: r0 + ri * gap, gap: 0, spacing: spacing || 80 }, c);
-      pts.forEach((p, i) => out.push({ type: 'player', label: labels[i], x: p.x, y: p.y, rot: p.rot }));
-    });
-    return out;
-  }
   function lineRow(labels, y, cx, spacing) {
     spacing = spacing || 80;
     const w = (labels.length - 1) * spacing;
@@ -18,163 +9,97 @@ window.SS = window.SS || {};
   }
   const podium = c => ({ type: 'podium', x: c.x, y: c.y, rot: 0 });
 
-  // ティンパニ奏者と、そのまわりに扇形に並ぶティンパニ（左が低音＝大きい）
-  function timpSet(px, py, sizes) {
-    sizes = sizes || ['timp32', 'timp29', 'timp26', 'timp23'];
-    const n = sizes.length, R = 112;
-    const out = [{ type: 'player', label: 'Timp', x: px, y: py, rot: 0 }];
-    sizes.forEach((t, i) => {
-      const th = (66 - (132 * i) / (n - 1)) * Math.PI / 180; // 奏者から見て左（図では右）が低音
-      out.push({ type: t, x: Math.round(px + R * Math.sin(th)), y: Math.round(py + R * Math.cos(th)), rot: 0 });
-    });
-    return out;
-  }
-  // 鍵盤打楽器などと、その後ろに立つ奏者
-  function withPlayer(type, x, y, label) {
-    const h = SS.CATALOG[type].h;
-    return [{ type, x, y, rot: 0 }, { type: 'player', label: label || 'Perc', x, y: y - h / 2 - 22, rot: 0 }];
+  // 反射板を置いたときのよくある舞台（前の幅・奥の幅・奥行 cm）
+  const SHELL = { shape: 'shell', w: 1800, bw: 1260, d: 1150 };
+  const SHELL_L = { shape: 'shell', w: 2000, bw: 1400, d: 1250 };
+  const SHELL_S = { shape: 'shell', w: 1500, bw: 1050, d: 1000 };
+
+  // 「かんたん編成」と同じしくみで作る（ひな壇は平台の実寸・全段同じ幅）
+  function auto(type, stage, set, counts) {
+    return () => {
+      const st = Object.assign(SS.auto.defaultState(type), set || {});
+      if (counts) Object.assign(st.counts, counts);
+      if (set && set.hina) st.hina = Object.assign(SS.auto.defaultState(type).hina, set.hina);
+      const sg = Object.assign({}, stage);
+      const r = SS.auto.build(st, sg);
+      return { stage: sg, items: r.items, ensemble: st };
+    };
   }
 
   SS.TEMPLATES = [
     {
       id: 'band-std',
-      name: '吹奏楽（標準・約50人）',
-      desc: 'フルートとクラリネットが前列。よくある配置',
-      make() {
-        const stage = { w: 1700, d: 1150 };
-        const c = { x: 850, y: 1030 };
-        const items = arcRows([
-          ['Picc', 'Fl1', 'Fl1', 'Fl2', 'Fl2', 'Cl1', 'Cl1', 'Cl1', 'Cl2', 'Cl2'],
-          ['A.Sx1', 'A.Sx2', 'T.Sx', 'B.Sx', 'Ob1', 'Ob2', 'Fg', 'Cl2', 'Cl3', 'Cl3', 'Cl3', 'B.Cl'],
-          ['Hr1', 'Hr2', 'Hr3', 'Hr4', 'Tb1', 'Tb2', 'Tb3', 'B.Tb', 'Euph', 'Euph', 'Tuba', 'Tuba', 'St.B'],
-          ['Tp1', 'Tp1', 'Tp2', 'Tp2', 'Tp3', 'Tp3'],
-        ], c, 210, 125, 82);
-        items.push(
-          ...withPlayer('marimba', 290, 250),
-          ...withPlayer('xylo', 560, 235),
-          ...withPlayer('glock', 740, 225),
-          ...withPlayer('chimes', 900, 225),
-          ...withPlayer('bd', 1060, 235),
-          { type: 'cym', x: 1135, y: 280, rot: 0 },
-          ...withPlayer('sd', 1190, 215),
-          ...timpSet(1420, 95),
-          podium(c)
-        );
-        return { stage, items };
-      },
+      name: '吹奏楽（標準・約45人）',
+      desc: '前列Fl・Cl、2列目Sax〜Cl、ひな壇1段目Hr、2段目Tp・Tb。低音は上手の外側',
+      make: auto('band', SHELL, { layout: 'std' }),
+    },
+    {
+      id: 'band-contest',
+      name: '吹奏楽コンクールA（55人）',
+      desc: '大きめの舞台（20×12.5m）。ひな壇2段＋打楽器段。ティンパニ・鍵盤は最上段、太鼓類は下手',
+      make: auto('band', SHELL_L, { layout: 'std', percPlace: 'both' },
+        { Picc: 1, Fl: 5, Ob: 2, Fg: 2, 'Es.Cl': 1, Cl1: 4, Cl2: 4, Cl3: 4, 'B.Cl': 2, 'A.Sx': 2, 'T.Sx': 1, 'B.Sx': 1, Hr: 4, Tp: 5, Tb: 3, 'B.Tb': 1, Euph: 2, Tuba: 3, 'St.B': 1, Perc: 7 }),
+    },
+    {
+      id: 'band-clleft',
+      name: '吹奏楽（Cl下手・Sax上手）',
+      desc: 'クラリネットを下手（オーケストラの1stバイオリンの位置）に、サックスを上手に',
+      make: auto('band', SHELL, { layout: 'clLeft' }),
+    },
+    {
+      id: 'band-classic',
+      name: '吹奏楽（昔ながらの配置）',
+      desc: '2列目にSax・Ob、ひな壇1段目にHr・Tb・低音、最上段にTp',
+      make: auto('band', SHELL, { layout: 'classic', lowOuter: false }),
+    },
+    {
+      id: 'band-german',
+      name: '吹奏楽（ドイツ式）',
+      desc: '下手Cl・中央Fl/Ob・上手Sax、後ろに下手Tp｜Tuba｜上手Tb',
+      make: auto('band', SHELL, { layout: 'german', lowOuter: false, hina: { steps: 1 } }),
     },
     {
       id: 'band-small',
       name: '吹奏楽（小編成・約25人）',
-      desc: 'コンクールB組・少人数バンド向け',
-      make() {
-        const stage = { w: 1500, d: 1000 };
-        const c = { x: 750, y: 890 };
-        const items = arcRows([
-          ['Fl1', 'Fl2', 'Ob', 'Cl1', 'Cl1', 'Cl2'],
-          ['A.Sx1', 'A.Sx2', 'T.Sx', 'B.Sx', 'Fg', 'Cl3', 'B.Cl'],
-          ['Hr1', 'Hr2', 'Tb1', 'Tb2', 'Euph', 'Tuba', 'St.B'],
-          ['Tp1', 'Tp2', 'Tp3'],
-        ], c, 200, 125, 82);
-        items.push(
-          ...withPlayer('marimba43', 270, 230),
-          ...withPlayer('bd', 620, 200),
-          ...withPlayer('sd', 760, 185),
-          ...timpSet(1180, 90, ['timp29', 'timp26', 'timp23']),
-          podium(c)
-        );
-        return { stage, items };
-      },
+      desc: 'コンクール小編成向け。ひな壇2段、打楽器は下手',
+      make: auto('band', SHELL_S, { layout: 'std', percPlace: 'left', hina: { steps: 2 } },
+        { Picc: 0, Fl: 2, Ob: 1, Fg: 0, Cl1: 2, Cl2: 2, Cl3: 1, 'B.Cl': 1, 'A.Sx': 2, 'T.Sx': 1, 'B.Sx': 1, Hr: 2, Tp: 3, Tb: 2, 'B.Tb': 0, Euph: 1, Tuba: 1, 'St.B': 0, Perc: 3 }),
     },
     {
       id: 'orch-normal',
       name: 'オーケストラ（通常配置）',
-      desc: '左からVn1・Vn2・Va・Vc。2管編成',
-      make() {
-        const G = SS.geo;
-        const stage = { w: 1800, d: 1250 };
-        const c = { x: 900, y: 1130 };
-        const items = [
-          { type: 'riser46', x: 900, y: 490, w: 728, h: 121, rot: 0 },
-          { type: 'riser46', x: 900, y: 370, w: 728, h: 121, rot: 0 },
-          { type: 'riser46', x: 900, y: 250, w: 1456, h: 121, rot: 0 },
-          ...G.sector('Vn1', 14, -90, -52, 160, 100, 0, c, 78),
-          ...G.sector('Vn2', 12, -48, -12, 210, 100, 0, c, 78),
-          ...G.sector('Va', 10, 12, 48, 210, 100, 0, c, 78),
-          ...G.sector('Vc', 8, 52, 90, 160, 105, 0, c, 82),
-          ...G.sector('Cb', 6, 60, 86, 560, 100, 0, c, 85),
-          ...lineRow(['Fl2', 'Fl1', 'Ob1', 'Ob2'], 480, 900),
-          ...lineRow(['Cl2', 'Cl1', 'Fg1', 'Fg2'], 360, 900),
-          ...lineRow(['Hr3', 'Hr1', 'Hr2', 'Hr4'], 240, 560),
-          ...lineRow(['Tp1', 'Tp2', 'Tb1', 'Tb2', 'Tb3', 'Tuba'], 240, 1180, 84),
-          ...timpSet(900, 45, ['timp32', 'timp29', 'timp26', 'timp23']),
-          podium(c),
-        ];
-        return { stage, items };
-      },
+      desc: '左からVn1・Vn2・Va・Vc。2管編成、管楽器はひな壇3段（4×6尺）、ティンパニはその後ろ',
+      make: auto('orch', SHELL_L, { percPlace: 'back' }),
     },
     {
       id: 'orch-antiphonal',
       name: 'オーケストラ（対向配置）',
       desc: 'Vn1とVn2が向かい合う古典的な配置',
-      make() {
-        const G = SS.geo;
-        const stage = { w: 1800, d: 1250 };
-        const c = { x: 900, y: 1130 };
-        const items = [
-          { type: 'riser46', x: 900, y: 490, w: 728, h: 121, rot: 0 },
-          { type: 'riser46', x: 900, y: 370, w: 728, h: 121, rot: 0 },
-          { type: 'riser46', x: 900, y: 250, w: 1456, h: 121, rot: 0 },
-          ...G.sector('Vn1', 14, -90, -52, 160, 100, 0, c, 78),
-          ...G.sector('Vc', 8, -48, -12, 210, 105, 0, c, 82),
-          ...G.sector('Va', 10, 12, 48, 210, 100, 0, c, 78),
-          ...G.sector('Vn2', 12, 52, 90, 160, 100, 0, c, 78),
-          ...G.sector('Cb', 6, -86, -60, 560, 100, 0, c, 85),
-          ...lineRow(['Fl2', 'Fl1', 'Ob1', 'Ob2'], 480, 900),
-          ...lineRow(['Cl2', 'Cl1', 'Fg1', 'Fg2'], 360, 900),
-          ...lineRow(['Hr3', 'Hr1', 'Hr2', 'Hr4'], 240, 620),
-          ...lineRow(['Tp1', 'Tp2', 'Tb1', 'Tb2', 'Tb3', 'Tuba'], 240, 1180, 84),
-          ...timpSet(1480, 60, ['timp32', 'timp29', 'timp26']),
-          podium(c),
-        ];
-        return { stage, items };
-      },
+      make: auto('orch', SHELL_L, { antiphonal: true, percPlace: 'back' }),
     },
     {
       id: 'strings',
       name: '弦楽合奏',
       desc: '弦楽器だけの小さめ編成',
-      make() {
-        const G = SS.geo;
-        const stage = { w: 1400, d: 950 };
-        const c = { x: 700, y: 840 };
-        const items = [
-          ...G.sector('Vn1', 6, -90, -48, 160, 100, 0, c, 78),
-          ...G.sector('Vn2', 5, -44, -6, 200, 100, 0, c, 78),
-          ...G.sector('Va', 4, 6, 44, 200, 100, 0, c, 78),
-          ...G.sector('Vc', 4, 48, 90, 160, 105, 0, c, 82),
-          ...G.sector('Cb', 2, 60, 84, 430, 100, 0, c, 85),
-          podium(c),
-        ];
-        return { stage, items };
-      },
+      make: auto('strings', SHELL_S, {}),
     },
     {
       id: 'bigband',
       name: 'ビッグバンド',
       desc: 'Sax・Tb・Tpのひな壇＋リズム隊',
       make() {
-        const stage = { w: 1500, d: 950 };
+        const stage = { shape: 'rect', w: 1500, d: 950 };
+        // 平台3×6尺を横4枚・奥2枚（728×182cm）。1段目7寸、2段目1尺4寸
         const items = [
-          { type: 'riser46', x: 600, y: 500, w: 728, h: 121, rot: 0 },
-          { type: 'riser46', x: 600, y: 375, w: 728, h: 121, rot: 0 },
+          { type: 'hina', x: 600, y: 470, w: 728, h: 182, hgt: 21.2, panel: '36', step: 1, rot: 0 },
+          { type: 'hina', x: 600, y: 288, w: 728, h: 182, hgt: 42.4, panel: '36', step: 2, rot: 0 },
           ...lineRow(['B.Sx', 'T.Sx2', 'A.Sx1', 'A.Sx2', 'T.Sx1'], 650, 600, 115),
-          ...lineRow(['Tb4', 'Tb3', 'Tb1', 'Tb2'], 500, 600, 120),
-          ...lineRow(['Tp4', 'Tp3', 'Tp1', 'Tp2'], 375, 600, 115),
+          ...lineRow(['Tb4', 'Tb3', 'Tb1', 'Tb2'], 480, 600, 120),
+          ...lineRow(['Tp4', 'Tp3', 'Tp1', 'Tp2'], 298, 600, 115),
           { type: 'piano', x: 1270, y: 680, rot: -90 },
           { type: 'player', label: 'Pf', x: 1135, y: 690, rot: -90 },
-          { type: 'drums', x: 1230, y: 330, rot: 0 },
-          { type: 'player', label: 'Drs', x: 1230, y: 245, rot: 0 },
+          { type: 'drums', x: 1230, y: 360, rot: 0 },
+          { type: 'player', label: 'Drs', x: 1230, y: 275, rot: 0 },
           { type: 'player', label: 'Bass', x: 1070, y: 470, rot: 0 },
           { type: 'amp', x: 1070, y: 400, rot: 0 },
           { type: 'player', label: 'Gt', x: 960, y: 560, rot: 0 },
@@ -189,8 +114,8 @@ window.SS = window.SS || {};
       name: '白紙から作る',
       desc: 'ステージと指揮台だけ',
       make() {
-        const stage = { w: 1600, d: 1100 };
-        return { stage, items: [podium({ x: 800, y: 990 })] };
+        const stage = Object.assign({}, SHELL);
+        return { stage, items: [podium({ x: 900, y: 1060 })] };
       },
     },
   ];

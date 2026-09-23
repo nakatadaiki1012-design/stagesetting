@@ -44,6 +44,9 @@
       <div class="seg" id="ensType">
         <button data-ens="band">吹奏楽</button><button data-ens="orch">オーケストラ</button><button data-ens="strings">弦楽</button>
       </div>
+      <label class="field" id="bandLayoutWrap">並び方
+        <select id="bandLayout"></select>
+      </label>
       <div class="ens-opts">
         <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
         <label class="check" id="ensAntiWrap"><input type="checkbox" id="ensAnti"> 対向配置</label>
@@ -64,7 +67,7 @@
           <button data-steps="0">なし</button><button data-steps="1">1段</button><button data-steps="2">2段</button><button data-steps="3">3段</button><button data-steps="4">4段</button>
         </div>
         <div class="row2">
-          <label class="field">平台<select id="hinaPanel"><option value="36">3×6尺（91×182cm）</option><option value="46">4×6尺（121×182cm）</option></select></label>
+          <label class="field">平台<select id="hinaPanel"><option value="36">3×6尺（91×182cm）</option><option value="46">4×6尺（121×182cm）</option><option value="66">6×6尺（182×182cm）</option></select></label>
           <label class="field">1段の奥行<select id="hinaDeep"><option value="1">平台1枚分</option><option value="2">平台2枚分</option></select></label>
         </div>
         <div id="hinaHeights" class="hina-heights"></div>
