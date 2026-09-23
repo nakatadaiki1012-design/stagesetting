@@ -48,6 +48,16 @@ window.SS = window.SS || {};
     return G.cluster1D(items, it => -it.y, gap || 45); // 前（下）の列から
   };
 
+  // 点が多角形の中にあるか（投げ縄選択）
+  G.inPolygon = function (p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  };
+
   // 扇形っぽいか・直線っぽいか判定
   G.guessShape = function (items, c) {
     if (items.length < 3) return 'arc';
@@ -122,19 +132,38 @@ window.SS = window.SS || {};
     return mean(rows.map(r => std(r.map(it => (shape === 'arc' ? G.polar(it, c).r : it.y)))));
   };
 
-  // 扇形にそろえる
+  // 弧のゆるさ：curve 1＝指揮者を中心にした扇形、0 に近づくほど中心を客席側へ遠ざけて、まっすぐに近づける（cm）
+  G.arcShift = k => (k >= 0.999 ? 0 : 300 * (1 / Math.max(0.03, k) - 1));
+
+  // 扇形にそろえる。items は指揮者を中心にした扇形の並び（に近いもの）。
+  // curve：弧のゆるさ（1＝扇形、0＝まっすぐ）。ゆるくするときは、各列の人がいる辺りを動かさずに半径を大きくする
   G.tidyArc = function (items, c, opt) {
-    opt = Object.assign({ symmetric: true, evenRows: true, minGap: 62, face: true }, opt);
+    opt = Object.assign({ symmetric: true, evenRows: true, minGap: 62, face: true, curve: 1 }, opt);
+    const d1 = G.arcShift(opt.curve);
     const rows = G.arcRows(items, c);
-    let radii = rows.map(row => mean(row.map(it => G.polar(it, c).r)));
+    // それぞれの列の半径 R と、弧に沿った位置 s
+    const info = rows.map(row => {
+      const R = Math.max(40, mean(row.map(it => G.polar(it, c).r)));
+      const s = row.map(it => Math.atan2(it.x - c.x, c.y - it.y) * R);
+      return { row, R, s };
+    });
+    let radii = info.map(x => x.R);
     if (opt.evenRows) radii = evenRadii(radii);
-    rows.forEach((row, ri) => {
+    info.forEach((x, ri) => {
       const R = Math.max(40, radii[ri]);
-      const pol = row.map(it => ({ it, t: G.polar(it, c).t })).sort((a, b) => a.t - b.t);
-      const ts = evenOut(pol.map(p => p.t), 0, Object.assign({}, opt, { minGapV: opt.minGap / R }));
+      const R1 = R + d1;
+      // 動かさない基準の高さ：左右に広がる列は、どの列も扇形の真ん中の 85% の所（列の間隔がほぼ保たれる）。
+      // 片側だけの列（上手の低音など）は、その人たちがいる辺り
+      const oneSide = x.s.every(v => v > 0) || x.s.every(v => v < 0);
+      const sRef = oneSide ? Math.min(R * 1.4, mean(x.s.map(Math.abs))) : R * Math.acos(0.85);
+      const yRef = c.y - R * Math.cos(sRef / R);
+      const cy = d1 > 0 ? yRef + R1 * Math.cos(sRef / R1) : c.y;
+      const pol = x.row.map((it, i) => ({ it, s: x.s[i] })).sort((a, b) => a.s - b.s);
+      const ss = evenOut(pol.map(p => p.s), 0, Object.assign({}, opt, { minGapV: opt.minGap }));
       pol.forEach((p, i) => {
-        const q = G.fromPolar(R, ts[i], c);
-        p.it.x = q.x; p.it.y = q.y;
+        const th = ss[i] / R1;
+        p.it.x = c.x + R1 * Math.sin(th);
+        p.it.y = cy - R1 * Math.cos(th);
         if (opt.face) p.it.rot = G.faceAngle(p.it, c);
       });
     });

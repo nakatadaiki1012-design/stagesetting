@@ -51,11 +51,33 @@ window.SS = window.SS || {};
   };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
 
+  // grid：方眼の間隔（cm）。0／false で表示しない（true は 50cm）
+  // 舞台図の慣例どおり、線は「舞台の中心線」と「舞台の前のふち」から数える（1.82m＝1間＝平台の6尺）
   R.stageSVG = function (doc, grid) {
     const st = doc.stage;
     const p = R.stagePath(st);
     let s = `<path d="${p}" fill="#fbf6ec" stroke="#b89b6a" stroke-width="6"/>`;
-    if (grid) s += `<path d="${p}" fill="url(#gridPat)"/>`;
+    const g = grid === true ? 50 : +grid || 0;
+    if (g) {
+      const fy = R.frontY(st), cx = st.w / 2;
+      let d = '';
+      for (let x = cx % g; x <= st.w; x += g) if (Math.abs(x - cx) > 1) d += `M${x.toFixed(1)} -5V${fy + 5}`;
+      for (let y = fy - g; y >= -5; y -= g) d += `M-5 ${y.toFixed(1)}H${st.w + 5}`;
+      const big = g >= 100;
+      s += `<clipPath id="stageClip"><path d="${p}"/></clipPath><g clip-path="url(#stageClip)" pointer-events="none">`;
+      s += `<path d="${d}" fill="none" stroke="${big ? '#c9d2df' : '#d8dde6'}" stroke-width="${big ? 2 : 1}"/>`;
+      s += `<path d="M${cx} -5V${fy + 5}" stroke="#b7c2d3" stroke-width="2.5" stroke-dasharray="18 10"/>`;
+      s += '</g>';
+      if (big) {
+        // 中心線からの目盛り（1.82m のときは 1間・2間…）
+        const lab = n => (g === 182 ? `${n}間` : `${((n * g) / 100).toFixed(g % 100 ? 1 : 0)}m`);
+        for (let n = 1; cx + n * g <= st.w; n++) {
+          s += `<text x="${cx + n * g}" y="${fy + 26}" text-anchor="middle" font-size="16" fill="#9aa6b8">${lab(n)}</text>`;
+          s += `<text x="${cx - n * g}" y="${fy + 26}" text-anchor="middle" font-size="16" fill="#9aa6b8">${lab(n)}</text>`;
+        }
+        for (let n = 1; fy - n * g >= 0; n++) s += `<text x="${st.w + 14}" y="${fy - n * g}" dy="0.35em" font-size="16" fill="#9aa6b8">${lab(n)}</text>`;
+      }
+    }
     s += `<text x="${st.w / 2}" y="${R.frontY(st) + 70}" text-anchor="middle" font-size="40" fill="#8a94a3" font-weight="700" letter-spacing="20">客　席</text>`;
     s += `<text x="${st.w / 2}" y="-78" text-anchor="middle" font-size="26" fill="#a9b1bd">（舞台奥）</text>`;
     return s;
@@ -195,11 +217,10 @@ window.SS = window.SS || {};
     const x0 = -pad, y0 = -titleH - pad / 2, W = st.w + pad * 2, H = bottom + legendH + pad - y0;
     const k = ex.pxPerCm;
     let s = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.round(W * k)}" height="${Math.round(H * k)}" viewBox="${x0} ${y0} ${W} ${H}" font-family="'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif">`;
-    s += `<defs><pattern id="gridPat" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#d8dde6" stroke-width="1"/></pattern></defs>`;
     s += `<rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>`;
     if (doc.title) s += `<text x="${st.w / 2}" y="${-titleH + 30}" text-anchor="middle" font-size="52" font-weight="700" fill="#1f2733">${SS.esc(doc.title)}</text>`;
     if (doc.subtitle) s += `<text x="${st.w / 2}" y="${-titleH + 88}" text-anchor="middle" font-size="30" fill="#4a5462">${SS.esc(doc.subtitle)}</text>`;
-    s += R.stageSVG(doc, opts.grid && ex.grid);
+    s += R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
     const u = doc.underlay;
     if (ex.underlay && u) s += `<image href="${u.src}" x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" opacity="${u.opacity}" preserveAspectRatio="none"/>`;
     s += R.itemsSVG(doc, opts, conductor, false);

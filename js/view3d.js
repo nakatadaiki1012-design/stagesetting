@@ -441,6 +441,37 @@ window.SS = window.SS || {};
     return h;
   }
 
+  // ペダルハープ（高さ約1.8m）。+z が奏者側、-z に支柱
+  function makeHarp(g, w, d) {
+    const sz = d / 0.98, sx = w / 0.55;
+    const WOODH = { roughness: 0.35 };
+    box(g, 0.5 * sx, 0.12, 0.56 * sz, '#8a5a2a', 0, 0.06, -0.15 * sz, WOODH);
+    for (let i = 0; i < 7; i++) box(g, 0.025, 0.012, 0.07, '#d4ad4e', (-0.21 + i * 0.07) * sx, 0.03, 0.16 * sz, METAL);
+    // 支柱と飾り
+    cyl(g, 0.034, 0.04, 1.6, '#d6b25e', 0, 0.92, -0.4 * sz, { metalness: 0.6, roughness: 0.3 });
+    cyl(g, 0.075, 0.05, 0.14, '#d6b25e', 0, 1.78, -0.4 * sz, { metalness: 0.6, roughness: 0.3 });
+    // 響板（下が太く、上が細い。奏者の肩へ傾く）
+    const sb = tube(g, [0, 0.16, -0.06 * sz], [0, 1.45, 0.43 * sz], 0.17, '#c9954e', WOODH, 0.055);
+    sb.scale.x = 0.8;
+    // ネック（S字）
+    const curve = new T.CatmullRomCurve3([[0, 1.45, 0.43], [0, 1.64, 0.27], [0, 1.56, 0.06], [0, 1.7, -0.2], [0, 1.76, -0.4]].map(p => new T.Vector3(p[0], p[1], p[2] * sz)));
+    const neck = new T.Mesh(new T.TubeGeometry(curve, 40, 0.035, 10, false), mat('#b98542', WOODH));
+    neck.castShadow = true; g.add(neck);
+    // 弦（響板の中心から、ネックまで）
+    const pos = [];
+    const samples = curve.getPoints(80);
+    for (let i = 0; i < 24; i++) {
+      const t = 0.05 + (i / 23) * 0.88;
+      const y0 = 0.16 + (1.45 - 0.16) * t, z0 = (-0.06 + 0.49 * t) * sz;
+      let best = samples[0];
+      samples.forEach(p => { if (Math.abs(p.z - z0) < Math.abs(best.z - z0)) best = p; });
+      pos.push(0, y0, z0, 0, best.y - 0.02, z0);
+    }
+    const sg = new T.BufferGeometry();
+    sg.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.add(new T.LineSegments(sg, new T.LineBasicMaterial({ color: '#f0e2c0' })));
+  }
+
   // グランドピアノ（ヤマハC3X・CFXの寸法を参考に。手前＝+z が鍵盤、左が低音側）
   function makeGrandPiano(g, w, d) {
     const hw = w / 2, hd = d / 2;
@@ -606,7 +637,7 @@ window.SS = window.SS || {};
       case 'drums': { const b = cyl(g, 0.28, 0.28, 0.4, '#8c1d24', 0, 0.3, 0.25, { roughness: 0.3 }); b.rotation.x = Math.PI / 2; cyl(g, 0.18, 0.18, 0.2, '#8c1d24', -0.3, 0.7, 0.1, { roughness: 0.3 }); cyl(g, 0.2, 0.2, 0.22, '#8c1d24', 0.35, 0.5, 0, { roughness: 0.3 }); cyl(g, 0.2, 0.02, 0.02, '#e2c35a', -0.5, 1.05, -0.2, METAL); cyl(g, 0.23, 0.02, 0.02, '#e2c35a', 0.55, 1.1, -0.2, METAL); break; }
       case 'piano': case 'pianoFull': makeGrandPiano(g, w, d); break;
       case 'upright': box(g, w, 1.25, d, '#0c0c0e', 0, 0.62, 0, { roughness: 0.15 }); box(g, w * 0.9, 0.02, 0.15, '#f7f7f2', 0, 0.75, d / 2 + 0.07); break;
-      case 'harp': { const b = box(g, 0.08, 1.8, d * 0.9, '#c9a060', 0, 0.9, 0, { roughness: 0.35 }); b.rotation.x = 0.15; tube(g, [0, 1.8, -d / 2], [0, 1.6, d / 2], 0.045, '#c9a060'); tube(g, [0, 0.1, d / 2 - 0.05], [0, 1.65, d / 2 - 0.05], 0.035, '#d8b36a', { roughness: 0.3 }); box(g, w, 0.12, 0.35, '#c9a060', 0, 0.06, -d / 3); break; }
+      case 'harp': makeHarp(g, w, d); break;
       case 'amp': box(g, w, 0.5, d, '#1d1d1f', 0, 0.25, 0); box(g, w * 0.85, 0.3, 0.005, '#333', 0, 0.28, d / 2 + 0.003); break;
       case 'mic': cyl(g, 0.01, 0.01, 1.5, '#222', 0, 0.75, 0, METAL); sph(g, 0.03, '#555', 0, 1.52, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.02, 0], [Math.sin(a) * 0.25, 0.0, Math.cos(a) * 0.25], 0.01, '#222')); break;
       case 'chair': box(g, 0.45, 0.06, 0.44, '#1c1d22', 0, 0.46, 0); box(g, 0.43, 0.36, 0.05, '#1c1d22', 0, 0.76, -0.2); [[-0.19, -0.2], [0.19, -0.2], [-0.19, 0.18], [0.19, 0.18]].forEach(p => cyl(g, 0.012, 0.012, 0.46, '#8c9096', p[0], 0.23, p[1], METAL, 8)); break;

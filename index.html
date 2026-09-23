@@ -171,6 +171,8 @@
     </svg>
     <div class="float-tools">
       <button class="btn round" id="modeSelect" title="選択モード">👆</button>
+      <button class="btn round" id="modeBox" title="四角く囲んで選ぶ">⬚</button>
+      <button class="btn round" id="modeLasso" title="自由に囲んで選ぶ（投げ縄）">➰</button>
       <button class="btn round" id="modePan" title="画面を動かすモード">✋</button>
       <span class="sep"></span>
       <button class="btn round" id="zoomIn" title="拡大">＋</button>
@@ -228,6 +230,10 @@
         <button class="btn" data-act="fitStage" title="ステージからはみ出したものを内側に入れます">⬚ ステージ内に収める</button>
         <button class="btn" data-act="alignHina" title="ひな壇の段を、いちばん広い段と同じ横幅・同じ中心にそろえます">▤ ひな壇の幅をそろえる</button>
       </div>
+      <label class="field arc-curve">弧のカーブ <b id="arcCurveVal">扇形</b>
+        <input type="range" id="arcCurve" min="0" max="100" step="1" value="100">
+        <span class="range-ends"><span>まっすぐ</span><span>ゆるい</span><span>扇形</span></span>
+      </label>
       <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
       <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>
       <h4>位置合わせ（2つ以上選択）</h4>
@@ -273,12 +279,25 @@
       </label>
       <label class="field" id="stageBWWrap">奥の幅（正面反射板の幅, m）<input id="stageBW" type="number" step="0.5" min="3" max="40"></label>
       <h3>表示</h3>
-      <label class="check"><input type="checkbox" id="optFigure"> 奏者を「人の形」で表示（オフで○）</label>
+      <label class="field">奏者の表し方
+        <select id="optStyle">
+          <option value="figure">人の形（楽器を持った姿）</option>
+          <option value="circle">○（パートの色）</option>
+          <option value="contest">コンクール用（椅子○・譜面台×）</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" id="optDims"> 寸法を表示（舞台の大きさ・選んだ物からの距離）</label>
       <label class="check"><input type="checkbox" id="optNames"> 名前を表示</label>
       <label class="check"><input type="checkbox" id="optStands"> 譜面台を表示</label>
       <label class="check"><input type="checkbox" id="optNumbers"> 席番号を表示</label>
-      <label class="check"><input type="checkbox" id="optGrid"> 方眼（50cm）を表示</label>
+      <label class="field">方眼
+        <select id="optGrid">
+          <option value="0">なし</option>
+          <option value="50">50cm</option>
+          <option value="100">1m</option>
+          <option value="182">1.82m（1間＝平台の6尺）</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" id="optSnap"> 方眼にぴったり合わせる</label>
       <label class="check"><input type="checkbox" id="optGuides"> 動かすとき、ほかの人と位置をそろえる（ガイド線）</label>
       <label class="check"><input type="checkbox" id="optColor"> パートごとに色分け</label>

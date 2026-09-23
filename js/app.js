@@ -7,7 +7,8 @@
   const vp = $('viewport');
   const layerStage = $('layerStage'), layerUnderlay = $('layerUnderlay'), layerItems = $('layerItems'), layerOverlay = $('layerOverlay');
   const AUTOSAVE_KEY = 'stagesetting.autosave.v1';
-  const SNAP = 25;
+  // 吸着の間隔：方眼の半分（1.82mの方眼なら91cm＝3尺）
+  const snapSize = () => { const g = opts().gridSize || 50; return g / 2; };
 
   const S = {
     doc: null,
@@ -25,7 +26,7 @@
 
   // ------------------------------------------------------------ 文書
   function defaultOptions() {
-    return { showNames: true, showStands: true, showNumbers: false, grid: true, snap: false, colorBy: true, seatR: 24, figure: true, guides: true, dims: true };
+    return { showNames: true, showStands: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true };
   }
   function normalize(doc) {
     doc = doc || {};
@@ -84,12 +85,12 @@
   // ------------------------------------------------------------ 描画
   function renderOpts() {
     const o = opts();
-    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, figure: o.figure, dims: o.dims };
+    return { showNames: o.showNames, showStands: o.showStands, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure, contest: o.contest, dims: o.dims };
   }
 
   function render() {
     const d = doc();
-    layerStage.innerHTML = SS.render.stageSVG(d, opts().grid);
+    layerStage.innerHTML = SS.render.stageSVG(d, opts().grid ? (opts().gridSize || 50) : 0);
     const u = d.underlay;
     layerUnderlay.innerHTML = u
       ? `<image href="${u.src}" x="${u.x}" y="${u.y}" width="${u.w}" height="${u.h}" opacity="${u.opacity}" preserveAspectRatio="none" pointer-events="none"/>` +
@@ -158,7 +159,9 @@
         if (g.kind === 'r') s += `<circle cx="${g.c.x}" cy="${g.c.y}" r="${g.v}" ${gs}/>`;
       });
     }
-    if (marquee) {
+    if (marquee && marquee.pts) {
+      s += `<path d="M${marquee.pts.map(p => p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join('L')}Z" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.8 / k}" stroke-dasharray="${5 / k}"/>`;
+    } else if (marquee) {
       const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
       s += `<rect x="${x}" y="${y}" width="${Math.abs(marquee.x1 - marquee.x0)}" height="${Math.abs(marquee.y1 - marquee.y0)}" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.5 / k}" stroke-dasharray="${5 / k}"/>`;
     }
@@ -325,7 +328,14 @@
       return;
     }
     // 何もないところ
-    if (e.pointerType === 'touch' && S.mode !== 'marquee') {
+    if (S.mode === 'lasso') {
+      if (!(e.shiftKey || e.ctrlKey || e.metaKey)) S.sel.clear();
+      drag = { kind: 'lasso', start, base: new Set(S.sel), m: { pts: [w] } };
+      renderOverlay(drag.m);
+      renderProps();
+      return;
+    }
+    if (e.pointerType === 'touch' && S.mode !== 'box') {
       drag = { kind: 'pan', start, last: { x: e.clientX, y: e.clientY }, tapClear: true };
       return;
     }
@@ -375,8 +385,9 @@
         if (opts().snap) {
           const p = drag.orig.get(drag.primary);
           if (p) {
-            dx = Math.round((p.x + dx) / SNAP) * SNAP - p.x;
-            dy = Math.round((p.y + dy) / SNAP) * SNAP - p.y;
+            const sn = snapSize();
+            dx = Math.round((p.x + dx) / sn) * sn - p.x;
+            dy = Math.round((p.y + dy) / sn) * sn - p.y;
           }
         }
         drag.guides = null;
@@ -435,8 +446,15 @@
         drag.m.x1 = w.x; drag.m.y1 = w.y;
         const x0 = Math.min(drag.m.x0, drag.m.x1), x1 = Math.max(drag.m.x0, drag.m.x1);
         const y0 = Math.min(drag.m.y0, drag.m.y1), y1 = Math.max(drag.m.y0, drag.m.y1);
-        S.sel = new Set(drag.base);
-        doc().items.forEach(it => { if (it.x >= x0 && it.x <= x1 && it.y >= y0 && it.y <= y1) S.sel.add(it.id); });
+        pickIn(drag.base, it => it.x >= x0 && it.x <= x1 && it.y >= y0 && it.y <= y1);
+        renderOverlay(drag.m);
+        break;
+      }
+      case 'lasso': {
+        const pts = drag.m.pts, last = pts[pts.length - 1];
+        if (Math.hypot(w.x - last.x, w.y - last.y) < 6 / S.view.k) break;
+        pts.push(w);
+        if (pts.length > 2) pickIn(drag.base, it => G.inPolygon(it, pts));
         renderOverlay(drag.m);
         break;
       }
@@ -527,6 +545,14 @@
     }
     renderSettings();
     updateHallNote();
+  }
+
+  // 範囲・投げ縄で選ぶ。ひな壇（平台）は、ほかに何も入っていないときだけ選ぶ
+  function pickIn(base, test) {
+    const hit = doc().items.filter(test);
+    const noHina = hit.filter(it => it.type !== 'hina');
+    S.sel = new Set(base);
+    (noHina.length ? noHina : hit).forEach(it => S.sel.add(it.id));
   }
 
   // 同じ列（指揮者からの距離が同じくらい）の奏者をまとめて選ぶ
@@ -761,11 +787,52 @@
     list = list || targetsPlayers();
     if (list.length < 2) { if (!silent) toast('整える奏者がいません'); return; }
     const c = conductor();
-    const shape = G.guessShape(list, c);
-    const n = shape === 'arc' ? G.tidyArc(list, c, tidyOpts()) : G.tidyLine(list, c, tidyOpts());
+    // ひな壇の上の人は横一列に、床の人は扇形か横一列（近い方）に
+    const onR = list.filter(onRiser), floor = list.filter(it => !onRiser(it));
+    const shape = floor.length >= 2 ? G.guessShape(floor, c) : 'line';
+    let n = 0;
+    if (floor.length >= 2) n += shape === 'arc' ? G.tidyArc(floor, c, tidyOpts()) : G.tidyLine(floor, c, tidyOpts());
+    if (onR.length >= 2) n += G.tidyLine(onR, c, Object.assign(tidyOpts(), { evenRows: false }));
+    if (shape === 'arc') { opts().arcCurve = 1; opts().arcBase = null; syncArcCurve(); }
     G.fixOverlap(list, opts().seatR * 2 + 8);
     fitInStage(list);
     if (!silent) toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました`, true);
+  }
+
+  // 弧のカーブ（スライダー）：床の奏者（ひな壇の上の人は除く）を、ゆるい弧〜扇形に
+  function onRiser(it) {
+    return doc().items.some(h => h.type === 'hina' && Math.abs(it.x - h.x) < h.w / 2 && Math.abs(it.y - h.y) < h.h / 2);
+  }
+  // スライダーを動かし始めたとき、扇形のときの位置（arcBase）を覚えておき、いつもそこから計算する
+  function curveStart() {
+    pushHistory();
+    const o = opts();
+    if (o.arcCurve == null || o.arcCurve >= 0.999 || !o.arcBase) o.arcBase = {};
+    curveList().forEach(it => { if (!o.arcBase[it.id]) o.arcBase[it.id] = { x: it.x, y: it.y }; });
+  }
+  function curveList() {
+    const sel = selected().filter(it => it.type === 'player');
+    return sel.length >= 2 ? sel : players().filter(it => !onRiser(it) && !['perc', 'kb'].includes(SS.partGroup(it.label).id));
+  }
+  $('arcCurve').addEventListener('pointerdown', curveStart);
+  $('arcCurve').addEventListener('keydown', curveStart);
+  $('arcCurve').addEventListener('input', e => {
+    const k = +e.target.value / 100;
+    $('arcCurveVal').textContent = k >= 0.99 ? '扇形' : k <= 0.02 ? 'まっすぐ' : Math.round(k * 100) + '%';
+    const o = opts();
+    if (!o.arcBase) curveStart();
+    const list = curveList();
+    if (list.length < 2) return;
+    list.forEach(it => { const b = o.arcBase[it.id]; if (b) { it.x = b.x; it.y = b.y; } });
+    G.tidyArc(list, conductor(), Object.assign(tidyOpts(), { curve: k }));
+    o.arcCurve = k;
+    if (k >= 0.999) o.arcBase = null;
+    render();
+  });
+  function syncArcCurve() {
+    const k = opts().arcCurve == null ? 1 : opts().arcCurve;
+    $('arcCurve').value = Math.round(k * 100);
+    $('arcCurveVal').textContent = k >= 0.99 ? '扇形' : k <= 0.02 ? 'まっすぐ' : Math.round(k * 100) + '%';
   }
 
   function act(name) {
@@ -779,9 +846,11 @@
         break;
       }
       case 'tidyArc': {
-        const list = targetsPlayers(); if (list.length < 2) return toast('奏者が2人以上必要です');
+        // 何も選んでいないときは、ひな壇の上の人（まっすぐの列）は動かさない
+        const list = sel.length ? targetsPlayers() : targetsPlayers().filter(it => !onRiser(it)); if (list.length < 2) return toast('奏者が2人以上必要です');
         pushHistory();
         const n = G.tidyArc(list, c, tidyOpts());
+        opts().arcCurve = 1; opts().arcBase = null; syncArcCurve();
         G.fixOverlap(list, opts().seatR * 2 + 8);
         fitInStage(list);
         toast(`${n}列を扇形にそろえました`, true);
@@ -1030,13 +1099,14 @@
     $('optNames').checked = o.showNames;
     $('optStands').checked = o.showStands;
     $('optNumbers').checked = o.showNumbers;
-    $('optGrid').checked = o.grid;
+    $('optGrid').value = o.grid ? String(o.gridSize || 50) : '0';
+    $('optStyle').value = o.contest ? 'contest' : o.figure ? 'figure' : 'circle';
     $('optSnap').checked = o.snap;
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
-    $('optFigure').checked = o.figure;
     $('optDims').checked = o.dims;
     $('optGuides').checked = o.guides;
+    syncArcCurve();
   }
   function bindSetting(id, ev, fn) {
     const el = $(id);
@@ -1052,11 +1122,11 @@
   bindSetting('optNames', 'change', el => { opts().showNames = el.checked; });
   bindSetting('optStands', 'change', el => { opts().showStands = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
-  bindSetting('optGrid', 'change', el => { opts().grid = el.checked; });
+  bindSetting('optGrid', 'change', el => { const v = +el.value; opts().grid = v > 0; if (v) opts().gridSize = v; });
+  bindSetting('optStyle', 'change', el => { opts().contest = el.value === 'contest'; opts().figure = el.value === 'figure'; renderSettings(); });
   bindSetting('optSnap', 'change', el => { opts().snap = el.checked; });
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
-  bindSetting('optFigure', 'change', el => { opts().figure = el.checked; });
   bindSetting('optDims', 'change', el => { opts().dims = el.checked; });
   bindSetting('optGuides', 'change', el => { opts().guides = el.checked; });
 
@@ -1092,11 +1162,17 @@
   function setMode(m) {
     S.mode = m;
     $('modeSelect').classList.toggle('active', m === 'select');
+    $('modeBox').classList.toggle('active', m === 'box');
+    $('modeLasso').classList.toggle('active', m === 'lasso');
     $('modePan').classList.toggle('active', m === 'pan');
+    if (m === 'box') toast('ドラッグで四角く囲んだ人を選びます（ひな壇は選びません）');
+    if (m === 'lasso') toast('指やマウスで自由に囲んだ人を選びます（ひな壇は選びません）');
     svg.classList.toggle('panning', m === 'pan');
   }
   $('modeSelect').onclick = () => setMode('select');
   $('modePan').onclick = () => setMode('pan');
+  $('modeBox').onclick = () => setMode(S.mode === 'box' ? 'select' : 'box');
+  $('modeLasso').onclick = () => setMode(S.mode === 'lasso' ? 'select' : 'lasso');
   $('zoomIn').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2); };
   $('zoomOut').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2); };
   $('zoomFit').onclick = fitView;
@@ -1665,6 +1741,9 @@
         <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
         <li><b>舞台の大きさ</b>：舞台の角と前の縁にある <b>↔ ↕ の丸いつまみ</b>をドラッグすると、前の幅・奥の幅・奥行をその場で変えられます（10cm単位）。自動配置なら、すぐに並べ直します。</li>
         <li><b>並び方</b>：かんたん編成の「並び方」で、<b>標準・Cl下手/Sax上手・昔ながら・ドイツ式</b>を選べます。「ひな形」にも、コンクールA（55人）や小編成などの型があります。</li>
+        <li><b>選び方</b>：右上の <b>⬚</b> で四角く囲んで、<b>➰</b> で自由に囲んで、まとめて選べます。<b>ひな壇（平台）は選ばれません</b>（平台だけを囲んだときは平台を選びます）。</li>
+        <li><b>弧のカーブ</b>：「整える」のスライダーで、床の扇形を<b>ゆるい弧〜まっすぐ</b>に変えられます。右端に戻すと元の扇形です。</li>
+        <li><b>方眼・コンクール用の図</b>：「設定」で方眼を <b>1.82m（1間）</b> にしたり、奏者を<b>椅子○・譜面台×</b>のコンクール用の表し方にしたりできます。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
         <li><b>低音を上手の外側に・ホルンのボックス</b>：「一括作成」タブの「配置のくふう」のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。ホルンを2人ずつ前後に並べるボックス型もここで選べます。</li>
         <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
@@ -1710,6 +1789,7 @@
     const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp']);
     d.items = d.items.filter(it => (hadAuto ? !it.auto : keepTypes.has(it.type)));
     const r = SS.auto.build(st, d.stage);
+    opts().arcCurve = 1; opts().arcBase = null; syncArcCurve();
     r.items.forEach(it => {
       it.id = newId();
       if (it.type === 'player' && names[it.label] && names[it.label].length) it.name = names[it.label].shift();

@@ -295,3 +295,8 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .hina-type b { display: block; font-size: 11px; line-height: 1.25; font-weight: 600; }
 .hina-type small { display: block; font-size: 10px; color: #6b7380; line-height: 1.2; }
 .hina-type.on { border-color: #2f6fde; background: #eef4ff; box-shadow: 0 0 0 1px #2f6fde inset; }
+
+/* 弧のカーブ */
+.arc-curve b { color: #2f6fde; font-size: 12px; margin-left: 4px; }
+.arc-curve input[type=range] { width: 100%; }
+.range-ends { display: flex; justify-content: space-between; font-size: 10.5px; color: #6b7380; margin-top: -2px; }

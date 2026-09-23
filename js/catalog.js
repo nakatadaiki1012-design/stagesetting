@@ -124,7 +124,24 @@ window.SS = window.SS || {};
     const x = +it.x.toFixed(1), y = +it.y.toFixed(1), rot = +(it.rot || 0).toFixed(1);
     const fill = SS.itemColor(it, opts);
     let body = '', text = '';
-    if (it.type === 'player' && opts.figure !== false && SS.drawFigure) {
+    if (it.type === 'player' && opts.contest) {
+      // コンクール用の配置図：椅子は○、譜面台は×（指揮者側）。色は付けない
+      const kind = SS.instrumentKind ? SS.instrumentKind(it.label) : '';
+      const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
+      body += '<circle r="30" fill="transparent"/>';
+      body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
+      if (opts.showStands !== false && !noStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
+      const lab = it.label || '';
+      if (lab) text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fitFont(lab, 34, 15).toFixed(1)}" font-weight="700" fill="#111">${esc(lab)}</text>`;
+      if (opts.showNames !== false && it.name) {
+        const a = rot * Math.PI / 180;
+        const nx = x + Math.sin(a) * 33, ny = y - Math.cos(a) * 33;
+        text += `<text x="${nx.toFixed(1)}" y="${ny.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="13" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(it.name)}</text>`;
+      }
+      if (opts.showNumbers && opts.number) {
+        text += `<text x="${x + 20}" y="${y - 18}" text-anchor="middle" font-size="13" fill="#b03030" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${opts.number}</text>`;
+      }
+    } else if (it.type === 'player' && opts.figure !== false && SS.drawFigure) {
       const fig = SS.drawFigure(it, fill, opts);
       body += fig.body;
       const a = rot * Math.PI / 180;
@@ -273,9 +290,20 @@ window.SS = window.SS || {};
           body += `<path d="${kp}" stroke="#222" stroke-width="2.2"/>`;
           break;
         }
-        case 'harp':
-          body += `<path d="M${-w / 2} ${h / 2}L${-w / 2 + 8} ${-h / 2}Q${w / 2} ${-h / 2} ${w / 2} ${-h / 4}L${w / 2 - 10} ${h / 2}Z" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+        case 'harp': {
+          // 上から見たペダルハープ：+y が奏者側（響板の上端が奏者の右肩へ）、-y の先が支柱
+          const sx = w / 55, sy = h / 98;
+          const P = (x, y) => `${(x * sx).toFixed(1)} ${(y * sy).toFixed(1)}`;
+          body += `<path d="M${P(-24, -44)}L${P(24, -44)}Q${P(27, -44)} ${P(27, -40)}L${P(26, 8)}Q${P(26, 14)} ${P(20, 14)}L${P(-20, 14)}Q${P(-26, 14)} ${P(-26, 8)}L${P(-27, -40)}Q${P(-27, -44)} ${P(-24, -44)}Z" fill="#a8783e" stroke="#5a3d1c" stroke-width="2"/>`;
+          let ped = '';
+          for (let i = 0; i < 7; i++) { const xx = -21 + i * 7; ped += `M${P(xx, 14)}L${P(xx, 19)}`; }
+          body += `<path d="${ped}" stroke="#c9a24a" stroke-width="2.4" stroke-linecap="round"/>`;
+          body += `<path d="M${P(-16, -18)}L${P(16, -18)}L${P(8, 48)}L${P(-8, 48)}Z" fill="${fill}" stroke="#5a3d1c" stroke-width="2"/>`;
+          body += `<path d="M${P(0, -16)}L${P(0, 46)}" stroke="#7a5a2a" stroke-width="1.5"/>`;
+          body += `<path d="M${P(0, 46)}C${P(9, 30)} ${P(-9, 0)} ${P(0, -40)}" fill="none" stroke="#c9a060" stroke-width="${(6 * sx).toFixed(1)}" stroke-linecap="round"/>`;
+          body += `<circle cx="0" cy="${(-42 * sy).toFixed(1)}" r="${(8 * sx).toFixed(1)}" fill="#e2c070" stroke="#8a6a2a" stroke-width="2"/>`;
           break;
+        }
         case 'mic':
           body += `<circle r="${w / 2}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/><path d="M0 ${-w / 2}V${-w}" stroke="${stroke}" stroke-width="3"/>`;
           break;
