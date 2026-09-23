@@ -49,6 +49,14 @@
         <label class="check" id="ensAntiWrap"><input type="checkbox" id="ensAnti"> 対向配置</label>
         <label class="check"><input type="checkbox" id="ensHornBox"> ホルンをボックス型に</label>
       </div>
+      <label class="field" id="percPlaceWrap">打楽器の場所
+        <select id="percPlace">
+          <option value="back">舞台の奥（床）</option>
+          <option value="top">ひな壇の最上段</option>
+          <option value="left">下手側（客席から見て左）</option>
+          <option value="both">最上段（ティンパニ・鍵盤）＋下手（太鼓類）</option>
+        </select>
+      </label>
       <div class="hina-box">
         <h4>ひな壇（後ろの列はまっすぐ並びます）</h4>
         <div class="seg seg5" id="hinaSteps">
@@ -210,6 +218,7 @@
         <button class="btn" data-act="mirror" title="指揮者を中心に左右を入れ替えます">⇋ 左右反転</button>
         <button class="btn" data-act="arrangePerc" title="打楽器と奏者を舞台奥にきれいに並べます">🥁 打楽器を整列</button>
         <button class="btn" data-act="fitStage" title="ステージからはみ出したものを内側に入れます">⬚ ステージ内に収める</button>
+        <button class="btn" data-act="alignHina" title="ひな壇の段を、いちばん広い段と同じ横幅・同じ中心にそろえます">▤ ひな壇の幅をそろえる</button>
       </div>
       <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
       <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>

@@ -747,8 +747,18 @@
         const has = doc().items.some(it => SS.auto.PERC_TYPES.has(it.type) || (it.type === 'player' && SS.partGroup(it.label).id === 'perc'));
         if (!has) return toast('打楽器（楽器かPercの奏者）がありません');
         pushHistory();
-        SS.auto.arrangePerc(doc().items, doc().stage, { yTop: 25 });
-        toast('打楽器を舞台奥に並べました', true);
+        const place = (doc().ensemble && doc().ensemble.percPlace) || 'back';
+        SS.auto.arrangePercIn(doc().items, doc().stage, place);
+        toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
+        break;
+      }
+      case 'alignHina': {
+        const hs = doc().items.filter(it => it.type === 'hina');
+        if (hs.length < 2) return toast('ひな壇が2段以上ありません');
+        pushHistory();
+        const widest = hs.reduce((a, b) => (b.w > a.w ? b : a));
+        hs.forEach(h => { h.w = widest.w; h.x = widest.x; });
+        toast(`${hs.length}段の横幅を${(widest.w / 100).toFixed(2)}m（平台${Math.round(widest.w / 182)}枚分）にそろえました`, true);
         break;
       }
       case 'fitStage': {
@@ -1566,7 +1576,8 @@
       <ol>
         <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
         <li><b>ひな壇</b>：段数と平台（3×6尺／4×6尺）を選ぶと、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
-        <li><b>打楽器</b>：「🥁 打楽器を整列」で舞台奥にきれいに並べ直せます。</li>
+        <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
+        <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
         <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。</li>
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
@@ -1639,6 +1650,8 @@
     $('ensTotal').textContent = `合計 ${total} 人`;
     // ひな壇
     $('ensHornBox').checked = !!st.hornBox;
+    $('percPlace').value = st.percPlace || 'back';
+    $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
     $('hinaPanel').value = H.panel || '36';
@@ -1692,6 +1705,7 @@
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
   $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; applyAuto(); };
+  $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
   });
