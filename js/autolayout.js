@@ -24,14 +24,39 @@ window.SS = window.SS || {};
     '46': { name: '4×6尺（ヨンロク）', w: 182, d: 121 },
     '66': { name: '6×6尺（ロクロク）', w: 182, d: 182 },
   };
+  // 平台1枚の、置いたときの大きさ（w：横、d：奥行）。横置き＝6尺が横、縦置き＝6尺が奥行
+  SS.panelSize = function (o) {
+    const pn = SS.PANELS[(o && o.panel) || '36'] || SS.PANELS['36'];
+    return o && o.orient === 'v' ? { w: pn.d, d: pn.w } : { w: pn.w, d: pn.d };
+  };
+  // ひな壇1段の組み方（よく使う型）
+  SS.HINA_TYPES = [
+    { id: '36h2', panel: '36', orient: 'h', deep: 2, name: '3×6 横・2列', hint: '3×6尺を横向き（6尺が横）に、奥へ2枚。いちばん一般的' },
+    { id: '36v1', panel: '36', orient: 'v', deep: 1, name: '3×6 縦', hint: '3×6尺を縦向き（6尺が奥行）に。幅を91cm刻みで調整できる' },
+    { id: '46h1', panel: '46', orient: 'h', deep: 1, name: '4×6 横', hint: '4×6尺を横向きに1枚。狭い舞台・オーケストラの管楽器' },
+    { id: '46v1', panel: '46', orient: 'v', deep: 1, name: '4×6 縦', hint: '4×6尺を縦向きに。幅121cm刻み' },
+    { id: '66', panel: '66', orient: 'h', deep: 1, name: '6×6', hint: '6×6尺（ロクロク）を1枚' },
+    { id: '46h2', panel: '46', orient: 'h', deep: 2, name: '4×6 横・2列', hint: '4×6尺を横向きに奥へ2枚。ホルンのボックス・打楽器' },
+    { id: '36h3', panel: '36', orient: 'h', deep: 3, name: '3×6 横・3列', hint: '3×6尺を横向きに奥へ3枚。打楽器の段' },
+  ];
+  SS.hinaTypeDepth = t => SS.panelSize(t).d * t.deep;
+  SS.hinaTypeOf = o => SS.HINA_TYPES.find(t => t.panel === (o.panel || '36') && t.orient === (o.orient || 'h') && t.deep === (o.deep || 1)) || null;
+  // 型の小さな図（平台の並びと寸法）
+  SS.hinaTypeSVG = function (t) {
+    const P = SS.panelSize(t), across = Math.max(2, Math.round(364 / P.w));
+    const W = P.w * across, D = P.d * t.deep, k = 64 / Math.max(W, 273);
+    let s = `<svg viewBox="-4 -4 ${W * k + 8} ${273 * k + 8}" width="${W * k + 8}" height="${273 * k + 8}" aria-hidden="true">`;
+    for (let i = 0; i < across; i++) for (let j = 0; j < t.deep; j++) s += `<rect x="${i * P.w * k}" y="${(273 - D) * k + j * P.d * k}" width="${P.w * k}" height="${P.d * k}" fill="#ead9bb" stroke="#8a6d3b" stroke-width="1.2"/>`;
+    return s + '</svg>';
+  };
   SS.heightName = v => { const h = SS.RISER_HEIGHTS.find(x => Math.abs(x.v - v) < 0.6); return h ? h.name : `${Math.round(v)}cm`; };
   SS.heightHow = v => { const h = SS.RISER_HEIGHTS.find(x => Math.abs(x.v - v) < 0.6); return h ? h.how : ''; };
 
   // ひな壇1段に使う部材の数（目安）
   SS.hinaMaterials = function (it) {
-    const pn = SS.PANELS[it.panel || '36'];
-    const across = Math.max(1, Math.round((it.w || 182) / pn.w));
-    const deep = Math.max(1, Math.round((it.h || 182) / pn.d));
+    const pn = SS.PANELS[it.panel || '36'], P = SS.panelSize(it);
+    const across = Math.max(1, Math.round((it.w || 182) / P.w));
+    const deep = Math.max(1, Math.round((it.h || 182) / P.d));
     const panels = across * deep;
     const v = it.hgt || 21.2;
     let legs = 0, legName = '';
@@ -40,7 +65,7 @@ window.SS = window.SS || {};
       legs = (deep + 1) * (across * 2 + 1);
       legName = v < 25 ? '3寸の足（角材）' : v < 35 ? '箱馬（6寸の向き）' : v < 50 ? '箱馬（1尺の向き）' : v < 70 ? '箱馬（1尺7寸の向き）' : '高足（開き足）';
     }
-    return { panels, panelName: pn.name, across, deep, legs, legName };
+    return { panels, panelName: pn.name + (it.orient === 'v' && it.panel !== '66' ? '・縦置き' : ''), across, deep, legs, legName };
   };
 
   // 編成の種類と、パートの初期人数
@@ -73,7 +98,7 @@ window.SS = window.SS || {};
     e.parts.forEach(([k, n]) => { counts[k] = n; });
     return {
       type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: type === 'orch' ? 'top' : 'back', lowOuter: type === 'band', layout: 'std',
-      hina: type === 'orch' ? { steps: 3, panel: '46', deep: 1 } : type === 'strings' ? { steps: 0, panel: '36', deep: 2 } : { steps: 2, panel: '36', deep: 2 },
+      hina: type === 'orch' ? { steps: 3, panel: '46', orient: 'h', deep: 1 } : type === 'strings' ? { steps: 0, panel: '36', orient: 'h', deep: 2 } : { steps: 2, panel: '36', orient: 'h', deep: 2 },
     };
   };
 
@@ -218,7 +243,6 @@ window.SS = window.SS || {};
   // ---------------------------------------------------------------- 共通の部品
   const podiumY = stage => stage.d - 90;
   const inside = (stage, it, m) => R().insideStage(stage, it, m);
-  const up182 = v => Math.ceil(v / 182) * 182;
 
   // 1列をまっすぐに並べる（ひな壇の上）。幅に入らなければ間隔を詰める
   function lineRow(labels, y, cx, spacing, maxW) {
@@ -299,13 +323,14 @@ window.SS = window.SS || {};
    * すべての段は同じ横幅にそろえる
    */
   function tiersAndPerc(stage, yFront0, rows, H, percList, place) {
-    const pn = SS.PANELS[H.panel || '36'];
+    const pn = SS.panelSize(H);
+    const upW = v => Math.ceil(v / pn.w) * pn.w;
     const parts = splitPerc(percList, place);
     // 最上段に1列で並びきらない打楽器は、下手（または舞台奥）へ回す
     if (parts.top.length) {
       const [bl, br] = R().xRange(stage, 0);
       const leftW = place === 'top' ? 0 : Math.max(330, Math.min(400, stage.w * 0.2)) + 35;
-      const maxTop = Math.floor((br - bl - leftW - 20) / 182) * 182 - 40;
+      const maxTop = Math.floor((br - bl - leftW - 20) / pn.w) * pn.w - 40;
       const dest = place === 'top' ? parts.back : parts.left;
       while (percWidth(parts.top) > maxTop) {
         const inst = parts.top.filter(it => it.type !== 'player' && !TIMP.includes(it.type));
@@ -333,7 +358,7 @@ window.SS = window.SS || {};
       return out;
     }
     // 段の横幅（いちばん広い列に合わせ、平台の枚数単位）
-    let W = up182(Math.max(364, ...rows.map(r => r.want), hasTopPerc ? percWidth(parts.top) + 40 : 0));
+    let W = upW(Math.max(364, ...rows.map(r => r.want), hasTopPerc ? percWidth(parts.top) + 40 : 0));
     let percD = 0, cx = stage.w / 2;
     for (let pass = 0; pass < 3; pass++) {
       if (hasTopPerc) {
@@ -345,7 +370,7 @@ window.SS = window.SS || {};
       const yBack = yFront0 - total;
       let [xl, xr] = R().xRange(stage, Math.max(0, yBack));
       if (out.leftRect && yBack < out.leftRect.y1) xl = Math.max(xl, out.leftRect.x1 + 10);
-      const Wmax = Math.max(182, Math.floor((xr - xl - 20) / 182) * 182);
+      const Wmax = Math.max(pn.w * 2, Math.floor((xr - xl - 20) / pn.w) * pn.w);
       cx = Math.max(xl + 10 + Math.min(W, Wmax) / 2, Math.min(stage.w / 2, xr - 10 - Math.min(W, Wmax) / 2));
       if (W <= Wmax) break;
       W = Wmax;
@@ -354,14 +379,14 @@ window.SS = window.SS || {};
     const std = [21.2, 42.4, 63.6, 84.8];
     rows.forEach((r, i) => {
       const d = r.need ? r.need(W) : r.depth;
-      if (r.hgt) out.tiers.push({ type: 'hina', x: cx, y: yFront - d / 2, w: W, h: d, hgt: r.hgt, panel: H.panel || '36', step: i + 1, rot: 0 });
+      if (r.hgt) out.tiers.push({ type: 'hina', x: cx, y: yFront - d / 2, w: W, h: d, hgt: r.hgt, panel: H.panel || '36', orient: H.orient || 'h', step: i + 1, rot: 0 });
       out.items.push(...r.place(cx, yFront, d, W));
       yFront -= d;
     });
     if (hasTopPerc) {
       const i = rows.length;
       const hgt = (H.heights && H.heights[i]) || std[Math.min(i, 3)];
-      out.tiers.push({ type: 'hina', x: cx, y: yFront - percD / 2, w: W, h: percD, hgt, panel: H.panel || '36', step: i + 1, rot: 0 });
+      out.tiers.push({ type: 'hina', x: cx, y: yFront - percD / 2, w: W, h: percD, hgt, panel: H.panel || '36', orient: H.orient || 'h', step: i + 1, rot: 0 });
       A.arrangePerc(parts.top, stage, { yTop: yFront - percD + 12, x0: cx - W / 2 + 15, x1: cx + W / 2 - 15 });
       out.items.push(...parts.top);
       yFront -= percD;
@@ -380,8 +405,8 @@ window.SS = window.SS || {};
     const lowOn = st.lowOuter && !lowFallback;
     const c = { x: stage.w / 2, y: podiumY(stage) };
     const H = st.hina || { steps: 0 };
-    const pn = SS.PANELS[H.panel || '36'];
-    const tierD = pn.d * (H.deep || 2);
+    const pn = SS.panelSize(H);
+    const tierD = pn.d * (H.deep || 1);
     const place = st.percPlace || 'back';
     const lowLabels = lowOn ? LOW_GROUP.flatMap(p => rep(p, n[p])) : [];
     let rows = bandRows(st).map(r => r.filter(p => !(lowOn && LOW_GROUP.includes(p))).flatMap(p => rep(p, n[p]))).filter(r => r.length);
@@ -489,8 +514,23 @@ window.SS = window.SS || {};
       items.push(...pts);
     }
     // ハープ・ピアノは舞台の左右（前寄り）
-    rep('Hp', n.Hp).forEach((l, i) => { const p = G().fromPolar(r0 + gap * 0.5 + i * 90, -1.5, c); items.push({ type: 'harp', x: p.x - 45, y: p.y, rot: 0 }, { type: 'player', label: 'Hp', x: p.x + 5, y: p.y, rot: 90 }); });
-    rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(r0 + gap * 0.8, 1.45, c); items.push({ type: 'piano', x: p.x, y: p.y - 30, rot: 90 }, { type: 'player', label: 'Pf', x: p.x - 100, y: p.y - 30, rot: 90 }); });
+    // ピアノ・ハープは下手（客席から見て左）の、扇形の外側。ピアノは鍵盤を下手に向け、奏者は指揮者の方を向く。
+    // 大屋根は客席側に開く
+    let yL = c.y - 60;
+    const xOut = c.x - maxR - 70;
+    rep('Pf', n.Pf).forEach(() => {
+      const C = SS.CATALOG.piano;
+      const [xl] = R().xRange(stage, yL - C.w / 2);
+      const px = Math.max(xl + 80 + C.h / 2, xOut - C.h / 2);
+      items.push({ type: 'piano', x: px, y: yL - C.w / 2, rot: 90 }, { type: 'player', label: 'Pf', x: px - C.h / 2 - 38, y: yL - C.w / 2, rot: -90 });
+      yL -= C.w + 40;
+    });
+    rep('Hp', n.Hp).forEach(() => {
+      const [xl] = R().xRange(stage, yL - 50);
+      const hx = Math.max(xl + 110, xOut - 40);
+      items.push({ type: 'harp', x: hx, y: yL - 50, rot: 0 }, { type: 'player', label: 'Hp', x: hx - 55, y: yL - 50, rot: -90 });
+      yL -= 130;
+    });
     const out = tp.tiers.concat(expandHornBox(items, c, 72));
     return { items: out, c, overlap: overlapCheck(tp, out), lowFallback: !!(st.lowOuter && lowFallback) };
   }
@@ -543,7 +583,7 @@ window.SS = window.SS || {};
     }
     // 管楽器（ひな壇の上にまっすぐ）
     const H = st.hina || { steps: 0 };
-    const pn = SS.PANELS[H.panel || '36'];
+    const pn = SS.panelSize(H);
     const tierD = Math.max(121, pn.d * (H.deep || 1));
     const std = [21.2, 42.4, 63.6, 84.8];
     const sp = tune.spacing + 4;
@@ -634,8 +674,8 @@ window.SS = window.SS || {};
     let best = null;
     for (const tune of TUNES) {
       let s3 = s2;
-      if (tune.slim && s2.hina && (SS.PANELS[s2.hina.panel || '36'].d * (s2.hina.deep || 1)) > 121) {
-        s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, { panel: '46', deep: 1 }) });
+      if (tune.slim && s2.hina && (SS.panelSize(s2.hina).d * (s2.hina.deep || 1)) > 121) {
+        s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, { panel: '46', orient: 'h', deep: 1 }) });
       }
       const r = f(s3, stage, tune);
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;

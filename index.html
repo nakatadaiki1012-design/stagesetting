@@ -50,8 +50,6 @@
       <div class="ens-opts">
         <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
         <label class="check" id="ensAntiWrap"><input type="checkbox" id="ensAnti"> 対向配置</label>
-        <label class="check"><input type="checkbox" id="ensHornBox"> ホルンをボックス型に</label>
-        <label class="check" id="lowOuterWrap"><input type="checkbox" id="ensLowOuter"> 低音（B.Cl・Euph・Tuba・弦バス）を上手の外側の弧に</label>
       </div>
       <label class="field" id="percPlaceWrap">打楽器の場所
         <select id="percPlace">
@@ -66,10 +64,8 @@
         <div class="seg seg5" id="hinaSteps">
           <button data-steps="0">なし</button><button data-steps="1">1段</button><button data-steps="2">2段</button><button data-steps="3">3段</button><button data-steps="4">4段</button>
         </div>
-        <div class="row2">
-          <label class="field">平台<select id="hinaPanel"><option value="36">3×6尺（91×182cm）</option><option value="46">4×6尺（121×182cm）</option><option value="66">6×6尺（182×182cm）</option></select></label>
-          <label class="field">1段の奥行<select id="hinaDeep"><option value="1">平台1枚分</option><option value="2">平台2枚分</option></select></label>
-        </div>
+        <p class="hint small" style="margin:6px 0 4px">1段の平台の置き方（図の上が舞台奥）</p>
+        <div id="hinaTypes" class="hina-types"></div>
         <div id="hinaHeights" class="hina-heights"></div>
       </div>
       <p class="hint small">▲▼で人数を変えると、すぐに並べ直します。名前は同じパートの人に引き継がれます。</p>
@@ -88,6 +84,13 @@
     </section>
 
     <section class="tabpane" id="quickTab">
+      <h3>配置のくふう</h3>
+      <p class="hint">「かんたん編成」の自動配置に、すぐ反映されます。</p>
+      <div class="ens-opts">
+        <label class="check"><input type="checkbox" id="ensHornBox"> ホルンをボックス型に（2人ずつ前後に）</label>
+        <label class="check" id="lowOuterWrap"><input type="checkbox" id="ensLowOuter"> 低音（B.Cl・Euph・Tuba・弦バス）を上手の外側の弧に</label>
+      </div>
+      <hr>
       <h3>扇形・列をまとめて作る</h3>
       <p class="hint">各列の人数をカンマ区切りで（前の列から）。</p>
       <label class="field">各列の人数<input id="genRows" value="8,10,12,14"></label>

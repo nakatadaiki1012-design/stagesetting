@@ -410,7 +410,7 @@
         it.h = Math.max(10, Math.round((Math.abs(ly) * 2 - 12) / 5) * 5);
         if (it.type === 'hina') {
           // ひな壇は平台の枚数単位で大きさが変わる
-          const pn = SS.PANELS[it.panel || '36'];
+          const pn = SS.panelSize(it);
           it.w = Math.max(1, Math.round(it.w / pn.w)) * pn.w;
           it.h = Math.max(1, Math.round(it.h / pn.d)) * pn.d;
         }
@@ -710,7 +710,7 @@
       it.w = c.w; it.h = c.h;
       if (c.label !== undefined && it.label === undefined) it.label = c.label;
       if (type === 'text') it.fontSize = c.fontSize;
-      if (type === 'hina') { it.hgt = 21.2; it.panel = '36'; }
+      if (type === 'hina') { it.hgt = 21.2; it.panel = '36'; it.orient = 'h'; }
     }
     pushHistory();
     doc().items.push(it);
@@ -836,7 +836,7 @@
         pushHistory();
         const widest = hs.reduce((a, b) => (b.w > a.w ? b : a));
         hs.forEach(h => { h.w = widest.w; h.x = widest.x; });
-        toast(`${hs.length}段の横幅を${(widest.w / 100).toFixed(2)}m（平台${Math.round(widest.w / 182)}枚分）にそろえました`, true);
+        toast(`${hs.length}段の横幅を${(widest.w / 100).toFixed(2)}m（平台${SS.hinaMaterials(widest).across}枚分）にそろえました`, true);
         break;
       }
       case 'fitStage': {
@@ -933,8 +933,9 @@
     if (one && one.type === 'hina') {
       const m = SS.hinaMaterials(one);
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
-      h += `<div class="row2"><label class="field">平台<select id="propPanel">${Object.keys(SS.PANELS).map(k => `<option value="${k}"${(one.panel || '36') === k ? ' selected' : ''}>${SS.PANELS[k].name}</option>`).join('')}</select></label>`;
-      h += `<label class="field">枚数（横×奥）<span style="font-size:14px;color:#1f2733;padding:6px 0">${m.across}×${m.deep}＝${m.panels}枚</span></label></div>`;
+      const curT = SS.hinaTypeOf({ panel: one.panel, orient: one.orient, deep: m.deep });
+      h += `<p class="hint small" style="margin:4px 0">平台の置き方（押すと奥行が変わります）</p><div class="hina-types" id="propHinaTypes">${SS.HINA_TYPES.map(t => `<button class="hina-type${curT && curT.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`).join('')}</div>`;
+      h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：横${m.across}枚×奥${m.deep}枚＝${m.panels}枚</p>`;
       h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
     }
     if (one && one.type !== 'player' && one.type !== 'text') {
@@ -961,13 +962,17 @@
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
     bind('propRot', 'input', el => { one.rot = +el.value; $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
-    bind('propPanel', 'change', el => {
-      one.panel = el.value;
-      // 幅・奥行を平台の大きさの倍数にそろえる
-      const pn = SS.PANELS[one.panel];
-      one.w = Math.max(1, Math.round(one.w / pn.w)) * pn.w;
-      one.h = Math.max(1, Math.round(one.h / pn.d)) * pn.d;
-      renderProps();
+    box.querySelectorAll('#propHinaTypes [data-ht]').forEach(b => {
+      b.onclick = () => {
+        const t = SS.HINA_TYPES.find(x => x.id === b.getAttribute('data-ht'));
+        pushHistory();
+        one.panel = t.panel; one.orient = t.orient;
+        // 幅は平台の枚数単位に、奥行はこの型の奥行に
+        const P = SS.panelSize(one);
+        one.w = Math.max(1, Math.round(one.w / P.w)) * P.w;
+        one.h = P.d * t.deep;
+        render(); renderCounts(); renderProps();
+      };
     });
     bind('propColor', 'input', el => sel.forEach(it => { it.color = el.value; }));
     $('propColorReset').onclick = () => { pushHistory(); sel.forEach(it => { delete it.color; }); renderAll(); };
@@ -1656,12 +1661,12 @@
       <h2>🎼 使い方</h2>
       <ol>
         <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。</li>
-        <li><b>ひな壇</b>：段数と平台（3×6尺／4×6尺）を選ぶと、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
+        <li><b>ひな壇</b>：段数と<b>平台の置き方</b>（3×6の横置き・縦置き、4×6、6×6…を図で選ぶ）を決めると、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。置いた平台を選んでも、図から置き方を変えられます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
         <li><b>打楽器</b>：「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。「🥁 打楽器を整列」でその場所に並べ直せます。</li>
         <li><b>舞台の大きさ</b>：舞台の角と前の縁にある <b>↔ ↕ の丸いつまみ</b>をドラッグすると、前の幅・奥の幅・奥行をその場で変えられます（10cm単位）。自動配置なら、すぐに並べ直します。</li>
         <li><b>並び方</b>：かんたん編成の「並び方」で、<b>標準・Cl下手/Sax上手・昔ながら・ドイツ式</b>を選べます。「ひな形」にも、コンクールA（55人）や小編成などの型があります。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
-        <li><b>低音を上手の外側に</b>：かんたん編成のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。</li>
+        <li><b>低音を上手の外側に・ホルンのボックス</b>：「一括作成」タブの「配置のくふう」のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。ホルンを2人ずつ前後に並べるボックス型もここで選べます。</li>
         <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
         <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。</li>
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
@@ -1747,8 +1752,16 @@
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
-    $('hinaPanel').value = H.panel || '36';
-    $('hinaDeep').value = String(H.deep || 1);
+    const cur = SS.hinaTypeOf(H);
+    $('hinaTypes').innerHTML = SS.HINA_TYPES.map(t => `<button class="hina-type${cur && cur.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`).join('');
+    $('hinaTypes').querySelectorAll('[data-ht]').forEach(b => {
+      b.onclick = () => {
+        const t = SS.HINA_TYPES.find(x => x.id === b.getAttribute('data-ht'));
+        Object.assign(ens().hina, { panel: t.panel, orient: t.orient, deep: t.deep });
+        renderSteppers();
+        applyAuto();
+      };
+    });
     const std = [21.2, 42.4, 63.6, 84.8];
     $('hinaHeights').innerHTML = Array.from({ length: H.steps || 0 }, (_, i) => {
       const v = (H.heights && H.heights[i]) || std[i];
@@ -1797,15 +1810,18 @@
     };
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
-  $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; applyAuto(); };
-  $('ensLowOuter').onchange = e => { ens().lowOuter = e.target.checked; applyAuto(); };
+  // 配置のくふう（一括作成タブ）：自動配置のときだけ並べ直す。手で置いた配置は消さない
+  const optAuto = () => {
+    if (doc().items.some(it => it.auto)) applyAuto();
+    else toast('「かんたん編成」で並べるときに使われます');
+  };
+  $('ensHornBox').onchange = e => { ens().hornBox = e.target.checked; optAuto(); };
+  $('ensLowOuter').onchange = e => { ens().lowOuter = e.target.checked; optAuto(); };
   $('bandLayout').onchange = e => { ens().layout = e.target.value; applyAuto(); };
   $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
   });
-  $('hinaPanel').onchange = e => { ens().hina.panel = e.target.value; applyAuto(); };
-  $('hinaDeep').onchange = e => { ens().hina.deep = +e.target.value; applyAuto(); };
   $('ensPerc').onchange = e => { ens().percInst = e.target.checked; applyAuto(); };
 
   // ------------------------------------------------------------ ホール（ステージ寸法）

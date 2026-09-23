@@ -287,3 +287,11 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .mat-list { font-size: 12.5px; line-height: 1.7; margin: 4px 0 0; padding-left: 18px; }
 
 .v3-vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%); }
+
+/* ひな壇の平台の置き方（図で選ぶ） */
+.hina-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 5px; }
+.hina-type { display: flex; flex-direction: column; gap: 3px; align-items: center; text-align: center; padding: 6px 3px 5px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; font: inherit; color: var(--text); }
+.hina-type svg { flex: none; height: 30px; width: auto; }
+.hina-type b { display: block; font-size: 11px; line-height: 1.25; font-weight: 600; }
+.hina-type small { display: block; font-size: 10px; color: #6b7380; line-height: 1.2; }
+.hina-type.on { border-color: #2f6fde; background: #eef4ff; box-shadow: 0 0 0 1px #2f6fde inset; }

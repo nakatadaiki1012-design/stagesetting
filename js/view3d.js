@@ -109,6 +109,62 @@ window.SS = window.SS || {};
     return t;
   }
 
+  // パートの色（図では淡い色）を、3Dの服用にはっきりした濃い色にする
+  function vivid(hex) {
+    const c = new T.Color(hex), hsl = {};
+    c.getHSL(hsl);
+    if (hsl.s < 0.08) return '#4a5263';
+    c.setHSL(hsl.h, Math.max(0.72, hsl.s), Math.min(0.42, Math.max(0.3, hsl.l * 0.55)));
+    return '#' + c.getHexString();
+  }
+  // 反射板・客席の壁：木のパネル（色むら・木目・目地）。slat=true で細い木のルーバー（すき間が暗い）
+  function panelTexture(base, slat) {
+    const key = 'panel' + base + slat;
+    if (texCache[key]) return texCache[key];
+    const cv = document.createElement('canvas');
+    cv.width = 1024; cv.height = 1024;
+    const x = cv.getContext('2d');
+    const c = new T.Color(base);
+    let seed = 11;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const rgb = k => `rgb(${Math.min(255, c.r * 255 * k) | 0},${Math.min(255, c.g * 255 * k) | 0},${Math.min(255, c.b * 255 * k) | 0})`;
+    if (slat) {
+      x.fillStyle = '#120c08'; x.fillRect(0, 0, 1024, 1024);
+      for (let i = 0; i < 32; i++) {
+        const k = 0.85 + rnd() * 0.3;
+        const g = x.createLinearGradient(i * 32, 0, i * 32 + 24, 0);
+        g.addColorStop(0, rgb(k * 0.8)); g.addColorStop(0.5, rgb(k * 1.08)); g.addColorStop(1, rgb(k * 0.75));
+        x.fillStyle = g; x.fillRect(i * 32 + 2, 0, 24, 1024);
+      }
+    } else {
+      const pw = 128, ph = 512;
+      for (let i = 0; i < 1024 / pw; i++) for (let j = 0; j < 1024 / ph; j++) {
+        const k = 0.88 + rnd() * 0.22;
+        const g = x.createLinearGradient(0, j * ph, 0, j * ph + ph);
+        g.addColorStop(0, rgb(k * 1.06)); g.addColorStop(1, rgb(k * 0.92));
+        x.fillStyle = g; x.fillRect(i * pw, j * ph, pw, ph);
+        // 木目（ゆるく波打つ縦の線）
+        for (let l = 0; l < 14; l++) {
+          x.strokeStyle = `rgba(70,40,15,${0.05 + rnd() * 0.08})`;
+          x.lineWidth = 1 + rnd() * 1.5;
+          const o = i * pw + rnd() * pw;
+          x.beginPath(); x.moveTo(o, j * ph);
+          x.bezierCurveTo(o + 8 - rnd() * 16, j * ph + ph * 0.3, o + 8 - rnd() * 16, j * ph + ph * 0.7, o + 4 - rnd() * 8, j * ph + ph);
+          x.stroke();
+        }
+        // 目地（影と光）
+        x.fillStyle = 'rgba(25,14,6,.55)'; x.fillRect(i * pw, j * ph, 3, ph); x.fillRect(i * pw, j * ph, pw, 3);
+        x.fillStyle = 'rgba(255,230,190,.18)'; x.fillRect(i * pw + 3, j * ph + 3, 2, ph - 3);
+      }
+    }
+    const t = new T.CanvasTexture(cv);
+    t.wrapS = t.wrapT = T.RepeatWrapping;
+    t.encoding = T.sRGBEncoding;
+    t.anisotropy = 8;
+    texCache[key] = t;
+    return t;
+  }
+
   const GOLD = '#d9b04a', SILVER = '#d8dde3', BLACKW = '#161618', WOOD = '#7e4520', HAIRS = ['#2b211b', '#3b2f28', '#1c1714', '#4a3526', '#2a2522'];
   const SKINS = ['#f1c9a5', '#e8b995', '#f5d3b3', '#dcae88'];
   function hashId(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) | 0; return Math.abs(h); }
@@ -156,8 +212,8 @@ window.SS = window.SS || {};
     const skin = SKINS[hsh % SKINS.length];
     const hairC = HAIRS[(hsh >> 3) % HAIRS.length];
     const longHair = (hsh >> 5) % 3 === 0;
-    const cloth = V.clothes === 'part' ? partColor : '#17181c';
-    const pants = V.clothes === 'part' ? '#2e3440' : '#141417';
+    const cloth = V.clothes === 'part' ? vivid(partColor) : '#17181c';
+    const pants = V.clothes === 'part' ? '#1d2129' : '#141417';
     const head = [];
     if (!standing) {
       if (bench) {
@@ -385,8 +441,83 @@ window.SS = window.SS || {};
     return h;
   }
 
+  // グランドピアノ（ヤマハC3X・CFXの寸法を参考に。手前＝+z が鍵盤、左が低音側）
+  function makeGrandPiano(g, w, d) {
+    const hw = w / 2, hd = d / 2;
+    const kb = Math.min(0.22, d * 0.09);          // 鍵盤の奥行
+    const top = 1.0, rimH = 0.3;                  // ふたの高さ・側板の高さ
+    const PIANO = { roughness: 0.1, metalness: 0.15 };
+    const toXZ = (nx, ny, inset) => {
+      const m = inset || 0;
+      return [-hw + (m + nx * (1 - 2 * m)) * w, hd - kb - (m * 0.6 + ny * (1 - 1.6 * m)) * (d - kb)];
+    };
+    const shapeOf = inset => {
+      const sh = new T.Shape();
+      SS.pianoOutline().forEach(([nx, ny], i) => { const [x, z] = toXZ(nx, ny, inset); if (i) sh.lineTo(x, z); else sh.moveTo(x, z); });
+      sh.closePath();
+      return sh;
+    };
+    const flat = (sh, depth, color, opt, y) => {
+      const m = mesh(new T.ExtrudeGeometry(sh, { depth, bevelEnabled: false, curveSegments: 4 }), color, opt);
+      m.rotation.x = Math.PI / 2; m.position.y = y; g.add(m); return m;
+    };
+    // 側板（中が見えるように、内側をくり抜く）
+    const rim = shapeOf(0);
+    rim.holes.push(new T.Path(shapeOf(0.035).getPoints()));
+    flat(rim, rimH, '#0b0b0d', PIANO, top);
+    // 底板・響板・金色のフレーム・弦
+    flat(shapeOf(0), 0.03, '#0b0b0d', PIANO, top - rimH + 0.03);
+    flat(shapeOf(0.035), 0.01, '#d9b77e', { roughness: 0.55 }, top - 0.12);
+    flat(shapeOf(0.08), 0.015, '#c9a24a', { metalness: 0.75, roughness: 0.3 }, top - 0.085);
+    for (let i = 0; i < 18; i++) {
+      const nx = 0.12 + i * 0.045, len = (d - kb) * (0.9 - i * 0.034);
+      box(g, 0.004, 0.004, Math.max(0.3, len), '#e8e4da', -hw + nx * w, top - 0.07, hd - kb - 0.06 - Math.max(0.3, len) / 2, METAL);
+    }
+    // 鍵盤まわり：鍵盤の台・白鍵・黒鍵・左右の拍子木・鍵盤のふた（開いた状態で奥に）
+    box(g, w, 0.09, kb + 0.04, '#0b0b0d', 0, top - rimH + 0.02, hd - kb / 2 + 0.02, PIANO);
+    const kw = w - 0.14;
+    box(g, kw, 0.022, kb * 0.8, '#f7f5ee', 0, top - rimH + 0.075, hd - kb * 0.45, { roughness: 0.3 });
+    const nWhite = 52, ww = kw / nWhite;
+    for (let i = 0; i < nWhite - 1; i++) {
+      const n = (i + 5) % 7; // A0から数えて、黒鍵があるのは C,D,F,G,A の右
+      if (n === 2 || n === 6) continue;
+      box(g, ww * 0.55, 0.018, kb * 0.48, '#111113', -kw / 2 + ww * (i + 1), top - rimH + 0.095, hd - kb * 0.6, { roughness: 0.25 });
+    }
+    [-1, 1].forEach(sx => box(g, 0.07, 0.1, kb + 0.04, '#0b0b0d', sx * (hw - 0.035), top - rimH + 0.08, hd - kb / 2 + 0.02, PIANO));
+    box(g, kw, 0.07, 0.03, '#0b0b0d', 0, top - rimH + 0.11, hd - kb - 0.01, PIANO);
+    // 譜面台
+    const desk = box(g, w * 0.55, 0.3, 0.018, '#0b0b0d', 0, top + 0.15, hd - kb - 0.2, PIANO);
+    desk.rotation.x = -0.25;
+    // 脚（3本・先に金色のキャスター）
+    [[0.06, 0.04], [0.94, 0.04], [0.24, 0.9]].forEach(([nx, ny]) => {
+      const [x, z] = toXZ(nx, ny, 0.02);
+      cyl(g, 0.07, 0.05, top - rimH, '#0b0b0d', x, (top - rimH) / 2, z, PIANO, 16);
+      sph(g, 0.035, '#c9a24a', x, 0.035, z, METAL);
+    });
+    // ペダル（リラ）
+    const lz = hd - kb - 0.2;
+    [-0.09, 0.09].forEach(x => box(g, 0.035, top - rimH - 0.1, 0.04, '#0b0b0d', x, (top - rimH) / 2 + 0.03, lz, PIANO));
+    box(g, 0.3, 0.06, 0.12, '#0b0b0d', 0, 0.09, lz, PIANO);
+    [-0.07, 0, 0.07].forEach(x => box(g, 0.035, 0.012, 0.12, '#d4ad4e', x, 0.1, lz + 0.1, METAL));
+    // 大屋根（低音側のちょうつがいで開き、突上棒で支える）
+    const lid = new T.Mesh(new T.ExtrudeGeometry(shapeOf(0), { depth: 0.022, bevelEnabled: false }), mat('#0b0b0d', PIANO));
+    lid.castShadow = true;
+    lid.rotation.x = Math.PI / 2;
+    lid.position.set(hw, 0.022, 0);
+    const pivot = new T.Group();
+    pivot.position.set(-hw, top + 0.001, 0);
+    pivot.add(lid);
+    const open = 0.5;
+    pivot.rotation.z = open;
+    g.add(pivot);
+    const [px, pz] = toXZ(0.72, 0.42, 0.04);
+    const stickLen = Math.tan(open) * (px + hw);
+    tube(g, [px, top, pz], [px, top + stickLen - 0.01, pz], 0.012, '#0b0b0d', PIANO);
+  }
+
   // ひな壇（平台＋足＋まわりの黒い幕）
-  function makeRiser(g, w, d, hgt, panelD) {
+  function makeRiser(g, w, d, hgt, panelD, panelW) {
+    panelW = panelW || 1.82;
     const top = 0.121;
     const woodTex = planksTexture('#c89a62', 64, false);
     const topMat = new T.MeshStandardMaterial({ map: woodTex, roughness: 0.55 });
@@ -396,7 +527,7 @@ window.SS = window.SS || {};
     slab.castShadow = true; slab.receiveShadow = true;
     g.add(slab);
     // 平台のつなぎ目
-    for (let x = -w / 2 + 1.82; x < w / 2 - 0.05; x += 1.82) box(g, 0.006, 0.002, d, '#5a4128', x, hgt + 0.001, 0);
+    for (let x = -w / 2 + panelW; x < w / 2 - 0.05; x += panelW) box(g, 0.006, 0.002, d, '#5a4128', x, hgt + 0.001, 0);
     for (let z = -d / 2 + panelD; z < d / 2 - 0.05; z += panelD) box(g, w, 0.002, 0.006, '#5a4128', 0, hgt + 0.001, z);
     if (hgt > 0.13) {
       // 足（箱馬）は見えないよう幕で囲う
@@ -422,7 +553,7 @@ window.SS = window.SS || {};
         break;
       }
       case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
-      case 'hina': makeRiser(g, w, d, riserH, ((SS.PANELS[it.panel || '36'] || { d: 91 }).d) / 100); break;
+      case 'hina': makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100); break;
       case 'timp32': case 'timp29': case 'timp26': case 'timp23': case 'timp': {
         const r = Math.min(w, d) / 2 * 0.9;
         const bowl = mesh(new T.SphereGeometry(r, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), '#b87333', METAL);
@@ -473,22 +604,7 @@ window.SS = window.SS || {};
       case 'cym': cyl(g, 0.23, 0.02, 0.03, '#e2c35a', 0, 1.02, 0, METAL, 32); cyl(g, 0.012, 0.012, 1.0, '#555', 0, 0.5, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.2, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
       case 'tam': { const m = cyl(g, 0.45, 0.45, 0.02, '#b08a3a', 0, 1.1, 0, METAL, 36); m.rotation.x = Math.PI / 2; box(g, w, 0.05, 0.05, '#333', 0, 1.62, 0); [-1, 1].forEach(s => box(g, 0.05, 1.62, 0.05, '#333', s * w / 2, 0.81, 0)); break; }
       case 'drums': { const b = cyl(g, 0.28, 0.28, 0.4, '#8c1d24', 0, 0.3, 0.25, { roughness: 0.3 }); b.rotation.x = Math.PI / 2; cyl(g, 0.18, 0.18, 0.2, '#8c1d24', -0.3, 0.7, 0.1, { roughness: 0.3 }); cyl(g, 0.2, 0.2, 0.22, '#8c1d24', 0.35, 0.5, 0, { roughness: 0.3 }); cyl(g, 0.2, 0.02, 0.02, '#e2c35a', -0.5, 1.05, -0.2, METAL); cyl(g, 0.23, 0.02, 0.02, '#e2c35a', 0.55, 1.1, -0.2, METAL); break; }
-      case 'piano': case 'pianoFull': {
-        const sh = new T.Shape();
-        const hw = w / 2, hd = d / 2;
-        sh.moveTo(-hw, hd); sh.lineTo(-hw, -hd + w * 0.1); sh.quadraticCurveTo(-hw, -hd, -hw + w * 0.25, -hd);
-        sh.quadraticCurveTo(hw, -hd + d * 0.02, hw * 0.55, -hd + d * 0.45); sh.quadraticCurveTo(hw, hd * 0.3, hw, hd); sh.lineTo(-hw, hd);
-        const geo = new T.ExtrudeGeometry(sh, { depth: 0.33, bevelEnabled: false });
-        const m = mesh(geo, '#0c0c0e', { roughness: 0.12, metalness: 0.2 });
-        m.rotation.x = Math.PI / 2; m.position.y = 1.0; g.add(m);
-        [[-hw + 0.1, hd - 0.1], [hw - 0.15, hd - 0.1], [0, -hd + 0.4]].forEach(p => cyl(g, 0.055, 0.04, 0.67, '#0c0c0e', p[0], 0.33, p[1], { roughness: 0.15 }));
-        box(g, w, 0.12, 0.2, '#0c0c0e', 0, 0.72, hd + 0.02, { roughness: 0.15 });
-        box(g, w * 0.92, 0.02, 0.15, '#f7f7f2', 0, 0.79, hd + 0.03);
-        const lid = mesh(geo, '#0c0c0e', { roughness: 0.12, metalness: 0.2 });
-        lid.rotation.x = Math.PI / 2; lid.scale.set(1, 1, 0.05);
-        const pivot = new T.Group(); pivot.position.set(-hw, 1.0, 0); lid.position.set(hw, 0, 0); pivot.add(lid); pivot.rotation.z = 0.62; g.add(pivot);
-        break;
-      }
+      case 'piano': case 'pianoFull': makeGrandPiano(g, w, d); break;
       case 'upright': box(g, w, 1.25, d, '#0c0c0e', 0, 0.62, 0, { roughness: 0.15 }); box(g, w * 0.9, 0.02, 0.15, '#f7f7f2', 0, 0.75, d / 2 + 0.07); break;
       case 'harp': { const b = box(g, 0.08, 1.8, d * 0.9, '#c9a060', 0, 0.9, 0, { roughness: 0.35 }); b.rotation.x = 0.15; tube(g, [0, 1.8, -d / 2], [0, 1.6, d / 2], 0.045, '#c9a060'); tube(g, [0, 0.1, d / 2 - 0.05], [0, 1.65, d / 2 - 0.05], 0.035, '#d8b36a', { roughness: 0.3 }); box(g, w, 0.12, 0.35, '#c9a060', 0, 0.06, -d / 3); break; }
       case 'amp': box(g, w, 0.5, d, '#1d1d1f', 0, 0.25, 0); box(g, w * 0.85, 0.3, 0.005, '#333', 0, 0.28, d / 2 + 0.003); break;
@@ -576,7 +692,7 @@ window.SS = window.SS || {};
     const sg = new T.ExtrudeGeometry(shape, { depth: 1.0, bevelEnabled: false });
     const floorTex = planksTexture('#c08d55', 48, true);
     floorTex.repeat.set(1 / 2.2, 1 / 2.2);
-    const floorMat = new T.MeshStandardMaterial({ map: floorTex, roughness: 0.42, metalness: 0.02 });
+    const floorMat = new T.MeshPhysicalMaterial({ map: floorTex, roughness: 0.38, metalness: 0.02, clearcoat: 0.45, clearcoatRoughness: 0.22 });
     const stageMesh = new T.Mesh(sg, [floorMat, mat('#141414')]);
     stageMesh.rotation.x = Math.PI / 2;
     stageMesh.receiveShadow = true;
@@ -584,48 +700,46 @@ window.SS = window.SS || {};
 
     // 音響反射板（奥・左右の壁と天井の板）
     const shellH = 7.5;
-    const wallTex = planksTexture('#a8743f', 90, true);
+    const wallTex = panelTexture('#b98550', false);
     const wallMat = () => { const m = new T.MeshStandardMaterial({ map: wallTex.clone(), roughness: 0.5 }); m.map.needsUpdate = true; return m; };
     const bl = poly[0], br = poly[1], fr = [W, D], fl = [0, D];
     const wall = (a, b, depthOff) => {
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const m = wallMat();
-      m.map.repeat.set(len / 4, shellH / 4);
+      m.map.repeat.set(len / 5, shellH / 5);
       const w = new T.Mesh(new T.BoxGeometry(len, shellH, 0.25), m);
       w.position.set((a[0] + b[0]) / 2, shellH / 2, (a[1] + b[1]) / 2);
       w.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
       w.translateZ(depthOff);
       w.receiveShadow = true;
       scene.add(w);
-      // 縦の目地
-      const n = Math.floor(len / 1.2);
+      // 下の腰板（濃い木）と、音を散らす縦のふくらみ（半円柱）
+      const base = new T.Mesh(new T.BoxGeometry(len, 0.9, 0.06), mat('#4a2f1a', { roughness: 0.45 }));
+      base.position.set((a[0] + b[0]) / 2, 0.45, (a[1] + b[1]) / 2);
+      base.rotation.y = w.rotation.y; base.translateZ(depthOff + 0.15); base.receiveShadow = true;
+      scene.add(base);
+      const n = Math.floor(len / 0.9);
+      const dif = new T.InstancedMesh(new T.CylinderGeometry(0.14, 0.14, shellH - 1.4, 14, 1, false, -Math.PI / 2, Math.PI), mat('#c48f58', { roughness: 0.4 }), Math.max(1, n - 1));
+      const q = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), w.rotation.y);
+      const off = new T.Vector3(0, 0, depthOff + 0.125).applyQuaternion(q);
+      const mm = new T.Matrix4();
       for (let i = 1; i < n; i++) {
         const t = i / n;
-        const rib = new T.Mesh(new T.BoxGeometry(0.05, shellH, 0.05), mat('#6f4b28'));
-        rib.position.set(a[0] + (b[0] - a[0]) * t, shellH / 2, a[1] + (b[1] - a[1]) * t);
-        rib.rotation.y = w.rotation.y;
-        rib.translateZ(depthOff * 0.2);
-        scene.add(rib);
+        mm.compose(new T.Vector3(a[0] + (b[0] - a[0]) * t + off.x, 0.9 + (shellH - 1.4) / 2, a[1] + (b[1] - a[1]) * t + off.z), q, new T.Vector3(1, 1, 1));
+        dif.setMatrixAt(i - 1, mm);
       }
+      dif.castShadow = false; dif.receiveShadow = true;
+      scene.add(dif);
+      // 上のふち：あたたかい間接照明
+      const glow = new T.Mesh(new T.BoxGeometry(len, 0.05, 0.05), new T.MeshBasicMaterial({ color: '#ffd9a0' }));
+      glow.position.set((a[0] + b[0]) / 2, shellH - 0.3, (a[1] + b[1]) / 2);
+      glow.rotation.y = w.rotation.y; glow.translateZ(depthOff + 0.2);
+      scene.add(glow);
     };
     wall(bl, br, -0.13);
     if (st.shape !== 'apron') {
       wall(fl, bl, -0.13);
       wall(br, fr, -0.13);
-    }
-    // 天井反射板（3枚、少し傾ける）
-    for (let i = 0; i < 3; i++) {
-      const z = D * (0.2 + i * 0.3);
-      const [l, r] = SS.render.xRange(st, z * 100).map(v => v / 100);
-      const p = mesh(new T.BoxGeometry(r - l, 0.1, D * 0.28), '#a8743f', { roughness: 0.5 });
-      p.position.set((l + r) / 2, shellH + 0.1 - i * 0.25, z);
-      p.rotation.x = 0.12;
-      p.castShadow = false;
-      scene.add(p);
-      // 照明の帯
-      const strip = new T.Mesh(new T.BoxGeometry((r - l) * 0.8, 0.04, 0.12), new T.MeshBasicMaterial({ color: '#fff3d6' }));
-      strip.position.set((l + r) / 2, shellH - 0.02 - i * 0.25, z + D * 0.15);
-      scene.add(strip);
     }
     // ステージの前のふち
     box(scene, W + 2, 0.9, 0.1, '#1a1410', W / 2, -0.55, D + 0.06);
@@ -649,30 +763,27 @@ window.SS = window.SS || {};
     });
     scene.add(cushion); scene.add(back);
     // 客席の横の壁（木の縦格子）とバルコニー席
-    const hallTex = planksTexture('#6b4428', 40, true);
+    const hallTex = panelTexture('#8a5a32', true);
     [-3, W + 3].forEach((x, si) => {
       const wm = new T.MeshStandardMaterial({ map: hallTex.clone(), roughness: 0.6 });
-      wm.map.needsUpdate = true; wm.map.repeat.set(12, 4);
+      wm.map.needsUpdate = true; wm.map.repeat.set(30 / 3.2, 12 / 3.2);
       const w = new T.Mesh(new T.BoxGeometry(0.3, 12, 30), wm);
       w.position.set(x, 5, D + 15); w.receiveShadow = true; scene.add(w);
       const dir = si ? -1 : 1;
       for (let lv = 0; lv < 2; lv++) {
         const y = 3 + lv * 3.2;
         box(scene, 2.2, 0.25, 26, '#3a2a1e', x + dir * 1.2, y, D + 16);
-        box(scene, 0.12, 0.9, 26, '#7a5230', x + dir * 2.3, y + 0.55, D + 16);
+        box(scene, 0.12, 0.9, 26, '#7a5230', x + dir * 2.3, y + 0.55, D + 16, { roughness: 0.35 });
+        // バルコニーの手すりの下の間接照明
+        const lamp = new T.Mesh(new T.BoxGeometry(0.04, 0.04, 26), new T.MeshBasicMaterial({ color: '#ffcf8a' }));
+        lamp.position.set(x + dir * 2.37, y - 0.1, D + 16); scene.add(lamp);
         const seats = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.8, 0.5), mat('#7a1a26', { roughness: 0.9 }), 40);
         const mm = new T.Matrix4();
         for (let i = 0; i < 40; i++) { mm.makeTranslation(x + dir * 1.0, y + 0.5, D + 3.5 + i * 0.62); seats.setMatrixAt(i, mm); }
         scene.add(seats);
       }
     });
-    // 客席の天井とダウンライト、非常口の表示
-    const ceil = new T.Mesh(new T.PlaneGeometry(W + 6, 30), mat('#1b1512', { roughness: 0.9 }));
-    ceil.rotation.x = Math.PI / 2; ceil.position.set(W / 2, 11, D + 15); scene.add(ceil);
-    for (let i = 0; i < 6; i++) for (let j = 0; j < 5; j++) {
-      const l = new T.Mesh(new T.CircleGeometry(0.12, 16), new T.MeshBasicMaterial({ color: '#fff3d6' }));
-      l.rotation.x = Math.PI / 2; l.position.set(W * (0.1 + i * 0.16), 10.98, D + 3 + j * 5); scene.add(l);
-    }
+    // 非常口の表示（天井は作らない：真上からも見えるように）
     [-2.8, W + 2.8].forEach(x => {
       const e = new T.Mesh(new T.PlaneGeometry(0.6, 0.25), new T.MeshBasicMaterial({ color: '#2fbf5b' }));
       e.position.set(x + (x < 0 ? 0.2 : -0.2), 2.4, D + 2); e.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(e);

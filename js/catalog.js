@@ -29,6 +29,28 @@ window.SS = window.SS || {};
   };
 
   // 部品カタログ（大きさの単位は cm。メーカー仕様などを参考にした実寸の目安）
+  // グランドピアノの外形（上から見た形）。x：0＝低音側〜1＝高音側、y：0＝鍵盤側〜1＝しっぽ
+  // 高音側は鍵盤から少しまっすぐ進み、内側へ反ってから丸いしっぽへ（ヤマハC3X・CFXの図面を参考）
+  SS.pianoOutline = (function () {
+    let cache = null;
+    const bez = (p0, p1, p2, p3, n, out) => {
+      for (let i = 1; i <= n; i++) {
+        const t = i / n, u = 1 - t;
+        out.push([u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+          u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1]]);
+      }
+    };
+    return function () {
+      if (cache) return cache;
+      const pts = [[0, 0], [1, 0], [1, 0.2]];
+      bez([1, 0.2], [1, 0.4], [0.64, 0.44], [0.56, 0.63], 14, pts);   // 内側へ反るところ
+      bez([0.56, 0.63], [0.49, 0.79], [0.56, 0.93], [0.38, 0.99], 12, pts); // しっぽへ
+      bez([0.38, 0.99], [0.25, 1.03], [0.05, 1.01], [0, 0.92], 10, pts);    // 丸いしっぽ
+      cache = pts;
+      return pts;
+    };
+  })();
+
   SS.CATALOG = {
     player:  { name: '奏者', cat: '基本', desc: '椅子＋譜面台' },
     podium:  { name: '指揮台', cat: '基本', w: 100, h: 76, shape: 'podium', fill: '#b08a5a', label: '指揮', note: '1000×755mm（ホール常設品の例）' },
@@ -193,7 +215,7 @@ window.SS = window.SS || {};
           body += `<circle r="${w / 2}" fill="${fill}" stroke="#9a7a22" stroke-width="1.5"/><circle r="${w / 8}" fill="#c9a83a"/>`;
           break;
         case 'hina': {
-          const pn = (SS.PANELS && SS.PANELS[it.panel || '36']) || { w: 182, d: 91 };
+          const pn = SS.panelSize ? SS.panelSize(it) : { w: 182, d: 91 };
           const hv = it.hgt || 21.2;
           const shade = Math.max(0, Math.min(1, hv / 90));
           const col = `rgb(${Math.round(236 - 40 * shade)},${Math.round(220 - 45 * shade)},${Math.round(190 - 50 * shade)})`;
@@ -233,9 +255,22 @@ window.SS = window.SS || {};
           break;
         }
         case 'piano': {
+          // 上から見たグランドピアノ：手前（+y）が鍵盤。左（低音側）はまっすぐ、右（高音側）は内側へ反ってしっぽへ
           const hw = w / 2, hh = h / 2;
-          body += `<path d="M${-hw} ${hh}L${-hw} ${-hh + w * 0.1}Q${-hw} ${-hh} ${-hw + w * 0.25} ${-hh}Q${hw} ${-hh + h * 0.02} ${hw * 0.55} ${-hh + h * 0.45}Q${hw} ${hh * 0.3} ${hw} ${hh}Z" fill="${fill}" stroke="#111" stroke-width="2"/>`;
-          body += `<rect x="${-hw}" y="${hh - 14}" width="${w}" height="14" fill="#f5f5f5" stroke="#111" stroke-width="1.5"/>`;
+          const kb = Math.min(22, h * 0.09); // 鍵盤の奥行
+          const pts = SS.pianoOutline().map(([nx, ny]) => [-hw + nx * w, hh - kb - ny * (h - kb)]);
+          const d = 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z';
+          body += `<path d="${d}" fill="${fill}" stroke="#111" stroke-width="2" stroke-linejoin="round"/>`;
+          // 開いた屋根の内側（響板・フレーム）をうっすら
+          const inner = SS.pianoOutline().map(([nx, ny]) => [-hw + (0.06 + nx * 0.88) * w, hh - kb - (0.04 + ny * 0.9) * (h - kb)]);
+          body += `<path d="M${inner.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L')}Z" fill="none" stroke="#6b5a2e" stroke-width="1.5" opacity=".8"/>`;
+          // 譜面台
+          body += `<rect x="${(-hw * 0.55).toFixed(1)}" y="${(hh - kb - h * 0.1).toFixed(1)}" width="${(w * 0.55).toFixed(1)}" height="5" fill="#111" stroke="#555" stroke-width="1"/>`;
+          // 鍵盤（白鍵と黒鍵のしるし）
+          body += `<rect x="${-hw + 2}" y="${hh - kb}" width="${w - 4}" height="${kb}" fill="#f7f5ee" stroke="#111" stroke-width="1.5"/>`;
+          let kp = '';
+          for (let i = 1; i < 26; i++) { const xx = -hw + 2 + ((w - 4) * i) / 26; kp += `M${xx.toFixed(1)} ${hh - kb}V${(hh - kb * 0.45).toFixed(1)}`; }
+          body += `<path d="${kp}" stroke="#222" stroke-width="2.2"/>`;
           break;
         }
         case 'harp':
