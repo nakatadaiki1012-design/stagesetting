@@ -183,12 +183,13 @@ window.SS = window.SS || {};
    * k：1cm が何単位の大きさで見えるか（画面なら 1cm あたりの px、図面なら文字の大きさの基準）。
    * 文字は k に合わせて一定の見た目の大きさにし、寸法の文字と重ならない位置に置く。
    */
-  R.marksSVG = function (doc, k, dimsOn, compact) {
+  // mobile：スマホの画面。舞台を画面の幅いっぱいに出すので、下手・上手は舞台の前の角の下に置く（「奥の幅」の寸法は出さない）
+  R.marksSVG = function (doc, k, dimsOn, compact, mobile) {
     const st = doc.stage, fy = R.frontY(st), cx = st.w / 2;
     const col = '#5b6678', halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
     let s = R.fixturesSVG(st, k) + '<g class="marks" pointer-events="none">';
     // 舞台奥：「奥の幅」の寸法の文字の上。その右に「センター」、中心線はそこから客席側のふちまで
-    const shaped = R.backWidth(st) < st.w - 1;
+    const shaped = R.backWidth(st) < st.w - 1 && !mobile;
     // 「奥の幅」の寸法の字（高さ約19px）から十分に離す。中心線は寸法の字の下から引き、字の上を通らないようにする
     const by = dimsOn && shaped ? -36 - (3 + 19 + 16) / k : -8 / k;
     const lineTop = dimsOn && shaped ? -36 + (19 / 2 + 3) / k : by + 3 / k;
@@ -199,10 +200,16 @@ window.SS = window.SS || {};
     const fs = 16 / k, y = st.d * 0.74;
     const [xl, xr] = R.xRange(st, y);
     const lx = Math.min(xl - 12 / k, dimsOn ? -42 - 12 / k : xl - 12 / k);
+    if (mobile) {
+      const my = R.frontOuter(st) + (dimsOn ? 34 + (3 + 19 + 8) / k : 14 / k) + fs * 0.6;
+      s += `<text x="${4 / k}" y="${my}" dy="0.35em" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>下手</text>`;
+      s += `<text x="${st.w - 4 / k}" y="${my}" dy="0.35em" text-anchor="end" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>上手</text>`;
+    } else {
     s += `<text x="${lx}" y="${y}" dy="0.35em" text-anchor="end" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>下手</text>`;
     if (!compact) s += `<text x="${lx}" y="${y + fs * 1.2}" dy="0.35em" text-anchor="end" font-size="${9 / k}" fill="${col}" ${halo}>（客席から見て左）</text>`;
     s += `<text x="${xr + 12 / k}" y="${y}" dy="0.35em" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>上手</text>`;
     if (!compact) s += `<text x="${xr + 12 / k}" y="${y + fs * 1.2}" dy="0.35em" font-size="${9 / k}" fill="${col}" ${halo}>（客席から見て右）</text>`;
+    }
     // 客席：「前の幅」の寸法の文字の下
     const cy = R.frontOuter(st) + (dimsOn ? 34 + (3 + 19 + 10) / k : 12 / k) + 16 / k;
     s += `<text x="${cx}" y="${cy}" dy="0.35em" text-anchor="middle" font-size="${17 / k}" font-weight="700" fill="${col}" letter-spacing="${8 / k}" ${halo}>客　席</text>`;
@@ -324,7 +331,8 @@ window.SS = window.SS || {};
     const b = R.backWidth(st);
     const shaped = b < st.w - 1;
     s += dimLine(0, R.frontOuter(st) + 34, st.w, R.frontOuter(st) + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
-    if (shaped) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
+    // スマホ（opt.basic）では「前の幅」と「奥行」だけにする
+    if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
     const pod = doc.items.find(it => it.type === 'podium');
@@ -353,7 +361,7 @@ window.SS = window.SS || {};
       placed.push({ x0: bb.x0, x1: bb.x0 + tw, y0: ty, y1: ty + fs + 8 / k });
     }
     // 指揮台〜舞台際：丸いつまみ・ほかの寸法の文字と重ならない場所を選ぶ
-    if (pod) {
+    if (pod && !opt.basic) {
       const pb = bboxOf(pod);
       const lxLine = pb.x1 + 30, fe = R.frontAt(st, lxLine);
       if (fe - pb.y1 > 5) {

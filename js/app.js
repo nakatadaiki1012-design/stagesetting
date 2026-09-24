@@ -266,7 +266,7 @@
     $('layerCompare').innerHTML = S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile() }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true);
+    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile() }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile());
     positionCtxBar();
   }
 
@@ -292,6 +292,12 @@
     // 左右は「下手」「上手」、上は「舞台奥」、下は「客席」の文字の分もあける（文字の大きさは画面上で一定）
     const kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
     let x0 = -mx - 48 / kk, y0 = Math.min(-95, -40 - 52 / kk), x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontOuter(st) + 34 + 70 / kk;
+    if (isMobile()) {
+      // スマホ：舞台を画面の幅いっぱいに（左は「奥行」の寸法の線の分だけ。下手・上手は舞台の前の角の下に出す）
+      const km = r.width / (st.w + 70);
+      x0 = Math.min(opts().dims ? -52 : -10, -16 / km); x1 = st.w + 16 / km; // 角の丸いつまみが画面からはみ出さないように
+      y0 = -34 / km; y1 = SS.render.frontOuter(st) + (opts().dims ? 34 : 0) + 78 / km;
+    }
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
