@@ -516,7 +516,7 @@
       const it = selected()[0];
       if (!it) return;
       pushHistory();
-      drag = { kind: handle.getAttribute('data-handle'), start, it, i: +handle.getAttribute('data-i') };
+      drag = { kind: handle.getAttribute('data-handle'), start, it, i: +handle.getAttribute('data-i'), rot0: it.rot || 0, gm: e.altKey ? [] : matesOf(it).map(m => ({ m, x: m.x, y: m.y, rot: m.rot || 0 })) };
       return;
     }
     if (S.underlayEdit && doc().underlay && !itemEl) {
@@ -533,6 +533,8 @@
       }
       const orig = new Map();
       selected().forEach(it => orig.set(it.id, { x: it.x, y: it.y }));
+      // 打楽器と奏者のまとまりは、いっしょに動かす（Alt を押しながらだと、それだけ）
+      if (!e.altKey) selected().forEach(it => matesOf(it).forEach(m => { if (!orig.has(m.id)) orig.set(m.id, { x: m.x, y: m.y }); }));
       drag = { kind: 'move', start, orig, primary: id, moved: false };
       renderOverlay();
       renderProps();
@@ -613,10 +615,7 @@
           const g = smartSnap(drag, dx, dy);
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
         }
-        selected().forEach(it => {
-          const o = drag.orig.get(it.id);
-          if (o) { it.x = o.x + dx; it.y = o.y + dy; }
-        });
+        drag.orig.forEach((o, oid) => { const it = byId(oid); if (it) { it.x = o.x + dx; it.y = o.y + dy; } });
         render();
         break;
       }
@@ -633,6 +632,7 @@
         let a = Math.atan2(w.x - it.x, -(w.y - it.y)) * 180 / Math.PI;
         if (!e.shiftKey) a = Math.round(a / 15) * 15;
         it.rot = normAngle(a);
+        if (drag.gm && drag.gm.length) turnMates(it, drag.gm, it.rot - drag.rot0);
         render();
         renderProps(true);
         break;
@@ -1002,12 +1002,21 @@
     return it;
   }
 
+  // 打楽器と奏者のまとまり（grp が同じもの）。楽器か奏者を動かす・回すと、いっしょに動く
+  const matesOf = it => (it && it.grp ? doc().items.filter(o => o !== it && o.grp === it.grp) : []);
+  // it を中心に、まとまりの仲間を deg 度まわす（base：まわす前の位置と向き）
+  function turnMates(it, base, deg) {
+    const a = (deg * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+    base.forEach(b => { const dx = b.x - it.x, dy = b.y - it.y; b.m.x = it.x + dx * ca - dy * sa; b.m.y = it.y + dx * sa + dy * ca; b.m.rot = normAngle(b.rot + deg); });
+  }
   function pasteItems(list) {
     if (!list.length) return;
     pushHistory();
     const ids = [];
+    const grpMap = new Map(); // 貼り付けた物どうしだけで、新しいまとまりに
     list.forEach(src => {
       const it = Object.assign({}, src, { id: newId(), x: src.x + 40, y: src.y + 40 });
+      if (it.grp) { if (!grpMap.has(it.grp)) grpMap.set(it.grp, 'g' + newId()); it.grp = grpMap.get(it.grp); }
       doc().items.push(it);
       ids.push(it.id);
     });
@@ -1473,8 +1482,29 @@
     const col = same('color') || (one ? SS.itemColor(one, renderOpts()) : '#ffffff');
     h += `<div class="row2"><label class="field">色<input id="propColor" type="color" value="${/^#[0-9a-f]{6}$/i.test(col) ? col : '#ffffff'}"></label>`;
     h += `<label class="field">&nbsp;<button class="btn" id="propColorReset">色を元に戻す</button></label></div>`;
+    // 打楽器と奏者のまとまり：くっつける／はなす
+    const grouped = sel.some(it => it.grp);
+    const linkable = !grouped && sel.length >= 2 && sel.some(it => it.type === 'player') && sel.some(it => SS.auto.PERC_TYPES.has(it.type) || ['piano', 'pianoFull', 'upright', 'keyboard', 'harp', 'drums'].includes(it.type)) && sel.filter(it => it.type === 'player').length === 1;
+    if (grouped) h += `<label class="check" title="楽器か奏者を動かす・回すと、いっしょに動きます（Alt を押しながらだと、それだけ動きます）"><input type="checkbox" id="propGrp" checked> 楽器と奏者をいっしょに動かす</label>`;
+    else if (linkable) h += `<button class="btn wide" id="propLink" title="選んだ奏者を、選んだ楽器の演奏する位置にくっつけて、いっしょに動くようにします">🔗 楽器と奏者をくっつける（いっしょに動く）</button>`;
     h += `<datalist id="partList">${COMMON_PARTS.map(p => `<option value="${p}">`).join('')}</datalist>`;
     box.innerHTML = h;
+    if ($('propGrp')) $('propGrp').onchange = () => { pushHistory(); const gs = new Set(sel.map(it => it.grp).filter(Boolean)); doc().items.forEach(it => { if (gs.has(it.grp)) delete it.grp; }); render(); renderProps(); toast('楽器と奏者を、べつべつに動かせるようにしました', true); };
+    if ($('propLink')) $('propLink').onclick = () => {
+      pushHistory();
+      const g = 'g' + newId();
+      sel.forEach(it => { it.grp = g; });
+      // 奏者を、楽器を演奏する位置（楽器のすぐ後ろ、楽器の向き）へ
+      const pl = sel.find(it => it.type === 'player'), ins = sel.filter(it => it !== pl);
+      const timps = ins.filter(it => /^timp/.test(it.type));
+      const main = timps.length ? null : ins.reduce((a, b) => (SS.itemSize(b, {}).w * SS.itemSize(b, {}).h > SS.itemSize(a, {}).w * SS.itemSize(a, {}).h ? b : a));
+      const ref = main || timps[0], a = ((ref.rot || 0) * Math.PI) / 180;
+      const cx = main ? main.x : timps.reduce((q, t) => q + t.x, 0) / timps.length, cy = main ? main.y : timps.reduce((q, t) => q + t.y, 0) / timps.length;
+      const back = main ? 24 + SS.itemSize(main, {}).h / 2 : 70; // ティンパニは太鼓の弧の真ん中
+      pl.x = cx + Math.sin(a) * back; pl.y = cy - Math.cos(a) * back; pl.rot = ref.rot || 0;
+      render(); renderProps();
+      toast('奏者を楽器を演奏する位置にくっつけました。どちらを動かしても、いっしょに動きます', true);
+    };
 
     const bind = (id, ev, fn) => {
       const el = $(id); if (!el) return;
@@ -1486,7 +1516,7 @@
     bind('propFont', 'input', el => { one.fontSize = +el.value; });
     bind('propW', 'input', el => { if (+el.value >= 10) one.w = +el.value; });
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
-    bind('propRot', 'input', el => { one.rot = +el.value; $('propRotVal').textContent = el.value + '°'; });
+    bind('propRot', 'input', el => { const d = +el.value - (one.rot || 0); const gm = matesOf(one).map(m => ({ m, x: m.x, y: m.y, rot: m.rot || 0 })); one.rot = +el.value; turnMates(one, gm, d); $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
     // 弧のひな壇：指揮台（なければ舞台の前の真ん中）を中心にする半径・向き
     const curveToConductor = it => {
