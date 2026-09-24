@@ -2899,6 +2899,8 @@
   function renderEnsNow() {
     const st = ens(), H = st.hina, cur = SS.hinaTypeOf(H);
     $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : '');
+    const lay = SS.auto.BAND_LAYOUTS[st.layout || 'std'];
+    $('layoutBoxNow').textContent = st.type === 'band' ? (lay ? lay.name.split('（')[0] : '') : st.antiphonal ? '対向配置' : '通常配置';
     $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.curve ? '・弧' : ''}` : 'なし';
   }
   function renderSteppers() {
@@ -3112,6 +3114,9 @@
   function aiShow(msg, err) {
     const o = $('aiOut');
     o.hidden = !msg; o.textContent = msg || ''; o.classList.toggle('err', !!err);
+    // 閉じているときも、見出しに最後の結果を短く出す
+    const last = (msg || '').split('\n').pop();
+    $('aiBoxNow').textContent = !msg ? '例：フルート6人、打楽器は下手' : err ? '読み取れませんでした' : last.length > 22 ? last.slice(0, 22) + '…' : last;
   }
   // AI・読み取りの結果（changes）を、かんたん編成の設定に反映して並べ直す
   function applyAIChanges(ch) {
