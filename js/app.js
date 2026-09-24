@@ -2732,6 +2732,7 @@
     });
     S.sel.clear();
     renderAll();
+    renderEnsNow();
     if (opts2.fit) fitView();
     if (opts2.quiet) return;
     if (!r.fits) toast('このステージには入りきりません。ひな壇の段数か人数を減らすか、打楽器を別の場所に置いてください（はみ出した人は端に寄せています）');
@@ -2742,6 +2743,29 @@
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
+  const HINA_MAIN = ['36h2', '36v1', '46h1']; // よく使う平台の置き方
+  const PERC_SHORT = { back: '舞台の奥', top: 'ひな壇の最上段', left: '下手', both: '最上段＋下手', timpTop: 'ティンパニ最上段＋下手' };
+  // 人数0のパートは、ふだんは隠して「＋パートを追加」で出す
+  let showZeroParts = false;
+  function renderPartMore() {
+    const box = $('partSteppers'), btn = $('partMore');
+    box.classList.toggle('show-zero', showZeroParts);
+    const zero = [...box.querySelectorAll('.stepper.zero')].map(el => el.getAttribute('data-part'));
+    btn.hidden = !zero.length && !showZeroParts;
+    btn.textContent = showZeroParts ? '人数0のパートをしまう'
+      : `＋パートを追加（${zero.slice(0, 4).join('・')}${zero.length > 4 ? ' など' : ''} ${zero.length}パート）`;
+  }
+  $('partMore').onclick = () => {
+    showZeroParts = !showZeroParts;
+    $('partSteppers').querySelectorAll('.keep').forEach(el => el.classList.remove('keep'));
+    renderPartMore();
+  };
+  // 「打楽器」「ひな壇」の箱の見出しに、いまの設定を出す
+  function renderEnsNow() {
+    const st = ens(), H = st.hina, cur = SS.hinaTypeOf(H);
+    $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : '');
+    $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.curve ? '・弧' : ''}` : 'なし';
+  }
   function renderSteppers() {
     const st = ens();
     const e = SS.auto.ENSEMBLES[st.type];
@@ -2750,6 +2774,7 @@
     $('ensAnti').checked = !!st.antiphonal;
     $('ensPerc').checked = st.percInst !== false;
     $('ensPerc').parentElement.hidden = st.type === 'strings';
+    $('percBox').hidden = st.type === 'strings';
     let total = 0;
     $('partSteppers').innerHTML = e.parts.map(([k]) => {
       const n = st.counts[k] || 0; total += n;
@@ -2757,6 +2782,7 @@
         <button data-d="-1" aria-label="${SS.esc(k)}を1人減らす">▼</button><b>${n}</b><button data-d="1" aria-label="${SS.esc(k)}を1人増やす">▲</button></div>`;
     }).join('');
     void total;
+    renderPartMore();
     renderEnsTotal();
     // ひな壇
     $('ensHornBox').checked = !!st.hornBox;
@@ -2771,7 +2797,14 @@
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
     document.querySelectorAll('#hinaShape [data-shape]').forEach(b => b.classList.toggle('on', b.getAttribute('data-shape') === (H.curve ? 'arc' : 'line')));
     const cur = SS.hinaTypeOf(H);
-    $('hinaTypes').innerHTML = SS.HINA_TYPES.map(t => `<button class="hina-type${cur && cur.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`).join('');
+    renderEnsNow();
+    // 平台の置き方：よく使う3つだけ見せて、ほかは「ほかの置き方」にしまう
+    const typeBtn = t => `<button class="hina-type${cur && cur.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`;
+    const oldMore = $('hinaTypes').querySelector('details');
+    const others = SS.HINA_TYPES.filter(t => !HINA_MAIN.includes(t.id));
+    const moreOpen = (oldMore && oldMore.open) || (cur && !HINA_MAIN.includes(cur.id));
+    $('hinaTypes').innerHTML = `<div class="hina-types">${SS.HINA_TYPES.filter(t => HINA_MAIN.includes(t.id)).map(typeBtn).join('')}</div>
+      <details class="fold-more"${moreOpen ? ' open' : ''}><summary>ほかの置き方（${others.map(t => SS.esc(t.name.replace(/ /g, ''))).join('・')}）</summary><div class="hina-types">${others.map(typeBtn).join('')}</div></details>`;
     $('hinaTypes').querySelectorAll('[data-ht]').forEach(b => {
       b.onclick = () => {
         const t = SS.HINA_TYPES.find(x => x.id === b.getAttribute('data-ht'));
@@ -2781,9 +2814,12 @@
       };
     });
     const std = [21.2, 42.4, 63.6, 84.8];
+    // 高さは名前だけを選び、組み方（足・箱馬）は下に折り返して出す（せまい画面でも文字が切れない）
+    const howOf = v => { const r = SS.RISER_HEIGHTS.find(h => Math.abs(h.v - v) < 0.6); return r ? r.how : ''; };
+    $('hinaHeightsLbl').hidden = !H.steps;
     $('hinaHeights').innerHTML = Array.from({ length: H.steps || 0 }, (_, i) => {
       const v = (H.heights && H.heights[i]) || std[i];
-      return `<label><b>${i + 1}段</b><select data-hstep="${i}">${SS.RISER_HEIGHTS.map(h => `<option value="${h.v}"${Math.abs(h.v - v) < 0.6 ? ' selected' : ''}>${h.name}：${h.how}</option>`).join('')}</select></label>`;
+      return `<label><b>${i + 1}段</b><select data-hstep="${i}" title="${SS.esc(howOf(v))}">${SS.RISER_HEIGHTS.map(h => `<option value="${h.v}"${Math.abs(h.v - v) < 0.6 ? ' selected' : ''}>${h.name}</option>`).join('')}</select><small class="how">${SS.esc(howOf(v))}</small></label>`;
     }).join('');
     $('hinaHeights').querySelectorAll('select').forEach(sel => {
       sel.onchange = () => {
@@ -2791,6 +2827,7 @@
         const hh = ens().hina;
         hh.heights = (hh.heights || std.slice()).slice();
         hh.heights[i] = +sel.value;
+        sel.parentElement.querySelector('.how').textContent = sel.title = howOf(+sel.value);
         applyAuto();
       };
     });
@@ -2806,6 +2843,8 @@
         const box = b.parentElement;
         box.querySelector('b').textContent = v;
         box.classList.toggle('zero', !v);
+        box.classList.add('keep'); // いま押しているパートは、0人にしても指の下から消さない
+        renderPartMore();
         applyAuto();
       };
       // 押しっぱなしで連続して増減

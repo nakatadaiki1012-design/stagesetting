@@ -109,9 +109,11 @@
         <select id="bandLayout"></select>
       </label>
       <div class="ens-opts">
-        <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
         <label class="check" id="ensAntiWrap"><input type="checkbox" id="ensAnti"> 対向配置</label>
       </div>
+      <details class="fold" id="percBox">
+        <summary>打楽器 <span class="fold-now" id="percBoxNow"></span></summary>
+      <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
       <label class="field" id="percPlaceWrap">打楽器の場所
         <select id="percPlace">
           <option value="back">舞台の奥（床）</option>
@@ -121,8 +123,10 @@
           <option value="timpTop">ティンパニは最上段の中央＋ほかは下手</option>
         </select>
       </label>
-      <div class="hina-box">
-        <h4>ひな壇（段の上の列は、段に沿って並びます）</h4>
+      </details>
+      <details class="fold hina-box" id="hinaBox">
+        <summary>ひな壇 <span class="fold-now" id="hinaBoxNow"></span></summary>
+        <p class="hint small" style="margin:0 0 6px">段の上の列は、段に沿って並びます。</p>
         <div class="seg seg5" id="hinaSteps">
           <button data-steps="0">なし</button><button data-steps="1">1段</button><button data-steps="2">2段</button><button data-steps="3">3段</button><button data-steps="4">4段</button>
         </div>
@@ -131,11 +135,13 @@
           <button data-shape="line">まっすぐ</button><button data-shape="arc">弧（指揮者を中心に）</button>
         </div>
         <p class="hint small" style="margin:6px 0 4px">1段の平台の置き方（図の上が舞台奥）</p>
-        <div id="hinaTypes" class="hina-types"></div>
+        <div id="hinaTypes"></div>
+        <p class="hint small" id="hinaHeightsLbl" style="margin:8px 0 4px">段の高さ</p>
         <div id="hinaHeights" class="hina-heights"></div>
-      </div>
+      </details>
       <p class="hint small">▲▼で人数を変えると、すぐに並べ直します。名前は同じパートの人に引き継がれます。</p>
       <div id="partSteppers" class="steppers"></div>
+      <button class="btn wide" id="partMore" type="button" hidden></button>
       <div class="ens-total" id="ensTotal"></div>
     </section>
 
