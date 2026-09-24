@@ -802,6 +802,17 @@ window.SS = window.SS || {};
     stageMesh.rotation.x = Math.PI / 2;
     stageMesh.receiveShadow = true;
     scene.add(stageMesh);
+    // ホールの設備：オーケストラピットのふた・花道は、舞台と同じ高さの床として客席側へ出す
+    const fg = SS.fixtureGeom ? SS.fixtureGeom(st) : {};
+    [fg.pit, fg.hanamichi].forEach(r => {
+      if (!r) return;
+      const w = (r.x1 - r.x0) / 100, d = (r.y1 - r.y0) / 100;
+      const tex = floorTex.clone(); tex.needsUpdate = true; tex.repeat.set(1 / 2.2, 1 / 2.2);
+      const m = new T.Mesh(new T.BoxGeometry(w, 1.0, d), [mat('#141414'), mat('#141414'), new T.MeshPhysicalMaterial({ map: tex, roughness: 0.4, clearcoat: 0.4 }), mat('#141414'), mat('#141414'), mat('#141414')]);
+      m.position.set((r.x0 + r.x1) / 200, -0.5 + 0.004, (r.y0 + r.y1) / 200);
+      m.receiveShadow = true;
+      scene.add(m);
+    });
 
     // 音響反射板（奥・左右の壁と天井の板）
     const shellH = 7.5;
@@ -856,10 +867,17 @@ window.SS = window.SS || {};
     floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, -1.0, D + 20); floor.receiveShadow = true;
     scene.add(floor);
     const seatPos = [];
+    const fg2 = SS.fixtureGeom ? SS.fixtureGeom(st) : {};
+    const seatFree = [fg2.pit, fg2.hanamichi].filter(Boolean);
     for (let row = 0; row < 20; row++) {
       const z = D + 2.8 + row * 0.95;
       const y = -1.0 + row * 0.14;
-      for (let x = -2; x < W + 2; x += 0.55) { if (Math.abs(x - W / 2) < 0.7) continue; seatPos.push([x, y, z]); }
+      for (let x = -2; x < W + 2; x += 0.55) {
+        if (Math.abs(x - W / 2) < 0.7) continue;
+        // ピットのふた・花道の上には、いすを置かない
+        if (seatFree.some(r => x > r.x0 / 100 - 0.4 && x < r.x1 / 100 + 0.4 && z < r.y1 / 100 + 0.5)) continue;
+        seatPos.push([x, y, z]);
+      }
     }
     const cushion = new T.InstancedMesh(new T.BoxGeometry(0.48, 0.12, 0.45), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
     const back = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.6, 0.08), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
