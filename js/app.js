@@ -604,7 +604,12 @@
           }
         }
         drag.guides = null;
-        if (opts().guides && !opts().snap && !e.altKey) {
+        const primIt = byId(drag.primary);
+        if (primIt && PLATFORMS.has(primIt.type) && !e.altKey) {
+          // ひな壇・平台・上がり段は、ほかの段にマグネットのようにくっつく（Alt を押しながらだと、くっつかない）
+          const g = magnetSnap(drag, dx, dy);
+          dx = g.dx; dy = g.dy; drag.guides = g.guides;
+        } else if (opts().guides && !opts().snap && !e.altKey) {
           const g = smartSnap(drag, dx, dy);
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
         }
@@ -802,6 +807,34 @@
     const row = rows.find(r => r.includes(it)) || [it];
     S.sel = new Set(row.map(p => p.id));
     toast(`この列の${row.length}人を選びました`);
+  }
+
+  // ひな壇どうしのマグネット：動かしている段（選んだ段・平台・上がり段）の外枠を、ほかの段の外枠にくっつける／そろえる。
+  // 横（x）と縦（y）を別々に、いちばん近いものへ。くっつく距離は画面の上で約16px（ただし最大40cm）
+  const PLATFORMS = new Set(['hina', 'riser', 'riser46', 'stairs']);
+  function magnetSnap(d, dx, dy) {
+    const th = Math.min(40, 16 / S.view.k);
+    const moving = selected().filter(it => PLATFORMS.has(it.type));
+    if (!moving.length) return { dx, dy, guides: null };
+    const box = (it, ox, oy) => { const o = d.orig.get(it.id) || it; const b = SS.itemAABB(Object.assign({}, it, { x: o.x + ox, y: o.y + oy }), {}); return b; };
+    const mb = moving.map(it => box(it, dx, dy)).reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1) }));
+    const others = doc().items.filter(it => PLATFORMS.has(it.type) && !S.sel.has(it.id)).map(it => SS.itemAABB(it, {}));
+    let bx = null, by = null;
+    const tryX = (from, to, why) => { const dd = to - from; if (Math.abs(dd) < th && (!bx || Math.abs(dd) < Math.abs(bx.d) - 0.01 || (why === 'touch' && bx.why !== 'touch' && Math.abs(dd) <= Math.abs(bx.d) + 2))) bx = { d: dd, v: to, why }; };
+    const tryY = (from, to, why) => { const dd = to - from; if (Math.abs(dd) < th && (!by || Math.abs(dd) < Math.abs(by.d) - 0.01 || (why === 'touch' && by.why !== 'touch' && Math.abs(dd) <= Math.abs(by.d) + 2))) by = { d: dd, v: to, why }; };
+    others.forEach(o => {
+      const nearY = mb.y0 < o.y1 + th && mb.y1 > o.y0 - th; // 縦に重なる（横に並ぶ）ときだけ、左右でくっつける
+      const nearX = mb.x0 < o.x1 + th && mb.x1 > o.x0 - th;
+      if (nearY) { tryX(mb.x0, o.x1, 'touch'); tryX(mb.x1, o.x0, 'touch'); }
+      if (nearX) { tryY(mb.y0, o.y1, 'touch'); tryY(mb.y1, o.y0, 'touch'); }
+      // 端・真ん中をそろえる
+      tryX(mb.x0, o.x0, 'align'); tryX(mb.x1, o.x1, 'align'); tryX((mb.x0 + mb.x1) / 2, (o.x0 + o.x1) / 2, 'align');
+      tryY(mb.y0, o.y0, 'align'); tryY(mb.y1, o.y1, 'align');
+    });
+    const guides = [];
+    if (bx) { dx += bx.d; guides.push({ kind: 'x', v: bx.v }); }
+    if (by) { dy += by.d; guides.push({ kind: 'y', v: by.v }); }
+    return { dx, dy, guides: guides.length ? guides : null };
   }
 
   // ドラッグ中に、ほかの部品と位置をそろえる（ガイド線）
