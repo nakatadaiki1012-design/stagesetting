@@ -1117,7 +1117,7 @@ window.SS = window.SS || {};
     }
     $('view3d').classList.remove('hidden');
     $('v3loading').hidden = false;
-    $('v3loading').textContent = '3Dを準備しています…';
+    $('v3loading').textContent = '3Dを準備しています…（3Dの表示には、インターネット接続が必要です）';
     try {
       T = await loadThree();
     } catch (err) {
