@@ -25,9 +25,12 @@
   const newId = () => 'i' + Date.now().toString(36) + (idCounter++).toString(36);
 
   // ------------------------------------------------------------ 文書
+  // はじめて使う人の表示：パート名・舞台の寸法・センター・上手下手客席は出し、方眼・譜面台の3本脚・平台の番号と足は出さない
   function defaultOptions() {
-    return { showNames: true, showStands: true, standLegs: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true, hinaDetail: true };
+    return { showNames: true, showStands: true, standLegs: false, showNumbers: false, grid: false, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true, hinaDetail: false };
   }
+  // 前からある保存データ・共有リンクには、項目がないときの前の標準を使う（その人が見ていた表示を変えない）
+  const LEGACY_OPTIONS = { grid: true, standLegs: true, hinaDetail: true };
   function normalize(doc) {
     doc = doc || {};
     const d = {
@@ -37,7 +40,7 @@
       stage: Object.assign({ w: 1400, d: 900, shape: 'rect' }, doc.stage || {}),
       items: (doc.items || []).map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })),
       underlay: doc.underlay || null,
-      options: Object.assign(defaultOptions(), doc.options || {}),
+      options: Object.assign(defaultOptions(), doc.options ? LEGACY_OPTIONS : {}, doc.options || {}),
       ensemble: doc.ensemble || null,
       hall: doc.hall || '',
       // 図面の情報欄（会場・日付・版・作成者・メモ）。古い保存データには無いので空で補う
@@ -282,7 +285,7 @@
     const mx = opts().dims ? 110 : 80;
     // 左右は「下手」「上手」、上は「舞台奥」、下は「客席」の文字の分もあける（文字の大きさは画面上で一定）
     const kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
-    let x0 = -mx - 48 / kk, y0 = -95, x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontOuter(st) + 34 + 70 / kk;
+    let x0 = -mx - 48 / kk, y0 = Math.min(-95, -40 - 52 / kk), x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontOuter(st) + 34 + 70 / kk;
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;

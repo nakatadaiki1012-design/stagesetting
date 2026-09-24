@@ -189,8 +189,10 @@ window.SS = window.SS || {};
     let s = R.fixturesSVG(st, k) + '<g class="marks" pointer-events="none">';
     // 舞台奥：「奥の幅」の寸法の文字の上。その右に「センター」、中心線はそこから客席側のふちまで
     const shaped = R.backWidth(st) < st.w - 1;
-    const by = dimsOn && shaped ? -36 - (3 + 19 + 6) / k : -8 / k;
-    s += `<line x1="${cx}" y1="${by + 3 / k}" x2="${cx}" y2="${fy}" stroke="#7a8699" stroke-width="${1.3 / k}" stroke-dasharray="${10 / k} ${4 / k} ${2 / k} ${4 / k}"/>`;
+    // 「奥の幅」の寸法の字（高さ約19px）から十分に離す。中心線は寸法の字の下から引き、字の上を通らないようにする
+    const by = dimsOn && shaped ? -36 - (3 + 19 + 16) / k : -8 / k;
+    const lineTop = dimsOn && shaped ? -36 + (19 / 2 + 3) / k : by + 3 / k;
+    s += `<line x1="${cx}" y1="${lineTop}" x2="${cx}" y2="${fy}" stroke="#7a8699" stroke-width="${1.3 / k}" stroke-dasharray="${10 / k} ${4 / k} ${2 / k} ${4 / k}"/>`;
     s += `<text x="${cx - 6 / k}" y="${by}" text-anchor="end" font-size="${11 / k}" fill="${col}" ${halo}>（舞台奥）</text>`;
     s += `<text x="${cx + 6 / k}" y="${by}" font-size="${11 / k}" font-weight="700" fill="${col}" ${halo}>センター</text>`;
     // 下手（客席から見て左）・上手（客席から見て右）
