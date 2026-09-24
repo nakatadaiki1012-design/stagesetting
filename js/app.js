@@ -94,12 +94,14 @@
   // ------------------------------------------------------------ 描画
   function renderOpts() {
     const o = opts();
-    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure, contest: o.contest, dims: o.dims };
+    // 図面用（白黒・線だけ）：奏者は椅子○・譜面台×で描き、色は使わない
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims };
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
   function render() {
     const d = doc();
+    ['layerStage', 'layerItems', 'layerDims'].forEach(id => $(id).classList.toggle('mono', !!opts().mono));
     layerStage.innerHTML = SS.render.stageSVG(d, opts().grid ? (opts().gridSize || 50) : 0);
     const u = d.underlay;
     layerUnderlay.innerHTML = u ? SS.render.underlaySVG(u, { edit: S.underlayEdit, k: S.view.k, id: 'main' }) : '';
@@ -1177,7 +1179,7 @@
     $('optStandLegs').checked = o.standLegs !== false;
     $('optNumbers').checked = o.showNumbers;
     $('optGrid').value = o.grid ? String(o.gridSize || 50) : '0';
-    $('optStyle').value = o.contest ? 'contest' : o.figure ? 'figure' : 'circle';
+    $('optStyle').value = o.mono ? 'mono' : o.contest ? 'contest' : o.figure ? 'figure' : 'circle';
     $('optSnap').checked = o.snap;
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
@@ -1210,7 +1212,7 @@
   bindSetting('optStandLegs', 'change', el => { opts().standLegs = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
   bindSetting('optGrid', 'change', el => { const v = +el.value; opts().grid = v > 0; if (v) opts().gridSize = v; });
-  bindSetting('optStyle', 'change', el => { opts().contest = el.value === 'contest'; opts().figure = el.value === 'figure'; renderSettings(); });
+  bindSetting('optStyle', 'change', el => { opts().mono = el.value === 'mono'; opts().contest = el.value === 'contest'; opts().figure = el.value === 'figure'; renderSettings(); });
   bindSetting('optSnap', 'change', el => { opts().snap = el.checked; });
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
@@ -2537,5 +2539,7 @@
   };
   $('aiStop').onclick = () => { if (aiCtl) aiCtl.abort(); };
 
+  // 図面用（白黒）の表示を画面にも使う
+  (() => { const st = document.createElement('style'); st.textContent = SS.render.MONO_CSS; document.head.appendChild(st); })();
   init();
 })(window.SS);

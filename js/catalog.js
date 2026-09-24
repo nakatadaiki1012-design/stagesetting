@@ -136,7 +136,15 @@ window.SS = window.SS || {};
       body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
       if (opts.showStands !== false && !noStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
       const lab = it.label || '';
-      if (lab) text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fitFont(lab, 34, 15).toFixed(1)}" font-weight="700" fill="#111">${esc(lab)}</text>`;
+      if (lab && opts.mono) {
+        // 図面用（白黒）：コピーやFAXでも読めるよう、パート名は椅子の後ろに大きく（重なるときはずらす）
+        const a = rot * Math.PI / 180;
+        const at = off => ({ x: +(x + Math.sin(a) * off).toFixed(1), y: +(y - Math.cos(a) * off).toFixed(1) });
+        const side = off => ({ x: +(x + Math.cos(a) * off).toFixed(1), y: +(y + Math.sin(a) * off).toFixed(1) });
+        const fs = fitFont(lab, 72, 26);
+        label = { text: lab, fs, w: labelWidth(lab) * fs + 8, h: fs * 1.15, cands: [at(38), side(-40), side(40), at(56)] };
+        if (!opts.deferLabels) text += labelText(label, label.cands[0]);
+      } else if (lab) text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fitFont(lab, 34, 15).toFixed(1)}" font-weight="700" fill="#111">${esc(lab)}</text>`;
       if (opts.showNames !== false && it.name) {
         const a = rot * Math.PI / 180;
         const nx = x + Math.sin(a) * 33, ny = y - Math.cos(a) * 33;
