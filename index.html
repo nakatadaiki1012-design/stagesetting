@@ -17,8 +17,7 @@
     <span class="sep"></span>
     <button class="btn" id="btnFile" title="保存・読み込み">💾<span class="lbl">保存/開く</span></button>
     <button class="btn accent3d" id="btn3d" title="3Dで見る">🧊<span class="lbl">3D</span></button>
-    <button class="btn" id="btnExport" title="画像として保存">🖼<span class="lbl">画像</span></button>
-    <button class="btn" id="btnPrint" title="印刷">🖨<span class="lbl">印刷</span></button>
+    <button class="btn" id="btnOut" title="画像・PDF・印刷">📤<span class="lbl">書き出す</span></button>
     <button class="btn" id="btnShare" title="共有リンクをコピー">🔗<span class="lbl">共有</span></button>
     <button class="btn" id="btnHelp" title="使い方">？</button>
   </div>
@@ -31,8 +30,11 @@
       <button class="tab active" data-tab="autoTab">かんたん編成</button>
       <button class="tab" data-tab="tplTab">ひな形</button>
       <button class="tab" data-tab="partsTab">部品</button>
-      <button class="tab" data-tab="quickTab">一括作成</button>
-      <button class="tab" data-tab="traceTab">トレース</button>
+      <button class="tab-more" id="tabMore" type="button" aria-haspopup="true" aria-expanded="false">もっと…</button>
+      <div class="tab-more-menu" id="tabMoreMenu" hidden>
+        <button class="tab" data-tab="quickTab">一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
+        <button class="tab" data-tab="traceTab">トレース<small>ホールの舞台図を下に重ねる</small></button>
+      </div>
     </nav>
 
     <section class="tabpane active" id="autoTab">

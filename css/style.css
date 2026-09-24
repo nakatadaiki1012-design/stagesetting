@@ -73,6 +73,22 @@ body {
   white-space: nowrap; /* タブの文字を2行に折り返さない */
 }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+/* 「もっと…」のメニュー（一括作成・トレース） */
+.tabs { position: relative; }
+.tab-more {
+  flex: 1 1 auto; font: inherit; background: none; border: none; padding: 10px 5px;
+  cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-size: 13px; white-space: nowrap;
+}
+.tab-more.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+.tab-more-menu {
+  position: absolute; right: 6px; top: 100%; z-index: 30; min-width: 220px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 20px rgba(0,0,0,.15);
+  padding: 4px; display: flex; flex-direction: column;
+}
+.tab-more-menu .tab { text-align: left; border-bottom: none; border-radius: 8px; padding: 8px 10px; color: var(--text); white-space: normal; }
+.tab-more-menu .tab:hover { background: #f4f7fb; }
+.tab-more-menu .tab.active { background: var(--accent-soft); color: var(--accent); }
+.tab-more-menu .tab small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
 .tabpane { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; }
 .tabpane.active { display: block; }
 .tabpane h3 { font-size: 14px; margin: 14px 0 6px; }
@@ -393,3 +409,10 @@ details.fold { border: 1px solid var(--line); border-radius: 10px; padding: 4px 
 details.fold > summary { cursor: pointer; font-weight: 700; padding: 6px 0; list-style-position: inside; }
 details.fold[open] > summary { margin-bottom: 4px; }
 .fold-now { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+/* 「📤 書き出す」のえらぶ画面 */
+.out-choices { display: flex; flex-direction: column; gap: 8px; }
+.out-choice { display: grid; grid-template-columns: 36px 1fr; grid-template-areas: "ic nm" "ic sm"; justify-content: start; justify-items: start; text-align: left; padding: 10px 12px; white-space: normal; }
+.out-choice > span { grid-area: ic; font-size: 22px; align-self: center; }
+.out-choice > b { grid-area: nm; font-size: 15px; }
+.out-choice > small { grid-area: sm; color: var(--muted); font-size: 12px; }

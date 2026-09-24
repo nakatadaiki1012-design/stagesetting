@@ -1626,18 +1626,28 @@
   // ------------------------------------------------------------ パネル・タブ
   document.querySelectorAll('.tabs').forEach(nav => {
     nav.querySelectorAll('.tab').forEach(tab => {
-      tab.onclick = () => {
-        const panel = nav.parentElement;
-        panel.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
-        panel.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === tab.getAttribute('data-tab')));
-      };
+      tab.onclick = () => openTab(nav.parentElement.id, tab.getAttribute('data-tab'));
     });
   });
   function openTab(panelId, tabId) {
     const panel = $(panelId);
     panel.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === tabId));
     panel.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === tabId));
+    syncTabMore();
   }
+  // 「もっと…」：あまり使わないタブ（一括作成・トレース）をしまっておくメニュー
+  function syncTabMore() {
+    const on = $('tabMoreMenu').querySelector('.tab.active');
+    $('tabMore').classList.toggle('active', !!on);
+    $('tabMore').textContent = on ? on.firstChild.textContent.trim() + ' ▾' : 'もっと…';
+    showTabMore(false);
+  }
+  function showTabMore(open) {
+    $('tabMoreMenu').hidden = !open;
+    $('tabMore').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  $('tabMore').onclick = e => { e.stopPropagation(); showTabMore($('tabMoreMenu').hidden); };
+  document.addEventListener('pointerdown', e => { if (!$('tabMoreMenu').hidden && !e.target.closest('#tabMoreMenu, #tabMore')) showTabMore(false); });
   const openRightTab = id => openTab('rightPanel', id);
   const isMobile = () => window.matchMedia('(max-width: 820px)').matches;
   function openPanel(id) { if (isMobile()) { closePanels(); $(id).classList.add('open'); } }
@@ -2532,9 +2542,26 @@
   }
   const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent', 'ppAudio', 'ppCompare'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
 
-  $('btnExport').onclick = () => {
+  // 「📤 書き出す」：画像・PDF・印刷をえらぶ
+  $('btnOut').onclick = () => {
     openModal(`
-      <h2>画像・PDFとして保存</h2>
+      <h2>書き出す</h2>
+      <p class="hint">どの形で出しますか？</p>
+      <div class="out-choices">
+        <button class="btn out-choice" id="outImage"><span>🖼</span><b>画像</b><small>PNG・SVG。LINEやメールで送る・資料に貼る</small></button>
+        <button class="btn out-choice" id="outPdf"><span>📄</span><b>PDF</b><small>用紙（A4・A3）と縮尺どおりの図面</small></button>
+        <button class="btn out-choice" id="outPrint"><span>🖨</span><b>印刷</b><small>プリンターで紙に出す</small></button>
+      </div>
+    `);
+    $('outImage').onclick = () => openExport('image');
+    $('outPdf').onclick = () => openExport('pdf');
+    $('outPrint').onclick = openPrint;
+  };
+
+  function openExport(mode) {
+    const pdf = mode === 'pdf';
+    openModal(`
+      <h2>${pdf ? 'PDFとして保存' : '画像として保存'}</h2>
       ${titleFieldsHTML()}
       ${infoFieldsHTML()}
       ${paperFieldsHTML()}
@@ -2545,11 +2572,11 @@
         <select id="exScale"><option value="4">ふつう</option><option value="8" selected>きれい</option><option value="12">とてもきれい（印刷向け）</option></select>
       </label>
       <div class="btn-row">
-        <button class="btn primary" id="exPng">🖼 PNG画像</button>
-        <button class="btn primary" id="exPdf">📄 PDF</button>
+        ${pdf ? '<button class="btn primary" id="exPdf">📄 PDFを作る</button><button class="btn" id="exPng">🖼 PNG画像</button>'
+    : '<button class="btn primary" id="exPng">🖼 PNG画像</button><button class="btn" id="exPdf">📄 PDF</button>'}
         <button class="btn" id="exSvg">SVG（拡大しても荒れない形式）</button>
       </div>
-      <p class="hint small">PDF は用紙の大きさ・縮尺どおりに作ります（ネットにつながっていなくても作れます）。うまく保存できないときは、「🖨 印刷」から <b>「PDFに保存」</b> をえらんでも作れます。<br>スマホでは保存したファイルが「ファイル」アプリや「ダウンロード」に入ります。</p>
+      <p class="hint small">PDF は用紙の大きさ・縮尺どおりに作ります（ネットにつながっていなくても作れます）。うまく保存できないときは、「📤 書き出す」の「🖨 印刷」から <b>「PDFに保存」</b> をえらんでも作れます。<br>スマホでは保存したファイルが「ファイル」アプリや「ダウンロード」に入ります。</p>
       <div id="exResult"></div>
     `);
     const extra = () => ({ legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
@@ -2575,17 +2602,17 @@
         const blob = await SS.render.svgToPdf(r.svg, r.info.paperW, r.info.paperH);
         SS.render.download(blob, name() + '.pdf');
         const url = URL.createObjectURL(blob);
-        $('exResult').innerHTML = `<p class="hint">PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存するか、「🖨 印刷」から「PDFに保存」をえらんでください。</p>`;
+        $('exResult').innerHTML = `<p class="hint">PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存するか、「📤 書き出す」の「🖨 印刷」から「PDFに保存」をえらんでください。</p>`;
         toast('PDFを作りました');
-      } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。「🖨 印刷」から「PDFに保存」をえらんでください'); }
+      } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。「📤 書き出す」の「🖨 印刷」から「PDFに保存」をえらんでください'); }
     };
     $('exSvg').onclick = () => {
       const r = buildSheet(extra());
       SS.render.download(new Blob([r.svg], { type: 'image/svg+xml' }), name() + '.svg');
     };
-  };
+  }
 
-  $('btnPrint').onclick = () => {
+  function openPrint() {
     openModal(`
       <h2>印刷</h2>
       ${titleFieldsHTML()}
@@ -2611,7 +2638,7 @@
       $('printArea').innerHTML = r.svg;
       setTimeout(() => window.print(), 50);
     };
-  };
+  }
 
   $('btnShare').onclick = async () => {
     try {
