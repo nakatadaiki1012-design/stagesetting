@@ -141,6 +141,7 @@ window.SS = window.SS || {};
   const labelWidth = label => Math.max(1, [...String(label)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1.0 : 0.62), 0));
   const labelText = (lb, p) => `<text x="${p.x}" y="${p.y}" dy="0.35em" text-anchor="middle" font-size="${lb.fs.toFixed(1)}" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="${(lb.fs * 0.28).toFixed(1)}" stroke-linejoin="round" paint-order="stroke">${esc(lb.text)}</text>`;
   SS.labelText = labelText;
+  SS.labelWidth = labelWidth;
   function fitFont(label, maxW, base) {
     const len = Math.max(1, [...String(label)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1.0 : 0.6), 0));
     return Math.max(7, Math.min(base, maxW / len));
@@ -296,7 +297,8 @@ window.SS = window.SS || {};
             const ls = big ? 16 : 11, fs = big ? Math.min(34, ps[0].w * 0.2, ps[0].d * 0.25) : Math.min(15, ps[0].w * 0.14, ps[0].d * 0.2);
             ps.forEach((q, k) => {
               const g0 = `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)}) rotate(${q.rot.toFixed(2)})`;
-              pp += `<rect transform="${g0}" x="${-q.w / 2}" y="${-q.d / 2}" width="${q.w}" height="${q.d}" fill="none" stroke="${detail ? '#8a6d3b' : '#b39463'}" stroke-width="${detail ? (big ? 2.5 : 1.6) : 1.5}"${detail ? '' : ' stroke-dasharray="8 5"'}/>`;
+              // コンクール提出用の図には、平台の継ぎ目の点線を出さない
+            if (!opts.contestSheet || detail) pp += `<rect transform="${g0}" x="${-q.w / 2}" y="${-q.d / 2}" width="${q.w}" height="${q.d}" fill="none" stroke="${detail ? '#8a6d3b' : '#b39463'}" stroke-width="${detail ? (big ? 2.5 : 1.6) : 1.5}"${detail ? '' : ' stroke-dasharray="8 5"'}/>`;
               if (!detail) return;
               if (m.legs) [[-1, -1], [0, -1], [1, -1], [-1, 1], [0, 1], [1, 1]].forEach(([sx, sy]) => { legs += `<rect transform="${g0}" x="${(sx * (q.w / 2 - ls / 2 - 1) - ls / 2).toFixed(1)}" y="${(sy * (q.d / 2 - ls / 2 - 1) - ls / 2).toFixed(1)}" width="${ls}" height="${ls}"/>`; });
               const n = `${opts.hinaNo}-${k + 1}`;
@@ -309,7 +311,7 @@ window.SS = window.SS || {};
             const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : opts.hinaNo && !/^\d+$/.test(opts.hinaNo) ? 'ひな壇' + opts.hinaNo + ' ' : ''}${Math.round(hv)}cm${big ? `・弧 半径${(arc.R / 100).toFixed(1)}m` : ''}`;
             const t0 = -arc.th / 2 + 60 / arc.R, lr = big ? arc.R - 18 : arc.R + 14, lxl = lr * Math.sin(t0), lyl = arc.cy - lr * Math.cos(t0);
             const ra = (rot * Math.PI) / 180, tx = x + lxl * Math.cos(ra) - lyl * Math.sin(ra), ty = y + lxl * Math.sin(ra) + lyl * Math.cos(ra);
-            text += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="${big ? 16 : 22}" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke" transform="rotate(${(rot + (t0 * 180) / Math.PI).toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${esc(tag)}</text>`;
+            text += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="${big ? 16 : opts.contestSheet ? 14 : 22}" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke" transform="rotate(${(rot + (t0 * 180) / Math.PI).toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${esc(tag)}</text>`;
             break;
           }
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${col}" stroke="#8a6d3b" stroke-width="3"/>`;
@@ -335,7 +337,7 @@ window.SS = window.SS || {};
               nums += `<text x="${nx.toFixed(1)}" y="${ny.toFixed(1)}" ${big ? 'dy="0.35em" text-anchor="middle" ' : ''}font-size="${fs.toFixed(1)}" font-weight="700" fill="#6b5024" fill-opacity="${big ? 1 : 0.8}">${esc(n)}</text>`;
             }
             body += nums;
-          } else {
+          } else if (!opts.contestSheet) {
             let p = '';
             for (let xx = -w / 2 + pn.w; xx < w / 2 - 5; xx += pn.w) p += `M${xx.toFixed(1)} ${-h / 2}V${h / 2}`;
             for (let yy = -h / 2 + pn.d; yy < h / 2 - 5; yy += pn.d) p += `M${-w / 2} ${yy.toFixed(1)}H${w / 2}`;
@@ -344,6 +346,7 @@ window.SS = window.SS || {};
           const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : opts.hinaNo && !/^\d+$/.test(opts.hinaNo) ? 'ひな壇' + opts.hinaNo + ' ' : ''}${Math.round(hv)}cm`;
           // 組み図では段の大きさ（幅×奥行）も書き、平台の番号とぶつからないよう小さめに下のふちへ
           if (opts.assembly) text += `<text x="${(x - w / 2 + 8).toFixed(1)}" y="${(y + h / 2 - 6).toFixed(1)}" font-size="16" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}・${(w / 100).toFixed(2)}m×${(h / 100).toFixed(2)}m</text>`;
+          else if (opts.contestSheet) text += `<text x="${(x - w / 2 + 8).toFixed(1)}" y="${(y + h / 2 - 7).toFixed(1)}" font-size="14" fill="#6b5024">${esc(tag)}</text>`;
           else text += `<text x="${(x - w / 2 + 10).toFixed(1)}" y="${(y + h / 2 - 12).toFixed(1)}" font-size="22" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}</text>`;
           break;
         }

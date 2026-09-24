@@ -569,6 +569,7 @@ window.SS = window.SS || {};
 
   // 図の中身（舞台・部品・寸法・上手下手など）。単位は cm
   function drawingContent(doc, opts, conductor, ex, k) {
+    if (ex.content === 'contest') return contestContent(doc, opts, k);
     if (ex.content === 'assembly') {
       // ひな壇の組み図：段・上がり段・平台・指揮台だけ（平台1枚ずつの番号と足の位置）
       const keep = new Set(['hina', 'stairs', 'riser', 'riser46', 'podium']);
@@ -587,6 +588,131 @@ window.SS = window.SS || {};
     s += R.marksSVG(doc, k, opts.dims);
     return s;
   }
+  // ---------------------------------------------------------------- コンクール提出用（白黒◯×）
+  // 出すのは、舞台の形・ひな壇の段・椅子◯・譜面台×・パート名・打楽器などの楽器・指揮台・客席の向きだけ。
+  // 寸法・センター線・平台の継ぎ目・上手下手・マイクなどは出さない
+  const CONTEST_KEEP = new Set(['podium', 'hina', 'riser', 'riser46', 'piano', 'pianoFull', 'upright', 'keyboard', 'harp']);
+  R.contestKeeps = it => it.type === 'player' || CONTEST_KEEP.has(it.type) || ((SS.CATALOG[it.type] || {}).cat === '打楽器') || it.type === 'timp';
+  const SEAT_R = 20, X_R = 14;
+  // 部品の外形を多角形（図の座標）で
+  const polyOf = it => {
+    const loc = it.type === 'hina' && SS.hinaOutline ? SS.hinaOutline(it) : (() => { const w = it.w || (SS.CATALOG[it.type] || {}).w || 50, h = it.h || (SS.CATALOG[it.type] || {}).h || 50; return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]; })();
+    const a = ((it.rot || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+    return loc.map(([x, y]) => [it.x + x * c - y * sn, it.y + x * sn + y * c]);
+  };
+  const inPolyW = (x, y, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  R.contestPlayersSVG = function (doc) {
+    const ps = doc.items.filter(it => it.type === 'player');
+    const noStand = it => ['perc', 'drs', 'pf', 'hp'].includes(SS.instrumentKind(it.label));
+    const fwd = it => { const a = ((it.rot || 0) * Math.PI) / 180; return [-Math.sin(a), Math.cos(a)]; };
+    // じゃまになる物：椅子の◯、楽器（打楽器・ピアノなど）、指揮台
+    const things = doc.items.filter(it => it.type !== 'player' && it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46').map(polyOf);
+    const inThing = (x, y, r) => things.some(pg => inPolyW(x, y, pg) || pg.some(([px, py]) => Math.hypot(px - x, py - y) < r));
+    const lines = doc.items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46').map(polyOf);
+    // 1) 譜面台の×：その人の◯の前（指揮者側）に、◯から少し離して。となりの◯・×と重ならない所
+    const xs = [];
+    const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
+    const done = new Set();
+    const seatHit = (x, y, r, skip) => ps.some(q => !skip.includes(q) && Math.hypot(q.x - x, q.y - y) < SEAT_R + r + 3);
+    const xHit = (x, y) => xs.some(p => Math.hypot(p.x - x, p.y - y) < X_R * 2 + 4);
+    const order = ps.slice().sort((a, b) => b.y - a.y);
+    order.forEach(it => {
+      if (noStand(it) || done.has(it)) return;
+      const mate = pairs.get(it);
+      const who = mate ? [it, mate] : [it];
+      who.forEach(w => done.add(w));
+      const f = who.map(fwd).reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]);
+      const L = Math.hypot(f[0], f[1]) || 1, fx = f[0] / L, fy = f[1] / L;
+      const cx = who.reduce((a, w) => a + w.x, 0) / who.length, cy = who.reduce((a, w) => a + w.y, 0) / who.length;
+      let best = null, bestS = Infinity;
+      [46, 40, 52, 58, 64].forEach((d, di) => [0, -9, 9, -18, 18].forEach((lat, li) => {
+        const x = cx + fx * d - fy * lat, y = cy + fy * d + fx * lat;
+        const own = who.some(w => Math.hypot(w.x - x, w.y - y) < SEAT_R + X_R + 3);
+        const sc = (own ? 50 : 0) + (seatHit(x, y, X_R, who) ? 20 : 0) + (xHit(x, y) ? 20 : 0) + (inThing(x, y, X_R) ? 10 : 0) + di * 0.6 + li * 0.4;
+        if (sc < bestS) { bestS = sc; best = { x, y, rot: (Math.atan2(fy, fx) * 180) / Math.PI - 90 }; }
+      }));
+      xs.push(best);
+    });
+    let body = '';
+    ps.forEach(it => {
+      const kind = SS.instrumentKind(it.label);
+      body += `<circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${SEAT_R}" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
+    });
+    xs.forEach(p => { body += `<path transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${p.rot.toFixed(1)})" d="M-11 -11L11 11M11 -11L-11 11" stroke="#111" stroke-width="3.4" stroke-linecap="round" fill="none"/>`; });
+    // 2) パート名：◯のすぐ横・後ろに。◯・×・ほかの名前・段のふちの線と重ならない所。重なるときは字を小さく、最後は◯の中
+    const boxes = [];
+    const hitB = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    const boxHitsCircle = (bx, x, y, r) => { const nx = Math.max(bx.x0, Math.min(x, bx.x1)), ny = Math.max(bx.y0, Math.min(y, bx.y1)); return Math.hypot(nx - x, ny - y) < r; };
+    const crossesLine = bx => {
+      const pts = [[bx.x0, bx.y0], [bx.x1, bx.y0], [bx.x1, bx.y1], [bx.x0, bx.y1], [(bx.x0 + bx.x1) / 2, bx.y0], [(bx.x0 + bx.x1) / 2, bx.y1]];
+      return lines.some(pg => { const n = pts.filter(([x, y]) => inPolyW(x, y, pg)).length; return n > 0 && n < pts.length; });
+    };
+    const where = new Map(); // 奏者 → 置いた場所（null は◯の中）
+    order.forEach(it => {
+      const lab = (it.label || '').trim();
+      if (!lab) return;
+      const [fx, fy] = fwd(it);
+      const lw = SS.labelWidth(lab);
+      let placed = null;
+      for (const fs of [24, 20]) {
+        const w = lw * fs + 4, h = fs * 1.05;
+        // 後ろ（指揮者と反対）→ 横 → 後ろななめ
+        const back = SEAT_R + 3 + (Math.abs(fx) * w + Math.abs(fy) * h) / 2;
+        const side = SEAT_R + 4 + (Math.abs(fy) * w + Math.abs(fx) * h) / 2;
+        const cands = [[-fx * back, -fy * back], [-fy * side, fx * side], [fy * side, -fx * side], [-fx * back - fy * side * 0.8, -fy * back + fx * side * 0.8], [-fx * back + fy * side * 0.8, -fy * back - fx * side * 0.8]];
+        for (const [dx, dy] of cands) {
+          const x = it.x + dx, y = it.y + dy, bx = { x0: x - w / 2, x1: x + w / 2, y0: y - h / 2, y1: y + h / 2 };
+          if (ps.some(q => boxHitsCircle(bx, q.x, q.y, SEAT_R + 2))) continue;
+          if (xs.some(p => boxHitsCircle(bx, p.x, p.y, X_R + 1))) continue;
+          if (boxes.some(b => hitB(bx, b))) continue;
+          if (crossesLine(bx)) continue;
+          if (things.some(pg => inPolyW(x, y, pg))) continue;
+          // どの◯の名前か迷わないように：自分の◯より、ほかの◯のほうが近すぎる所には置かない
+          const own = Math.hypot(x - it.x, y - it.y);
+          if (ps.some(q => q !== it && Math.hypot(x - q.x, y - q.y) < own * 1.45)) continue;
+          placed = { x, y, fs, bx };
+          break;
+        }
+        if (placed) break;
+      }
+      if (placed) boxes.push(placed.bx);
+      where.set(it, placed);
+    });
+    // まっすぐな列（ひな壇の上など）で、となりが◯の中なら、その列はみんな◯の中にそろえる
+    const sameRow = (a, b) => { const [fx, fy] = fwd(a); return Math.abs((a.rot || 0) - (b.rot || 0)) < 3 && Math.abs((b.x - a.x) * fx + (b.y - a.y) * fy) < 15 && Math.hypot(b.x - a.x, b.y - a.y) < 110; };
+    for (let changed = true; changed;) {
+      changed = false;
+      where.forEach((pl, it) => { if (pl && [...where.keys()].some(q => q !== it && where.get(q) === null && sameRow(it, q))) { where.set(it, null); changed = true; } });
+    }
+    let text = '';
+    where.forEach((placed, it) => {
+      const lab = (it.label || '').trim();
+      if (placed) text += `<text x="${placed.x.toFixed(1)}" y="${placed.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${placed.fs}" font-weight="700" fill="#111">${SS.esc(lab)}</text>`;
+      else {
+        // 入る所がないときは◯の中に、◯に入る大きさで
+        const fs = Math.max(7, Math.min(17, (SEAT_R * 2 - 5) / SS.labelWidth(lab)));
+        text += `<text x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="#111">${SS.esc(lab)}</text>`;
+      }
+    });
+    return body + `<g pointer-events="none">${text}</g>`;
+  };
+  R.contestMarksSVG = function (doc, k) {
+    const st = doc.stage, cx = st.w / 2, col = '#111';
+    const cy = R.frontOuter(st) + 12 / k + 16 / k;
+    return `<g class="marks" pointer-events="none"><text x="${cx}" y="${cy}" dy="0.35em" text-anchor="middle" font-size="${17 / k}" font-weight="700" fill="${col}" letter-spacing="${8 / k}">客　席</text>` +
+      `<path d="M${cx - 60 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}M${cx + 48 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}" fill="none" stroke="${col}" stroke-width="${1.5 / k}"/></g>`;
+  };
+  function contestContent(doc, opts, k) {
+    const d2 = Object.assign({}, doc, { items: doc.items.filter(R.contestKeeps) });
+    const o = Object.assign({}, opts, { contestSheet: true, contest: true, mono: true, figure: false, colorBy: false, hinaDetail: false, showNumbers: false });
+    let s = R.stageSVG(d2, 0);
+    const others = Object.assign({}, d2, { items: d2.items.filter(it => it.type !== 'player') });
+    s += R.itemsSVG(others, o, null, false);
+    s += R.contestPlayersSVG(d2);
+    s += R.contestMarksSVG(d2, k);
+    return s;
+  }
+
   // 中身がはみ出さない範囲（文字の大きさまで含めて、ブラウザで実際に測る）
   let measureEl = null;
   function measure(svgInner) {
@@ -629,14 +755,17 @@ window.SS = window.SS || {};
     const pp = Object.assign({ size: 'A4', orient: 'landscape', scale: 0 }, ex.paper || {});
     const [pl, ps] = R.PAPERS[pp.size] || R.PAPERS.A4;
     const PW = pp.orient === 'portrait' ? ps : pl, PH = pp.orient === 'portrait' ? pl : ps;
-    const M = 10; // 紙のふちの余白
+    // コンクール提出用：余白を小さく、見出しは団体名とメモだけ、情報欄・縮尺のものさしは出さない
+    const contest = ex.content === 'contest';
+    const M = contest ? 6 : 10; // 紙のふちの余白
     const info = doc.info || {};
     // 見出し（公演名・サブタイトル）
     const assembly = ex.content === 'assembly';
-    const subtitle = assembly ? [doc.subtitle, 'ひな壇の組み図'].filter(Boolean).join('　') : doc.subtitle;
-    const headH = doc.title || subtitle ? (doc.title ? 11 : 0) + (subtitle ? 6 : 0) + 3 : 0;
+    const title = contest ? (ex.org || '').trim() : doc.title;
+    const subtitle = contest ? (ex.memo || '').trim() : assembly ? [doc.subtitle, 'ひな壇の組み図'].filter(Boolean).join('　') : doc.subtitle;
+    const headH = title || subtitle ? (title ? 11 : 0) + (subtitle ? 6 : 0) + 3 : 0;
     // 情報欄（右下）と編成表（左下）
-    const TBW = Math.min(128, PW - 2 * M), rowH = 5.4;
+    const TBW = contest ? 0 : Math.min(128, PW - 2 * M), rowH = 5.4;
     const rows = [
       [['公演名', doc.title || '']],
       [['会場', info.venue || doc.hall || ''], ['日付', fmtDate(info.date)]],
@@ -645,7 +774,7 @@ window.SS = window.SS || {};
       [['メモ', info.memo || '']],
     ];
     if (info.changeNote) rows.push([['変更', info.changeNote]]);
-    const TBH = rows.length * rowH;
+    const TBH = contest ? 0 : rows.length * rowH;
     let legendItems = [];
     if (assembly) {
       // 部材の表（番号は図の平台の番号と同じ）
@@ -666,19 +795,20 @@ window.SS = window.SS || {};
     const sideW = PW - 2 * M - TBW - 4; // 情報欄の左の空き
     const textLen = t => [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.58), 0);
     // 部材の表は1行が長いので、字が小さくなりすぎるときは情報欄の上に出す
-    const legendBeside = sideW >= 55 && (!legendItems.oneCol || Math.max(...legendItems.map(c => textLen(c.text))) * 2.3 <= sideW);
+    const legendBeside = !contest && sideW >= 55 && (!legendItems.oneCol || Math.max(...legendItems.map(c => textLen(c.text))) * 2.3 <= sideW);
     const lCols = legendItems.oneCol ? 1 : Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
     const legendH = legendItems.length ? 5 + Math.ceil(legendItems.length / lCols) * lrow : 0;
     const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0);
-    const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - 4 };
+    const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - (contest ? 0 : 4) };
+    const SB = contest ? 0 : 9; // 縮尺のものさしの高さ
 
     // 縮尺を決める（中身の大きさは文字の大きさで少し変わるので、数回くりかえして合わせる）
     const fitF = () => {
       let f = 0.1;
-      for (let i = 0; i < 4; i++) { const b = contentBounds(doc, opts, conductor, ex, kFor(f)); f = Math.min(draw.w / (b.x1 - b.x0), (draw.h - 9) / (b.y1 - b.y0)); }
+      for (let i = 0; i < 4; i++) { const b = contentBounds(doc, opts, conductor, ex, kFor(f)); f = Math.min(draw.w / (b.x1 - b.x0), (draw.h - SB) / (b.y1 - b.y0)); }
       return f;
     };
-    const fitsAt = n => { const f = 10 / n, b = contentBounds(doc, opts, conductor, ex, kFor(f)); return (b.x1 - b.x0) * f <= draw.w + 0.01 && (b.y1 - b.y0) * f <= draw.h - 9 + 0.01; };
+    const fitsAt = n => { const f = 10 / n, b = contentBounds(doc, opts, conductor, ex, kFor(f)); return (b.x1 - b.x0) * f <= draw.w + 0.01 && (b.y1 - b.y0) * f <= draw.h - SB + 0.01; };
     let f, scaleN = pp.scale, fits = true, suggest = 0;
     if (scaleN) {
       f = 10 / scaleN;
@@ -691,7 +821,7 @@ window.SS = window.SS || {};
     const k = kFor(f);
     const b = contentBounds(doc, opts, conductor, ex, k);
     const cw = (b.x1 - b.x0) * f, ch = (b.y1 - b.y0) * f;
-    const ox = draw.x + (draw.w - cw) / 2 - b.x0 * f, oy = draw.y + Math.max(0, (draw.h - 9 - ch) / 2) - b.y0 * f;
+    const ox = draw.x + (draw.w - cw) / 2 - b.x0 * f, oy = draw.y + (contest ? 0 : Math.max(0, (draw.h - SB - ch) / 2)) - b.y0 * f;
     const scaleText = pp.scale ? `1/${pp.scale}` : `約1/${Math.round(scaleN)}（用紙に合わせる）`;
     rows[3][0][1] = scaleText;
 
@@ -702,50 +832,53 @@ window.SS = window.SS || {};
     out += `<rect x="0" y="0" width="${PW}" height="${PH}" fill="#fff"/>`;
     // 見出し
     let hy = M;
-    if (doc.title) { out += `<text x="${PW / 2}" y="${hy + 7.5}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#111">${SS.esc(doc.title)}</text>`; hy += 11; }
+    if (title) { out += `<text x="${PW / 2}" y="${hy + 7.5}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#111">${SS.esc(title)}</text>`; hy += 11; }
     if (subtitle) out += `<text x="${PW / 2}" y="${hy + 4}" text-anchor="middle" font-size="4.2" fill="#333">${SS.esc(subtitle)}</text>`;
     // 図（縮尺どおり。はみ出す分は図の枠で切る）
     out += `<clipPath id="drawClip"><rect x="${draw.x}" y="${draw.y}" width="${draw.w}" height="${draw.h}"/></clipPath>`;
     out += `<g clip-path="url(#drawClip)"><g${opts.mono ? ' class="mono"' : ''} transform="translate(${ox.toFixed(3)} ${oy.toFixed(3)}) scale(${f.toFixed(6)})">${drawingContent(doc, opts, conductor, ex, k)}</g></g>`;
     // スケールバー（紙の上の長さが実際の長さと同じ比率）
-    const L = niceLen(38 / f), Lmm = L * f, sbx = draw.x + 1, sby = draw.y + draw.h - 3;
-    out += `<g font-size="2.6" fill="#111">`;
-    for (let i = 0; i < 4; i++) out += `<rect x="${sbx + (Lmm / 4) * i}" y="${sby - 1.6}" width="${Lmm / 4}" height="1.6" fill="${i % 2 ? '#fff' : '#111'}" stroke="#111" stroke-width="0.25"/>`;
-    out += `<text x="${sbx}" y="${sby - 2.6}">0</text><text x="${sbx + Lmm / 2}" y="${sby - 2.6}" text-anchor="middle">${L / 200}m</text><text x="${sbx + Lmm}" y="${sby - 2.6}" text-anchor="middle">${L / 100}m</text>`;
-    out += `<text x="${sbx + Lmm + 3}" y="${sby}" >縮尺 ${scaleText}</text>`;
-    if (ex.compare && !assembly) {
-      // 違いの印の見方（白黒でも分かるよう形で）
-      const lx = sbx + Lmm + 44, ly = sby - 0.6, r = 1.3, mono = !!opts.mono;
-      const cG = mono ? '#fff' : '#1e8e4e', cR = mono ? '#fff' : '#c92a2a', cO = mono ? '#111' : '#d9480f', tc = mono ? '#111' : '#fff', sk = mono ? ' stroke="#111" stroke-width="0.3"' : '';
-      out += `<text x="${lx}" y="${sby}" font-weight="700">${SS.esc(ex.compare.name || '前の版')}とくらべて：</text>`;
-      const x1 = lx + 3 + (SS.esc(ex.compare.name || '前の版').length + 6) * 2.6;
-      out += `<circle cx="${x1}" cy="${ly}" r="${r}" fill="${cG}"${sk}/><text x="${x1}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">＋</text><text x="${x1 + 2.2}" y="${sby}">増えた</text>`;
-      out += `<rect x="${x1 + 13 - r}" y="${ly - r}" width="${r * 2}" height="${r * 2}" fill="${cR}"${sk}/><text x="${x1 + 13}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">−</text><text x="${x1 + 15.2}" y="${sby}">減った</text>`;
-      out += `<path d="M${x1 + 25} ${ly}h4.5M${x1 + 28} ${ly - 1.2}L${x1 + 29.5} ${ly}L${x1 + 28} ${ly + 1.2}" fill="none" stroke="${cO}" stroke-width="0.5"/><text x="${x1 + 31}" y="${sby}">動いた</text>`;
-    }
-    out += '</g>';
-    // 情報欄（右下）
-    const tx = PW - M - TBW, ty = PH - M - TBH;
-    out += `<g font-size="3" fill="#111"><rect x="${tx}" y="${ty}" width="${TBW}" height="${TBH}" fill="#fff" stroke="#111" stroke-width="0.45"/>`;
-    rows.forEach((row, ri) => {
-      const y = ty + ri * rowH;
-      if (ri) out += `<line x1="${tx}" y1="${y}" x2="${tx + TBW}" y2="${y}" stroke="#111" stroke-width="0.25"/>`;
-      const cw2 = TBW / row.length;
-      row.forEach(([lab, val], ci) => {
-        const x = tx + ci * cw2;
-        if (ci) out += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y + rowH}" stroke="#111" stroke-width="0.25"/>`;
-        out += `<line x1="${x + 13}" y1="${y}" x2="${x + 13}" y2="${y + rowH}" stroke="#111" stroke-width="0.15"/>`;
-        out += `<text x="${x + 1.5}" y="${y + rowH / 2}" dy="0.35em" font-size="2.6" fill="#444">${lab}</text>`;
-        const maxChars = Math.floor((cw2 - 16) / 2.9);
-        const v = String(val);
-        const fs = v.length > maxChars ? Math.max(1.8, (3 * maxChars) / v.length) : 3;
-        out += `<text x="${x + 14.5}" y="${y + rowH / 2}" dy="0.35em" font-size="${fs.toFixed(2)}" font-weight="${lab === '公演名' ? 700 : 400}">${SS.esc(v)}</text>`;
+    if (!contest) {
+      const L = niceLen(38 / f), Lmm = L * f, sbx = draw.x + 1, sby = draw.y + draw.h - 3;
+      out += `<g font-size="2.6" fill="#111">`;
+      for (let i = 0; i < 4; i++) out += `<rect x="${sbx + (Lmm / 4) * i}" y="${sby - 1.6}" width="${Lmm / 4}" height="1.6" fill="${i % 2 ? '#fff' : '#111'}" stroke="#111" stroke-width="0.25"/>`;
+      out += `<text x="${sbx}" y="${sby - 2.6}">0</text><text x="${sbx + Lmm / 2}" y="${sby - 2.6}" text-anchor="middle">${L / 200}m</text><text x="${sbx + Lmm}" y="${sby - 2.6}" text-anchor="middle">${L / 100}m</text>`;
+      out += `<text x="${sbx + Lmm + 3}" y="${sby}" >縮尺 ${scaleText}</text>`;
+      if (ex.compare && !assembly) {
+        // 違いの印の見方（白黒でも分かるよう形で）
+        const lx = sbx + Lmm + 44, ly = sby - 0.6, r = 1.3, mono = !!opts.mono;
+        const cG = mono ? '#fff' : '#1e8e4e', cR = mono ? '#fff' : '#c92a2a', cO = mono ? '#111' : '#d9480f', tc = mono ? '#111' : '#fff', sk = mono ? ' stroke="#111" stroke-width="0.3"' : '';
+        out += `<text x="${lx}" y="${sby}" font-weight="700">${SS.esc(ex.compare.name || '前の版')}とくらべて：</text>`;
+        const x1 = lx + 3 + (SS.esc(ex.compare.name || '前の版').length + 6) * 2.6;
+        out += `<circle cx="${x1}" cy="${ly}" r="${r}" fill="${cG}"${sk}/><text x="${x1}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">＋</text><text x="${x1 + 2.2}" y="${sby}">増えた</text>`;
+        out += `<rect x="${x1 + 13 - r}" y="${ly - r}" width="${r * 2}" height="${r * 2}" fill="${cR}"${sk}/><text x="${x1 + 13}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">−</text><text x="${x1 + 15.2}" y="${sby}">減った</text>`;
+        out += `<path d="M${x1 + 25} ${ly}h4.5M${x1 + 28} ${ly - 1.2}L${x1 + 29.5} ${ly}L${x1 + 28} ${ly + 1.2}" fill="none" stroke="${cO}" stroke-width="0.5"/><text x="${x1 + 31}" y="${sby}">動いた</text>`;
+      }
+      out += '</g>';
+      // 情報欄（右下）
+      const tx = PW - M - TBW, ty = PH - M - TBH;
+      out += `<g font-size="3" fill="#111"><rect x="${tx}" y="${ty}" width="${TBW}" height="${TBH}" fill="#fff" stroke="#111" stroke-width="0.45"/>`;
+      rows.forEach((row, ri) => {
+        const y = ty + ri * rowH;
+        if (ri) out += `<line x1="${tx}" y1="${y}" x2="${tx + TBW}" y2="${y}" stroke="#111" stroke-width="0.25"/>`;
+        const cw2 = TBW / row.length;
+        row.forEach(([lab, val], ci) => {
+          const x = tx + ci * cw2;
+          if (ci) out += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y + rowH}" stroke="#111" stroke-width="0.25"/>`;
+          out += `<line x1="${x + 13}" y1="${y}" x2="${x + 13}" y2="${y + rowH}" stroke="#111" stroke-width="0.15"/>`;
+          out += `<text x="${x + 1.5}" y="${y + rowH / 2}" dy="0.35em" font-size="2.6" fill="#444">${lab}</text>`;
+          const maxChars = Math.floor((cw2 - 16) / 2.9);
+          const v = String(val);
+          const fs = v.length > maxChars ? Math.max(1.8, (3 * maxChars) / v.length) : 3;
+          out += `<text x="${x + 14.5}" y="${y + rowH / 2}" dy="0.35em" font-size="${fs.toFixed(2)}" font-weight="${lab === '公演名' ? 700 : 400}">${SS.esc(v)}</text>`;
+        });
       });
-    });
-    out += '</g>';
+      out += '</g>';
+    }
     // 編成表（情報欄の左、入らなければ上）
     if (legendItems.length) {
-      const lx = M, ly = legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
+      // コンクール提出用は、図のすぐ下に
+      const lx = M, ly = contest ? draw.y + ch + 3 : legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
       out += `<g font-size="${lfs}" fill="#111"><text x="${lx}" y="${ly + 3}" font-weight="700" font-size="3.4">${legendItems.title ? SS.esc(legendItems.title) : `編成（計 ${legendItems.total} 人）`}</text>`;
       if (legendItems.oneCol) {
         // 1行に1段。入りきらない行は字を小さくする
