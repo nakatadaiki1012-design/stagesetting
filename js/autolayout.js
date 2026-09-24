@@ -667,6 +667,15 @@ window.SS = window.SS || {};
   }
 
   // ---------------------------------------------------------------- オーケストラ・弦楽
+  // 1列 m 人を、2人ずつの組（譜面台1本）に。組の2人は少し近く、組と組のあいだは少し広く（平均は sp のまま）
+  // 戻り値 [[列の真ん中からの距離, 組の番号(1〜)], …]
+  function deskRow(m, sp) {
+    const g1 = Math.min(sp, 64), g2 = 2 * sp - g1, out = [];
+    let x = 0;
+    for (let i = 0; i < m; i++) { if (i) x += i % 2 ? g1 : g2; out.push([x, Math.floor(i / 2) + 1]); }
+    return out.map(([v, d]) => [v - x / 2, d]);
+  }
+
   function orch(st, stage, tune) {
     const n = st.counts;
     const c = { x: stage.w / 2, y: podiumY(stage) };
@@ -687,15 +696,18 @@ window.SS = window.SS || {};
       if (!cnt) return;
       const span = Math.max(16, (avail * cnt) / sumN);
       const mid = rad(t + span / 2);
-      let left = cnt, row = 0;
+      let left = cnt, row = 0, desk = 0;
       while (left > 0 && row < 14) {
         const R = tune.r0 - 20 + row * gapR;
-        const cap = Math.max(1, Math.floor((rad(span - 2) * R) / spS) + 1);
+        let cap = Math.max(1, Math.floor((rad(span - 2) * R) / spS) + 1);
+        // 2人で1本の譜面台（プルト）なので、列の人数はなるべく偶数に
+        if (cap > 1 && cap % 2 && left > cap) cap--;
         const m = Math.min(left, cap);
-        for (let i = 0; i < m; i++) {
-          const p = G().fromPolar(R, mid + ((i - (m - 1) / 2) * spS) / R, c);
-          items.push({ type: 'player', label: k, x: p.x, y: p.y, rot: G().faceAngle(p, c) });
-        }
+        deskRow(m, spS).forEach(([off, dn]) => {
+          const p = G().fromPolar(R, mid + off / R, c);
+          items.push({ type: 'player', label: k, x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `${k}-${desk + dn}` });
+        });
+        desk += Math.ceil(m / 2);
         maxR = Math.max(maxR, R);
         secR[k] = R;
         left -= m; row++;
@@ -707,14 +719,15 @@ window.SS = window.SS || {};
       // コントラバスはチェロの後ろ（上手寄り）に、90cm 間隔で
       const vr = secRange.Vc || [60, 88];
       const midD = Math.min((vr[0] + vr[1]) / 2 - 4, 66);
-      let left = n.Cb, R = (secR.Vc || maxR) + gapR;
+      let left = n.Cb, R = (secR.Vc || maxR) + gapR, cbDesk = 0;
       while (left > 0) {
         const cap = Math.max(1, Math.floor((rad(vr[1] - vr[0] + 10) * R) / 90) + 1);
         const m = Math.min(left, cap);
-        for (let i = 0; i < m; i++) {
-          const p = G().fromPolar(R, rad(midD) + ((i - (m - 1) / 2) * 90) / R, c);
-          items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c) });
-        }
+        deskRow(m, 90).forEach(([off, dn]) => {
+          const p = G().fromPolar(R, rad(midD) + off / R, c);
+          items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `Cb-${cbDesk + dn}` });
+        });
+        cbDesk += Math.ceil(m / 2);
         maxR = Math.max(maxR, R);
         left -= m; R += gapR;
       }

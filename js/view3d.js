@@ -217,7 +217,23 @@ window.SS = window.SS || {};
   }
 
   // 奏者（人＋楽器）
-  function makePlayer(it, partColor) {
+  // 譜面台（楽譜つき）。(x, z) が支柱、楽譜は -z 側（奏者の方）を向く
+  function makeStand(g, x, z) {
+    // 3本脚：開くと直径 約54cm。1本は奏者の方へ
+    [Math.PI, Math.PI / 3, -Math.PI / 3].forEach(a => tube(g, [x, 0.3, z + 0.04], [x + Math.sin(a) * 0.27, 0.0, z + 0.04 + Math.cos(a) * 0.27], 0.008, '#222'));
+    cyl(g, 0.009, 0.009, 0.86, '#222', x, 0.55, z);
+    // 楽譜は奏者の方を向く（上が奥に倒れる）
+    const desk = new T.Group();
+    desk.position.set(x, 1.12, z + 0.03);
+    desk.rotation.x = 0.42;
+    box(desk, 0.5, 0.34, 0.012, '#1a1a1d', 0, 0, 0, { roughness: 0.5 });
+    box(desk, 0.44, 0.3, 0.004, '#f4f1e8', 0, 0.01, -0.009, { roughness: 0.95 });
+    box(desk, 0.5, 0.03, 0.05, '#1a1a1d', 0, -0.17, -0.02);
+    g.add(desk);
+  }
+
+  // shared：2人で1本の譜面台のとき（譜面台は別に1本だけ描く）
+  function makePlayer(it, partColor, shared) {
     const g = new T.Group();
     const kind = SS.instrumentKind(it.label);
     const standing = kind === 'perc' || kind === 'bass';
@@ -430,19 +446,9 @@ window.SS = window.SS || {};
     arm(g, shL, hl, cloth, skin);
     // 譜面台（楽譜つき）
     const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
-    if (!noStand && V.showStands) {
+    if (!noStand && V.showStands && !shared) {
       const sz = kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
-      // 3本脚：開くと直径 約54cm。1本は奏者の方へ
-      [Math.PI, Math.PI / 3, -Math.PI / 3].forEach(a => tube(g, [sz[0], 0.3, sz[1] + 0.04], [sz[0] + Math.sin(a) * 0.27, 0.0, sz[1] + 0.04 + Math.cos(a) * 0.27], 0.008, '#222'));
-      cyl(g, 0.009, 0.009, 0.86, '#222', sz[0], 0.55, sz[1]);
-      // 楽譜は奏者の方を向く（上が奥に倒れる）
-      const desk = new T.Group();
-      desk.position.set(sz[0], 1.12, sz[1] + 0.03);
-      desk.rotation.x = 0.42;
-      box(desk, 0.5, 0.34, 0.012, '#1a1a1d', 0, 0, 0, { roughness: 0.5 });
-      box(desk, 0.44, 0.3, 0.004, '#f4f1e8', 0, 0.01, -0.009, { roughness: 0.95 });
-      box(desk, 0.5, 0.03, 0.05, '#1a1a1d', 0, -0.17, -0.02);
-      g.add(desk);
+      makeStand(g, sz[0], sz[1]);
     }
     g.add(blobShadow(0.9, 0.35));
     return { g, head };
@@ -866,18 +872,33 @@ window.SS = window.SS || {};
     playerGroups = new Map();
     const rh = riserHeights(doc.items);
     const ropts = { colorBy: true, figure: true };
+    // 弦楽器は2人で1本の譜面台：2人の譜面台の位置の真ん中に1本
+    const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
+    if (V.showStands) pairs.forEach((b, a) => {
+      if (doc.items.indexOf(a) > doc.items.indexOf(b)) return;
+      const p = SS.standPoint(a, ropts), q = SS.standPoint(b, ropts);
+      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+      const ra = ((a.rot || 0) * Math.PI) / 180, rb = ((b.rot || 0) * Math.PI) / 180;
+      const g = new T.Group();
+      makeStand(g, 0, 0);
+      g.position.set(mx / 100, heightAt(mx, my, rh), my / 100);
+      g.rotation.y = -Math.atan2(Math.sin(ra) + Math.sin(rb), Math.cos(ra) + Math.cos(rb));
+      scene.add(g);
+    });
     doc.items.forEach(it => {
       const color = SS.itemColor(it, ropts);
       const x = it.x / 100, z = it.y / 100;
       const rot = -(it.rot || 0) * Math.PI / 180;
       if (it.type === 'player') {
         const base = heightAt(it.x, it.y, rh);
-        const p = makePlayer(it, color === '#ffffff' ? '#8c96a8' : color);
+        const p = makePlayer(it, color === '#ffffff' ? '#8c96a8' : color, pairs.has(it));
         p.g.position.set(x, base, z);
         p.g.rotation.y = rot;
-        if (it.label) {
-          const sp = labelSprite(it.label);
-          sp.position.set(0, 1.78, 0);
+        // 2人で1本の譜面台の組は、札を1枚だけ（重なって読めなくならないように）
+        const pb = pairs.get(it);
+        if (it.label && !(pb && (pb.label || '') === it.label && doc.items.indexOf(pb) < doc.items.indexOf(it))) {
+          const sp = labelSprite(it.label, color === '#ffffff' ? '#8c96a8' : color);
+          sp.position.set(0, 1.95, 0);
           sp.userData.isLabel = true;
           sp.visible = labelsOn;
           p.g.add(sp);

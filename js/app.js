@@ -1147,6 +1147,16 @@
       const lit = sel.filter(it => it.light).length;
       h += `<label class="check"><input type="checkbox" id="propLight"${lit === sel.length ? ' checked' : ''}> 譜面灯をつける${sel.length > 1 && lit && lit < sel.length ? `（いま${lit}人）` : ''}</label>`;
     }
+    if (allPlayers) {
+      // 譜面台：弦楽器は2人で1本がふつう。ほかの組み方にもできる
+      const pairs = SS.standPairs(doc().items);
+      const paired = sel.filter(it => pairs.has(it)).length;
+      h += `<p class="hint small" style="margin:8px 0 4px">譜面台：${one ? (pairs.has(one) ? `2人で1本（となりの ${esc(pairs.get(one).label || '')} と）` : '1人で1本') : `2人で1本の人 ${paired}人／${sel.length}人`}</p><div class="tool-grid">`;
+      if (sel.length === 2) h += `<button class="btn" id="propDesk2">この2人で1本にする</button>`;
+      if (paired) h += `<button class="btn" id="propSolo">1人1本にする</button>`;
+      if (sel.some(it => it.desk)) h += `<button class="btn" id="propDeskAuto" title="弦楽器は、となりの同じパートの人と自動で2人1本にします">自動にもどす</button>`;
+      h += '</div>';
+    }
     if (one && ['mic', 'micTall', 'monitor'].includes(one.type)) {
       h += `<p class="hint small" style="margin:6px 0 4px">ケーブルの通り道を、舞台袖まで線で描きます。</p><div class="row2"><button class="btn" id="propCableL">← 下手の袖へ</button><button class="btn" id="propCableR">上手の袖へ →</button></div>`;
     }
@@ -1188,7 +1198,30 @@
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
     bind('propRot', 'input', el => { one.rot = +el.value; $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
+    // 弧のひな壇：指揮台（なければ舞台の前の真ん中）を中心にする半径・向き
+    const curveToConductor = it => {
+      const c = conductor(), vx = c.x - it.x, vy = c.y - it.y;
+      it.rot = normAngle((Math.atan2(-vx, vy) * 180) / Math.PI);
+      it.curve = Math.max(200, Math.round(Math.hypot(vx, vy) - it.h / 2));
+    };
+    bind('propHinaShape', 'change', el => { if (el.value === 'arc') curveToConductor(one); else delete one.curve; renderProps(); });
+    bind('propCurve', 'change', el => { const v = +el.value; if (v >= 2) one.curve = Math.round(v * 100); });
+    if ($('propCurveCenter')) $('propCurveCenter').onclick = () => { pushHistory(); curveToConductor(one); render(); renderProps(); renderCounts(); };
     if ($('propLight')) $('propLight').onchange = e => { pushHistory(); sel.forEach(it => { if (e.target.checked) it.light = true; else delete it.light; }); render(); renderCounts(); renderProps(); };
+    if ($('propDesk2')) $('propDesk2').onclick = () => {
+      pushHistory();
+      const id = 'd' + newId();
+      // 前の相手は、決めた組みを外して自動にもどす
+      sel.forEach(it => { if (it.desk && it.desk !== 'solo') doc().items.forEach(o => { if (o !== it && o.desk === it.desk) delete o.desk; }); it.desk = id; });
+      render(); renderCounts(); renderProps();
+    };
+    if ($('propSolo')) $('propSolo').onclick = () => {
+      pushHistory();
+      const pairs = SS.standPairs(doc().items);
+      sel.forEach(it => { const b = pairs.get(it); it.desk = 'solo'; if (b && b.desk && b.desk !== 'solo' && !sel.includes(b)) delete b.desk; });
+      render(); renderCounts(); renderProps();
+    };
+    if ($('propDeskAuto')) $('propDeskAuto').onclick = () => { pushHistory(); sel.forEach(it => { delete it.desk; }); render(); renderCounts(); renderProps(); };
     if ($('propCableL')) $('propCableL').onclick = () => addCable(one, 'L');
     if ($('propCableR')) $('propCableR').onclick = () => addCable(one, 'R');
     if ($('propCablePt')) $('propCablePt').onclick = () => {
@@ -1286,8 +1319,9 @@
       h += '</ul><p class="hint small"><b>合計</b>：' + Object.keys(pan).map(k => `平台${k} ${pan[k]}枚`).concat(Object.keys(leg).map(k => `${k} ${leg[k]}個`)).concat(sm.stairs ? [`上がり段 ${sm.stairs}台`] : []).join('／') + '<br>※平台の番号は、図の平台に書いた番号と同じです（段の番号-前の列の下手から数えた番号）。<br>※足の数は「平台の前後の辺に、つなぎ目ごとに置く」ときの目安です。ホールの備品数を確認してください。<br>組み図だけを出すときは「🖼 画像」か「🖨 印刷」の「中身」で「ひな壇の組み図」をえらびます。</p>';
     }
     // 譜面灯・電源
-    const pw = SS.powerSummary(doc().items);
-    h += `<h3 style="margin-top:16px">譜面灯・電源</h3>
+    const pw = SS.powerSummary(doc().items), sc = SS.standCount(doc().items);
+    h += `<h3 style="margin-top:16px">譜面台・譜面灯・電源</h3>
+      <p class="hint small" style="margin:0 0 4px">譜面台 <b>${sc.stands}本</b>${sc.shared ? `（弦楽器などは2人で1本：${sc.shared}組）` : ''}<br>2人で1本・1人で1本は、奏者を選んで「選択中」で変えられます。</p>
       <p class="hint small" style="margin:0 0 6px">譜面灯 <b>${pw.lights}台</b>${pw.devices ? `／電源が要る機材（アンプ・キーボード・モニター）${pw.devices}台` : ''}<br>
       必要な差し込み口：<b>${pw.need}口</b>${pw.need ? `（2口のコンセントなら <b>${pw.wall}か所</b>分）` : ''}
       ${pw.outlets || pw.taps ? `<br>図に置いたもの：コンセント${pw.outlets}か所・延長コード（4口）${pw.taps}本 → 使える口 ${pw.have}口 <b class="${pw.have >= pw.need ? 'q-ok' : 'q-est'}">${pw.have >= pw.need ? '足ります' : `あと${pw.need - pw.have}口足りません`}</b>` : ''}</p>

@@ -111,7 +111,10 @@ window.SS = window.SS || {};
   SS.lightSVG = lightSVG;
   // 譜面灯と電源の数（編成表・図面の編成欄で使う）
   SS.powerSummary = function (items) {
-    const lights = items.filter(it => it.type === 'player' && it.light).length;
+    // 2人で1本の譜面台は、譜面灯も1つ
+    const pairs = SS.standPairs ? SS.standPairs(items) : new Map();
+    const lit = items.filter(it => it.type === 'player' && it.light);
+    const lights = lit.filter(it => !pairs.has(it)).length + lit.filter(it => pairs.has(it) && (!pairs.get(it).light || items.indexOf(it) < items.indexOf(pairs.get(it)))).length;
     const devices = items.filter(SS.needsPower).length;
     const outlets = items.filter(it => it.type === 'outlet').length, taps = items.filter(it => it.type === 'tap').length;
     const need = lights + devices;
@@ -162,7 +165,7 @@ window.SS = window.SS || {};
       const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
       body += '<circle r="30" fill="transparent"/>';
       body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
-      if (opts.showStands !== false && !noStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
+      if (opts.showStands !== false && !noStand && !opts.sharedStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
       const lab = it.label || '';
       if (lab && opts.mono) {
         // 図面用（白黒）：コピーやFAXでも読めるよう、パート名は椅子の後ろに大きく（重なるときはずらす）
@@ -204,7 +207,7 @@ window.SS = window.SS || {};
       }
     } else if (it.type === 'player') {
       const r = opts.seatR || SS.PLAYER_R;
-      if (opts.showStands !== false) {
+      if (opts.showStands !== false && !opts.sharedStand) {
         if (opts.standLegs !== false && SS.standLegsSVG) body += `<g transform="translate(0 ${r + 16})" opacity=".6">${SS.standLegsSVG()}</g>`;
         body += `<rect x="${-r * 1.05}" y="${r + 9}" width="${r * 2.1}" height="7" rx="2" fill="#5b6472"/>`;
       }
@@ -451,7 +454,7 @@ window.SS = window.SS || {};
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${tc}">${esc(lab)}</text>`;
       }
     }
-    if (it.type === 'player' && it.light && opts.lights !== false) {
+    if (it.type === 'player' && it.light && opts.lights !== false && !opts.sharedStand) {
       // 譜面灯：譜面台の右はし
       const off = opts.contest ? 52 : opts.figure !== false && SS.drawFigure ? 64 : (opts.seatR || SS.PLAYER_R) + 12;
       body += lightSVG(27, off);

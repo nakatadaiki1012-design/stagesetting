@@ -393,8 +393,15 @@ window.SS = window.SS || {};
     let bodies = '', texts = '';
     const labels = [];
     const hno = SS.hinaNumbers && opts.hinaDetail !== false ? SS.hinaNumbers(doc.items) : null;
+    // 弦楽器は2人で1本の譜面台：組になった2人の譜面台は、奏者より先に1本だけ描く
+    const pairs = SS.standPairs && opts.showStands !== false ? SS.standPairs(doc.items) : new Map();
+    let standsDone = false;
     R.sortedItems(doc.items).forEach(it => {
-      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true, hinaNo: hno ? hno.get(it) : '' }));
+      if (it.type === 'player' && !standsDone) {
+        standsDone = true;
+        pairs.forEach((b, a) => { if (doc.items.indexOf(a) < doc.items.indexOf(b)) bodies += SS.sharedStandSVG(a, b, opts); });
+      }
+      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true, hinaNo: hno ? hno.get(it) : '', sharedStand: pairs.has(it) }));
       if (withIds) bodies += `<g class="item" data-id="${it.id}">${d.body}</g>`;
       else bodies += d.body;
       texts += d.text;
