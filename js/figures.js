@@ -13,6 +13,12 @@ window.SS = window.SS || {};
 
   // パート名 → 楽器の種類
   const KINDS = [
+    // 合唱（S・A・T・B）：立って楽譜のファイルを持つ
+    ['voice', /^(s|s1|s2|sop|soprano|a|a1|a2|alt|alto|t|t1|t2|ten|tenor|b|b1|b2|bas|ソプラノ|アルト|テノール|バス)$/i],
+    // ブラスバンド：Eb・Bb ベースはチューバ、テナーホルンはユーフォのような形、コルネット・フリューゲル
+    ['tuba', /^(eb|bb)\s?bass$/i],
+    ['euph', /^(solo|1st|2nd|3rd)\s?hn$/i],
+    ['tp', /(cnt$|^flh)/i],
     ['picc', /^(picc|pic|ピッコロ)/i],
     ['fl', /^(fl|フルート)/i],
     ['eh', /^(e\.?h|c\.?a|イングリッシュ)/i],
@@ -163,6 +169,8 @@ window.SS = window.SS || {};
       case 'gt': return { draw: fiddle(-12, 20, 26, 36, 80, WOOD, WOOD_D) + line(4, 18, 36, 14, WOOD_D, 3), hands: [[-12, 20], [28, 15]] };
       case 'bass': return { draw: fiddle(-12, 20, 26, 34, 80, '#6b2a2a', '#3a1515') + line(4, 18, 46, 12, WOOD_D, 3), hands: [[-12, 20], [34, 13]], standing: true };
       case 'perc': return { draw: line(-9, 16, -12, 38, WOOD_D, 1.8) + line(9, 16, 12, 38, WOOD_D, 1.8) + circ(-12, 39, 2.6, '#c8c8d0', '#555') + circ(12, 39, 2.6, '#c8c8d0', '#555'), hands: [[-9, 16], [9, 16]], standing: true, noStand: true };
+      // 歌う人：両手で楽譜のファイル（黒い表紙、開いて約30×22cm）を胸の前に
+      case 'voice': return { draw: `<rect x="-15" y="15" width="30" height="13" rx="1.5" fill="#1f2328" stroke="#000" stroke-width="1"/><line x1="0" y1="15" x2="0" y2="28" stroke="#555" stroke-width="1"/>`, hands: [[-13, 19], [13, 19]], standing: true, noStand: true };
       case 'drs': return { draw: line(-9, 16, -14, 36, WOOD_D, 1.8) + line(9, 16, 14, 36, WOOD_D, 1.8), hands: [[-9, 16], [9, 16]], stool: true, noStand: true };
       case 'pf': return { draw: '', hands: [[-12, 22], [12, 22]], bench: true, noStand: true };
       case 'hp': return { draw: '', hands: [[-4, 24], [14, 22]], noStand: true, knees: 14 };
@@ -215,7 +223,7 @@ window.SS = window.SS || {};
   // 譜面台の本数（打楽器・鍵盤・ハープ・ドラムは数えない。2人で1本の組は1本）
   SS.standCount = function (items) {
     const pairs = SS.standPairs(items);
-    const need = items.filter(it => it.type === 'player' && !['perc', 'drs', 'pf', 'hp'].includes(SS.instrumentKind(it.label)));
+    const need = items.filter(it => it.type === 'player' && !['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label)));
     return { stands: need.length - pairs.size / 2, shared: pairs.size / 2 };
   };
   // 2人で見る譜面台（2人の譜面台の位置の真ん中、2人の向きの平均）

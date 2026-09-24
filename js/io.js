@@ -438,7 +438,7 @@ window.SS = window.SS || {};
     const ps = doc.items.filter(it => it.type === 'player');
     const heads = ps.map(it => ({ it, x0: it.x - 11, x1: it.x + 11, y0: it.y - 11, y1: it.y + 11 }));
     ps.forEach(it => {
-      if (['perc', 'drs', 'pf', 'hp'].includes(SS.instrumentKind(it.label))) return;
+      if (['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label))) return;
       const a = ((it.rot || 0) * Math.PI) / 180, sx = it.x - Math.sin(a) * 64, sy = it.y + Math.cos(a) * 64;
       heads.push({ it, x0: sx - 25, x1: sx + 25, y0: sy - 6, y1: sy + 6 });
     });
@@ -611,7 +611,7 @@ window.SS = window.SS || {};
   const inPolyW = (x, y, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
   R.contestPlayersSVG = function (doc) {
     const ps = doc.items.filter(it => it.type === 'player');
-    const noStand = it => ['perc', 'drs', 'pf', 'hp'].includes(SS.instrumentKind(it.label));
+    const noStand = it => ['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label));
     const fwd = it => { const a = ((it.rot || 0) * Math.PI) / 180; return [-Math.sin(a), Math.cos(a)]; };
     // じゃまになる物：椅子の◯、楽器（打楽器・ピアノなど）、指揮台
     const things = doc.items.filter(it => it.type !== 'player' && it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46').map(polyOf);

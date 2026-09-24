@@ -180,7 +180,7 @@ window.SS = window.SS || {};
     ps.forEach(p => {
       shapes.push({ kind: 'chair', it: p, x: p.x, y: p.y, r: CHAIR });
       const kind = SS.instrumentKind ? SS.instrumentKind(p.label) : '';
-      if (['perc', 'drs', 'pf', 'hp'].includes(kind)) return;
+      if (['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind)) return;
       const b = pairs.get(p);
       if (b && doc.items.indexOf(b) < doc.items.indexOf(p)) return; // 2人で1本：1本だけ
       const s1 = SS.standPoint(p, fig), s2 = b ? SS.standPoint(b, fig) : s1;

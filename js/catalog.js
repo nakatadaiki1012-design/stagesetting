@@ -4,14 +4,19 @@ window.SS = window.SS || {};
 (function (SS) {
   // パート名 → グループ（色分け・編成表用）。上から順に判定する。
   SS.PART_GROUPS = [
-    { id: 'fl',   name: 'フルート',         color: '#8ecdf2', re: /^(picc|pic|fl|ピッコロ|フルート)/i },
+    // 合唱のパート（1文字の S・A・T・B など、ぴったり同じときだけ）
+    { id: 'sop',  name: 'ソプラノ',           color: '#f5a3c2', re: /^(s|s1|s2|sop|soprano|ソプラノ)$/i },
+    { id: 'alt',  name: 'アルト',             color: '#f7c784', re: /^(a|a1|a2|alt|alto|アルト)$/i },
+    { id: 'ten',  name: 'テノール',           color: '#9bd6a4', re: /^(t|t1|t2|ten|tenor|テノール)$/i },
+    { id: 'bas',  name: 'バス',               color: '#8db3e8', re: /^(b|b1|b2|bas|バス)$/i },
+    { id: 'fl',   name: 'フルート',         color: '#8ecdf2', re: /^(picc|pic|fl(?!h)|ピッコロ|フルート)/i },
     { id: 'dr',   name: 'オーボエ・ファゴット', color: '#9fd9a6', re: /^(ob|e\.?h|c\.?a|fg|bsn|fag|オーボエ|ファゴット|バスーン|イングリッシュ)/i },
     { id: 'cl',   name: 'クラリネット',       color: '#7fb0e6', re: /^(e?s?b?\.?\s?cl|a\.?cl|クラ|バスクラ)/i },
     { id: 'sax',  name: 'サックス',           color: '#cda8e2', re: /^([satb]\.?\s?sx|[satb]\.?\s?sax|sax|as\d?$|ts\d?$|bs\d?$|サックス|アルト|テナー|バリトン|ソプラノ)/i },
-    { id: 'hr',   name: 'ホルン',             color: '#f6c177', re: /^(hr|hn|horn|ホルン)/i },
-    { id: 'tp',   name: 'トランペット',       color: '#f4a6a6', re: /^(tp|trp|tpt|cor|cnt|flh|トランペット|コルネット)/i },
+    { id: 'hr',   name: 'ホルン',             color: '#f6c177', re: /^(hr|hn|horn|ホルン)|^(solo|1st|2nd|3rd)\s?hn$/i },
+    { id: 'tp',   name: 'トランペット',       color: '#f4a6a6', re: /^(tp|trp|tpt|cor|cnt|flh|トランペット|コルネット)|cnt$/i },
     { id: 'tb',   name: 'トロンボーン',       color: '#ec9a78', re: /^(b\.?\s?tb|tb|trb|トロンボーン)/i },
-    { id: 'lb',   name: 'ユーフォ・チューバ', color: '#d9b083', re: /^(euph|eup|eu|bar|tu|tuba|ユーフォ|チューバ)/i },
+    { id: 'lb',   name: 'ユーフォ・チューバ', color: '#d9b083', re: /^(euph|eup|eu|bar|tu|tuba|ユーフォ|チューバ)|^(eb|bb)\s?bass$/i },
     { id: 'vn',   name: 'ヴァイオリン',       color: '#f7da74', re: /^(vn|vl|vln|vi\d|violin|ヴァイオリン|バイオリン|1st|2nd)/i },
     { id: 'va',   name: 'ヴィオラ',           color: '#b8dc9c', re: /^(va|vla|viola|ヴィオラ|ビオラ)/i },
     { id: 'vc',   name: 'チェロ',             color: '#9bd2dc', re: /^(vc|vcl|cello|チェロ)/i },
@@ -163,7 +168,7 @@ window.SS = window.SS || {};
     if (it.type === 'player' && opts.contest) {
       // コンクール用の配置図：椅子は○、譜面台は×（指揮者側）。色は付けない
       const kind = SS.instrumentKind ? SS.instrumentKind(it.label) : '';
-      const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
+      const noStand = ['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind);
       body += '<circle r="30" fill="transparent"/>';
       body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
       if (opts.showStands !== false && !noStand && !opts.sharedStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;

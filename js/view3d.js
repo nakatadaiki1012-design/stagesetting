@@ -236,7 +236,7 @@ window.SS = window.SS || {};
   function makePlayer(it, partColor, shared) {
     const g = new T.Group();
     const kind = SS.instrumentKind(it.label);
-    const standing = kind === 'perc' || kind === 'bass';
+    const standing = kind === 'perc' || kind === 'bass' || kind === 'voice';
     const stool = kind === 'cb' || kind === 'drs';
     const bench = kind === 'pf';
     const seatY = stool ? 0.64 : 0.46;
@@ -315,6 +315,13 @@ window.SS = window.SS || {};
     // 楽器と手の位置
     let hands = [[-0.12, hipY + 0.05, 0.25], [0.12, hipY + 0.05, 0.25]];
     switch (kind) {
+      case 'voice': {
+        // 歌う人：胸の前で楽譜のファイル（黒い表紙）を開いて持つ
+        const fy = neckY - 0.22;
+        box(g, 0.3, 0.2, 0.012, 0x1f2328, 0, fy, 0.24, { roughness: 0.6 });
+        hands = [[-0.13, fy - 0.06, 0.23], [0.13, fy - 0.06, 0.23]];
+        break;
+      }
       case 'tp': {
         tube(g, mouth, [0, my - 0.07, 0.44], 0.02, GOLD, METAL);
         box(g, 0.05, 0.09, 0.08, GOLD, 0, my - 0.1, 0.24, METAL);
@@ -445,7 +452,7 @@ window.SS = window.SS || {};
     arm(g, shR, hr, cloth, skin);
     arm(g, shL, hl, cloth, skin);
     // 譜面台（楽譜つき）
-    const noStand = ['perc', 'drs', 'pf', 'hp'].includes(kind);
+    const noStand = ['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind);
     if (!noStand && V.showStands && !shared) {
       const sz = kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
       makeStand(g, sz[0], sz[1]);
@@ -989,7 +996,7 @@ window.SS = window.SS || {};
       if (!pg) return setCam('audience');
       mode = 'fp';
       const kind = SS.instrumentKind(pg.it.label);
-      const standing = kind === 'perc' || kind === 'bass';
+      const standing = kind === 'perc' || kind === 'bass' || kind === 'voice';
       const eye = (standing ? 1.62 : 1.2) + pg.base;
       const a = pg.g.rotation.y;
       fp.pos = new T.Vector3(pg.g.position.x + Math.sin(a) * 0.08, eye, pg.g.position.z + Math.cos(a) * 0.08);
