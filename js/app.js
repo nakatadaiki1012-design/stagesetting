@@ -161,8 +161,96 @@
     chip.textContent = `⚠ 確認 ${ws.length}件`;
     if (!ws.length) { list.hidden = true; return; }
     if (list.hidden) return;
-    list.innerHTML = `<h4>確認してほしいところ（${ws.length}件）</h4><ol>${ws.map((w, i) => `<li data-warn="${i}"><span class="wn">${i + 1}</span><span>${SS.esc(w.msg)}</span></li>`).join('')}</ol><p class="small">押すと、その場所を図の上で示します（赤い点線の枠）。</p>`;
+    list.innerHTML = `<h4>確認してほしいところ（${ws.length}件）</h4><button class="btn primary wide" id="warnFix">🔧 自動で直す</button><div id="warnFixOut"></div><ol>${ws.map((w, i) => `<li data-warn="${i}"><span class="wn">${i + 1}</span><span>${SS.esc(w.msg)}</span></li>`).join('')}</ol><p class="small">押すと、その場所を図の上で示します（赤い点線の枠）。</p>`;
     list.querySelectorAll('[data-warn]').forEach(li => { li.onclick = () => focusWarn(+li.getAttribute('data-warn')); });
+    $('warnFix').onclick = autoFix;
+  }
+
+  /**
+   * 🔧 自動で直す：⚠ 確認の中で、形をくずさずに直せるものを直す。
+   * 指揮台の前（床の人ごと奥へ）・舞台奥の通路（前へ）・ひな壇の縁（段に乗せる／降ろす）・重なり（少しずつ離す）・上がり段（段の横に付ける）。
+   * 直したあとで ⚠ が増えるときは、元に戻す。直せなかったものは、手で直す場所として残す
+   */
+  function autoFix() {
+    const d = doc(), count = () => SS.checks(d).reduce((a, w) => a + (w.kind === 'overlap' || w.kind === 'tieredge' ? w.spots.length : 1), 0);
+    const before = SS.checks(d).length, score0 = count();
+    if (!before) return;
+    pushHistory();
+    const keep = JSON.stringify(d.items);
+    S.sel.clear();
+    const st = d.stage, R = SS.render;
+    const tiers = () => d.items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46');
+    const onTier = it => tiers().some(t => SS.hinaContains(t, it.x, it.y, 14));
+    const has = k => SS.checks(d).some(w => w.kind === k);
+    for (let round = 0; round < 3; round++) {
+      // 指揮台の前：指揮台と床の人・物を、足りない分だけ奥へ
+      const pod = d.items.find(it => it.type === 'podium');
+      if (pod && has('podium')) {
+        const pb = SS.itemAABB(pod, {}), need = SS.auto.podiumGapOf(st), gap = R.frontAt(st, pod.x) - pb.y1;
+        const dy = need - gap + 2;
+        if (dy > 0) d.items.filter(it => it === pod || (it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46' && it.type !== 'text' && !onTier(it) && !onExtension(it))).forEach(it => { it.y -= dy; });
+      }
+      // 舞台奥の通路・反射板：段の上にない物を、通路の前まで出す
+      if (has('aisle') || has('shell')) {
+        const fx = st.fixtures || {}, back = SS.auto.aisleOf(st) + (fx.shell != null && isFinite(+fx.shell) ? +fx.shell : 0);
+        d.items.forEach(it => {
+          if (tiers().includes(it) || it.type === 'text' || onTier(it)) return;
+          const b = SS.itemAABB(it, {});
+          if (b.y0 < back) it.y += back - b.y0 + 2;
+        });
+      }
+      // ひな壇の縁・舞台からのはみ出し・段が通路にかかる：✨きれいに整えると同じ
+      if (has('tieredge') || has('aisle') || has('shell')) tidyAuto(undefined, true);
+      // 重なり：奏者を少しずつ離す。打楽器の楽器が重なるときは、打楽器を並べ直す
+      if (has('overlap')) {
+        G.fixOverlap(players().filter(it => !onExtension(it)), opts().seatR * 2 + 8);
+        const ov = SS.checks(d).find(w => w.kind === 'overlap');
+        if (ov && d.items.some(it => SS.auto.PERC_TYPES.has(it.type))) {
+          const place = (d.ensemble && d.ensemble.percPlace) || 'back';
+          const snap = JSON.stringify(d.items), c0 = count();
+          SS.auto.arrangePercIn(d.items, st, place, { side: !['orch', 'strings'].includes((d.ensemble || {}).type) });
+          if (count() > c0) { const back2 = JSON.parse(snap); d.items.forEach((it, i) => Object.assign(it, back2[i])); }
+        }
+      }
+      // 上がり段：高い段の横（下手・上手）か前に、上がり段を付ける
+      if (has('stairs')) {
+        SS.checks(d).filter(w => w.kind === 'stairs').forEach(w => {
+          const b = w.spots[0];
+          const cands = [
+            { x: b.x0 - 30, y: b.y1 - 55, rot: 90 }, { x: b.x1 + 30, y: b.y1 - 55, rot: -90 },
+            { x: b.x0 + 60, y: b.y1 + 30, rot: 0 }, { x: b.x1 - 60, y: b.y1 + 30, rot: 0 },
+          ];
+          const c0 = count();
+          for (const q of cands) {
+            const it = { id: newId(), type: 'stairs', x: q.x, y: q.y, rot: q.rot, w: 91, h: 60 };
+            if (!R.insideStage(st, it, 35)) continue;
+            d.items.push(it);
+            if (count() < c0) break;
+            d.items.pop();
+          }
+        });
+      }
+      if (!SS.checks(d).length) break;
+    }
+    const after = SS.checks(d);
+    if (count() > score0) {
+      const back = JSON.parse(keep);
+      d.items = back;
+      renderAll();
+      return toast('自動では直せませんでした（かえって増えるので、元のままにしました）。赤い枠の所を手で直してください');
+    }
+    renderAll();
+    $('warnList').hidden = !after.length;
+    renderWarnList();
+    const auto = d.ensemble && d.items.some(it => it.auto);
+    const out = $('warnFixOut');
+    if (!after.length) { toast(`⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）`, true); return; }
+    if (out) {
+      out.innerHTML = `<p class="small" style="margin:6px 4px">${after.length < before ? `⚠ ${before}件 → ${after.length}件になりました。残りは` : 'ここは自動では直せませんでした。'}下の一覧を押して、赤い枠の所を手で直してください。</p>` +
+        (auto ? `<button class="btn wide" id="warnReauto">↻ かんたん編成の設定で並べ直す（手で動かした所は元に戻ります）</button>` : '');
+      if ($('warnReauto')) $('warnReauto').onclick = () => { applyAuto(); const n = SS.checks(doc()).length; $('warnList').hidden = !n; renderWarnList(); toast(n ? `並べ直しました（⚠ ${n}件）` : '並べ直しました。⚠ はありません', true); };
+    }
+    if (after.length < before) toast(`⚠ ${before}件 → ${after.length}件になりました（「戻す」で元に戻せます）`, true);
   }
   $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; renderWarnList(); };
   function warnMarksSVG(k) {

@@ -462,3 +462,5 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .more-3d { font: inherit; background: none; border: none; text-align: left; border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text); font-size: 13px; }
 .more-3d:hover { background: #f4f7fb; }
 .more-3d small { display: block; font-size: 11px; color: var(--muted); }
+#warnFix { margin: 0 0 6px; }
+#warnReauto { margin: 0 0 6px; white-space: normal; font-size: 12.5px; }
