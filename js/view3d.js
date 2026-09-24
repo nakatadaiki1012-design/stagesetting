@@ -696,20 +696,36 @@ window.SS = window.SS || {};
     return g;
   }
 
-  function labelSprite(text) {
-    const cv = document.createElement('canvas');
-    cv.width = 256; cv.height = 96;
+  // パート名の札。遠くからでも読めるよう、画面の上でいつも同じ大きさ（文字の大きさは「小・中・大」から）。
+  // 札はパートの色のふち取り、白い太字に黒いふち
+  const LABEL_SIZE = { s: 0.025, m: 0.033, l: 0.046 };
+  function labelSprite(text, color) {
+    const t = String(text).slice(0, 10);
+    const cv = document.createElement('canvas'), H = 128, fs = 82;
+    const m = cv.getContext('2d');
+    m.font = `bold ${fs}px sans-serif`;
+    const W = Math.max(H * 1.3, Math.ceil(m.measureText(t).width) + 56);
+    cv.width = W; cv.height = H;
     const x = cv.getContext('2d');
-    x.fillStyle = 'rgba(20,24,32,.78)';
-    const r = 30;
-    x.beginPath(); x.moveTo(r, 8); x.arcTo(248, 8, 248, 88, r); x.arcTo(248, 88, 8, 88, r); x.arcTo(8, 88, 8, 8, r); x.arcTo(8, 8, 248, 8, r); x.fill();
-    x.fillStyle = '#fff'; x.font = 'bold 50px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(text.slice(0, 8), 128, 50);
+    const r = 34;
+    const round = (x0, y0, x1, y1) => { x.beginPath(); x.moveTo(x0 + r, y0); x.arcTo(x1, y0, x1, y1, r); x.arcTo(x1, y1, x0, y1, r); x.arcTo(x0, y1, x0, y0, r); x.arcTo(x0, y0, x1, y0, r); x.closePath(); };
+    round(4, 4, W - 4, H - 4);
+    x.fillStyle = 'rgba(16,20,28,.86)'; x.fill();
+    x.lineWidth = 8; x.strokeStyle = color || '#ffffff'; x.stroke();
+    x.font = `bold ${fs}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = 10; x.strokeStyle = '#000'; x.lineJoin = 'round'; x.strokeText(t, W / 2, H / 2 + 4);
+    x.fillStyle = '#fff'; x.fillText(t, W / 2, H / 2 + 4);
     const tex = new T.CanvasTexture(cv);
-    const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-    sp.scale.set(0.34, 0.13, 1);
+    tex.anisotropy = 4;
+    const sp = new T.Sprite(new T.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
+    sp.userData.aspect = W / H;
+    setLabelScale(sp);
     sp.renderOrder = 10;
     return sp;
+  }
+  function setLabelScale(sp) {
+    const h = LABEL_SIZE[V.labelSize] || LABEL_SIZE.m;
+    sp.scale.set(h * sp.userData.aspect, h, 1);
   }
 
   // 金属の映り込み用の環境（まわりの明るさ）
@@ -1101,11 +1117,18 @@ window.SS = window.SS || {};
       window.addEventListener('resize', resize);
       document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => setCam(b.getAttribute('data-cam')); });
       $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); if (id) setCam('seat', id); };
+      $('v3labelSize').onchange = e => {
+        V.labelSize = e.target.value;
+        try { localStorage.setItem('stagesetting.v3label', V.labelSize); } catch (err) { /* ignore */ }
+        scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) setLabelScale(o); });
+      };
       $('v3labels').onchange = e => {
         labelsOn = e.target.checked;
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) o.visible = labelsOn; });
       };
     }
+    if (!V.labelSize) { try { V.labelSize = localStorage.getItem('stagesetting.v3label') || 'm'; } catch (err) { V.labelSize = 'm'; } }
+    $('v3labelSize').value = V.labelSize;
     disposeScene();
     buildScene();
     resize();
