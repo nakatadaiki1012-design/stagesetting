@@ -113,8 +113,35 @@
     layerItems.innerHTML = SS.render.itemsSVG(d, renderOpts(), conductor(), true);
     S.warnings = SS.checks ? SS.checks(d) : [];
     renderWarnList();
+    renderCompareBar();
     renderOverlay();
     scheduleSave();
+  }
+
+  // ------------------------------------------------------------ 前の版・保存した配置図とくらべる
+  function startCompare(name, base) {
+    S.compare = { name, items: JSON.parse(JSON.stringify(base.items || [])) };
+    closeModal();
+    render();
+    fitView();
+    const df = SS.render.diffItems(S.compare.items, doc().items);
+    toast(df.added.length + df.removed.length + df.moved.length ? `「${name}」とくらべています（○＋ 増えた・□− 減った・→ 動いた）` : `「${name}」と違うところはありません`);
+  }
+  function renderCompareBar() {
+    const bar = $('cmpBar');
+    if (!S.compare) { bar.hidden = true; return; }
+    const df = SS.render.diffItems(S.compare.items, doc().items);
+    const sum = SS.render.diffSummary(df);
+    bar.hidden = false;
+    bar.innerHTML = `<span>🔍 「${SS.esc(S.compare.name)}」とくらべて：<span class="cmp-n g">○＋${df.added.length}</span> <span class="cmp-n r">□−${df.removed.length}</span> <span class="cmp-n o">→${df.moved.length}</span></span>
+      ${sum ? `<button class="btn" id="cmpNote" title="${SS.esc(sum)}">変更の内容に入れる</button>` : ''}<button class="btn" id="cmpStop">くらべるのをやめる</button>`;
+    $('cmpStop').onclick = () => { S.compare = null; render(); };
+    if ($('cmpNote')) $('cmpNote').onclick = () => {
+      pushHistory();
+      doc().info.changeNote = `第${doc().info.version || 1}版：${sum}`;
+      renderSettings(); scheduleSave(); render();
+      toast(`変更の内容を「${doc().info.changeNote}」にしました（「設定」で直せます）`, true);
+    };
   }
 
   // ------------------------------------------------------------ 安全の確認（警告の一覧と、図の上の印）
@@ -226,6 +253,7 @@
     }
     layerOverlay.innerHTML = s;
     $('layerWarn').innerHTML = warnMarksSVG(k);
+    $('layerCompare').innerHTML = S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
     $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true);
@@ -1283,7 +1311,7 @@
     const d = doc(), o = d.options;
     if (document.activeElement !== $('docTitle')) $('docTitle').value = d.title;
     if (document.activeElement !== $('docSubtitle')) $('docSubtitle').value = d.subtitle;
-    [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo']].forEach(([id, key]) => { if (document.activeElement !== $(id)) $(id).value = d.info[key] == null ? '' : d.info[key]; });
+    [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']].forEach(([id, key]) => { if (document.activeElement !== $(id)) $(id).value = d.info[key] == null ? '' : d.info[key]; });
     if (document.activeElement !== $('stageW')) $('stageW').value = d.stage.w / 100;
     if (document.activeElement !== $('stageD')) $('stageD').value = d.stage.d / 100;
     $('stageShape').value = d.stage.shape || 'rect';
@@ -1314,7 +1342,7 @@
   }
   bindSetting('docTitle', 'input', el => { doc().title = el.value; });
   bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
-  [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoAuthor', 'author'], ['infoMemo', 'memo']].forEach(([id, key]) => bindSetting(id, 'input', el => { doc().info[key] = el.value; }));
+  [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']].forEach(([id, key]) => bindSetting(id, 'input', el => { doc().info[key] = el.value; }));
   bindSetting('infoVersion', 'input', el => { const v = Math.round(+el.value); if (v >= 1) doc().info.version = v; });
   bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
@@ -2178,12 +2206,14 @@
         <button class="btn primary" id="saveHere">名前を付けて保存</button>
       </div>
       <h3 style="font-size:14px">保存した配置図</h3>
-      ${list.length ? `<ul class="saved-list">${list.map(x => `<li><span>${SS.esc(x.name)}<br><small>${fmt(x.date)}・${x.doc.items.filter(i => i.type === 'player').length}人</small></span><button class="btn" data-load="${x.id}">開く</button><button class="btn danger" data-del="${x.id}">削除</button></li>`).join('')}</ul>` : '<p class="hint">まだありません。</p>'}
+      ${list.length ? `<ul class="saved-list">${list.map(x => `<li><span>${SS.esc(x.name)}<br><small>${fmt(x.date)}・${x.doc.items.filter(i => i.type === 'player').length}人${x.doc.info && x.doc.info.version ? `・第${x.doc.info.version}版` : ''}</small>${(x.versions || []).length ? `<span class="ver">前の版：${x.versions.map(v2 => `<button class="btn" data-cmpv="${x.id}|${v2.version}" title="${fmt(v2.date)}">第${v2.version}版とくらべる</button>`).join('')}</span>` : ''}</span><button class="btn" data-load="${x.id}">開く</button><button class="btn" data-cmp="${x.id}">くらべる</button><button class="btn danger" data-del="${x.id}">削除</button></li>`).join('')}</ul>
+      <p class="hint small">「くらべる」を押すと、いまの配置図との違い（○＋ 増えた・□− 減った・→ 動いた）を図に出します。版を上げて保存すると、前の版もここに残ります。</p>` : '<p class="hint">まだありません。</p>'}
       <h3 style="font-size:14px">ファイル</h3>
       <p class="hint">ファイルにしておくと、ほかのパソコンやスマホでも開けます。</p>
       <div class="btn-row">
         <button class="btn" id="saveFile">⬇ ファイルに保存</button>
         <label class="btn filebtn">⬆ ファイルを開く<input type="file" id="openFile" accept=".json,application/json" hidden></label>
+        <label class="btn filebtn">🔍 ファイルとくらべる<input type="file" id="cmpFile" accept=".json,application/json" hidden></label>
       </div>
       <hr>
       <button class="btn danger" id="newDoc">新しく白紙から作る</button>
@@ -2192,8 +2222,9 @@
       const name = $('saveName').value.trim() || '配置図';
       const v = doc().info.version || 1;
       const save = bump => {
+        const prev = bump ? JSON.parse(JSON.stringify(doc())) : null;
         if (bump) { pushHistory(); doc().info.version = v + 1; renderSettings(); scheduleSave(); }
-        try { SS.render.saveToList(name, doc()); toast(`「${name}」を保存しました（第${doc().info.version}版）`); closeModal(); } catch (e) { toast('保存できませんでした（容量がいっぱいです）'); }
+        try { SS.render.saveToList(name, doc(), prev); toast(`「${name}」を保存しました（第${doc().info.version}版）`); closeModal(); } catch (e) { toast('保存できませんでした（容量がいっぱいです）'); }
       };
       // 名前を付けて保存するときは、版を1つ上げるか聞く
       openModal(`<h2>版を上げますか？</h2>
@@ -2216,6 +2247,23 @@
       SS.render.download(blob, SS.render.safeName(doc().title || '配置図') + '.stage.json');
     };
     $('openFile').onchange = e => { if (e.target.files[0]) loadJSONFile(e.target.files[0]); };
+    document.querySelectorAll('[data-cmp]').forEach(b => {
+      b.onclick = () => { const x = SS.render.savedList().find(s2 => s2.id === b.getAttribute('data-cmp')); if (x) startCompare(x.name + (x.doc.info && x.doc.info.version ? `（第${x.doc.info.version}版）` : ''), x.doc); };
+    });
+    document.querySelectorAll('[data-cmpv]').forEach(b => {
+      b.onclick = () => {
+        const [id, v] = b.getAttribute('data-cmpv').split('|');
+        const x = SS.render.savedList().find(s2 => s2.id === id), ver = x && (x.versions || []).find(q => String(q.version) === v);
+        if (ver) startCompare(`${x.name}（第${ver.version}版）`, ver.doc);
+      };
+    });
+    $('cmpFile').onchange = e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { try { const d = JSON.parse(r.result); if (!d || !Array.isArray(d.items)) throw new Error(); startCompare(f.name.replace(/\.stage\.json$|\.json$/, ''), d); } catch (err) { toast('このファイルとはくらべられませんでした'); } };
+      r.readAsText(f);
+    };
     $('newDoc').onclick = () => { closeModal(); loadTemplate(SS.TEMPLATES.find(t => t.id === 'blank')); };
   };
 

@@ -450,6 +450,92 @@ window.SS = window.SS || {};
     return { groups: groups.filter(x => x.parts.length), total };
   };
 
+  // ---------------------------------------------------------------- 前の版とくらべる
+  /**
+   * base（前の版の部品）と cur（いまの部品）をくらべる。
+   * 同じ id どうし → 残りは「種類＋パート名」が同じもののうち近いものどうしを組にする。
+   * 戻り値 { added:[it], removed:[it], moved:[{ it, from }] }
+   */
+  R.diffItems = function (base, cur) {
+    const skip = it => it.type === 'text';
+    const B = base.filter(it => !skip(it)), C = cur.filter(it => !skip(it));
+    const pairs = [], usedB = new Set(), usedC = new Set();
+    const bById = new Map(B.filter(it => it.id).map(it => [it.id, it]));
+    C.forEach(c => { const b = c.id && bById.get(c.id); if (b && b.type === c.type && !usedB.has(b)) { pairs.push([b, c]); usedB.add(b); usedC.add(c); } });
+    const key = it => it.type + '|' + (it.type === 'player' ? (it.label || '').trim() : it.type === 'hina' ? '' : it.label || '');
+    const groups = new Map();
+    const add = (it, side) => { const k2 = key(it); if (!groups.has(k2)) groups.set(k2, { b: [], c: [] }); groups.get(k2)[side].push(it); };
+    B.filter(it => !usedB.has(it)).forEach(it => add(it, 'b'));
+    C.filter(it => !usedC.has(it)).forEach(it => add(it, 'c'));
+    groups.forEach(g => {
+      const cand = [];
+      g.b.forEach(b => g.c.forEach(c => cand.push([Math.hypot(b.x - c.x, b.y - c.y), b, c])));
+      cand.sort((a, b) => a[0] - b[0]);
+      cand.forEach(([, b, c]) => { if (!usedB.has(b) && !usedC.has(c)) { pairs.push([b, c]); usedB.add(b); usedC.add(c); } });
+    });
+    const moved = pairs.filter(([b, c]) => Math.hypot(b.x - c.x, b.y - c.y) > 15 || Math.abs((((c.rot || 0) - (b.rot || 0)) % 360 + 540) % 360 - 180) > 10 || (b.w && c.w && (Math.abs(b.w - c.w) > 2 || Math.abs(b.h - c.h) > 2)) || (b.hgt || 0) !== (c.hgt || 0)).map(([b, c]) => ({ it: c, from: b }));
+    return { added: C.filter(it => !usedC.has(it)), removed: B.filter(it => !usedB.has(it)), moved };
+  };
+  // 違いのまとめ（例：「Tp +1、Cl1 −1、5か所移動」）
+  R.diffSummary = function (df) {
+    const name = it => (it.type === 'player' ? (it.label || '奏者') : (SS.CATALOG[it.type] || {}).name || it.type);
+    const cnt = {};
+    df.added.forEach(it => { cnt[name(it)] = (cnt[name(it)] || 0) + 1; });
+    df.removed.forEach(it => { cnt[name(it)] = (cnt[name(it)] || 0) - 1; });
+    const parts = Object.keys(cnt).filter(k2 => cnt[k2]).map(k2 => `${k2} ${cnt[k2] > 0 ? '+' : '−'}${Math.abs(cnt[k2])}`);
+    if (df.moved.length) parts.push(`${df.moved.length}か所移動`);
+    return parts.join('、');
+  };
+  // 違いの印。色だけでなく形でも分かるように：増えた＝○と＋、減った＝点線の□と−（うすく元の形）、動いた＝矢印
+  R.compareSVG = function (df, k, opts) {
+    const box = it => { const b = bboxOf(it); return b; };
+    let s = '<g class="compare" pointer-events="none">';
+    const badge = (x, y, sym, col, square) => {
+      const r = 9 / k;
+      return (square ? `<rect x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" fill="${col}" stroke="#fff" stroke-width="${1.5 / k}"/>` : `<circle cx="${x}" cy="${y}" r="${r}" fill="${col}" stroke="#fff" stroke-width="${1.5 / k}"/>`) +
+        `<text x="${x}" y="${y}" dy="0.36em" text-anchor="middle" font-size="${14 / k}" font-weight="700" fill="#fff">${sym}</text>`;
+    };
+    df.removed.forEach(it => {
+      const d = SS.drawItem(it, Object.assign({}, opts || {}, { deferLabels: false }));
+      const b = box(it), p = 6;
+      s += `<g opacity=".28">${d.body}</g>`;
+      s += `<rect x="${b.x0 - p}" y="${b.y0 - p}" width="${b.x1 - b.x0 + p * 2}" height="${b.y1 - b.y0 + p * 2}" fill="none" stroke="#c92a2a" stroke-width="${2.2 / k}" stroke-dasharray="${6 / k} ${4 / k}"/>`;
+      s += badge(b.x0 - p, b.y0 - p, '−', '#c92a2a', true);
+    });
+    df.moved.forEach(({ it, from }) => {
+      const L = Math.hypot(it.x - from.x, it.y - from.y);
+      if (L > 15) {
+        const ang = Math.atan2(it.y - from.y, it.x - from.x), ah = 10 / k;
+        const ex = it.x - Math.cos(ang) * Math.min(L * 0.3, 22), ey = it.y - Math.sin(ang) * Math.min(L * 0.3, 22);
+        s += `<circle cx="${from.x}" cy="${from.y}" r="${5 / k}" fill="#fff" stroke="#d9480f" stroke-width="${2 / k}"/>`;
+        s += `<path d="M${from.x} ${from.y}L${ex} ${ey}M${ex - Math.cos(ang - 0.5) * ah} ${ey - Math.sin(ang - 0.5) * ah}L${ex} ${ey}L${ex - Math.cos(ang + 0.5) * ah} ${ey - Math.sin(ang + 0.5) * ah}" fill="none" stroke="#d9480f" stroke-width="${2.4 / k}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      } else {
+        const b = box(it);
+        s += `<rect x="${b.x0 - 5}" y="${b.y0 - 5}" width="${b.x1 - b.x0 + 10}" height="${b.y1 - b.y0 + 10}" fill="none" stroke="#d9480f" stroke-width="${2 / k}" stroke-dasharray="${2 / k} ${3 / k}"/>`;
+        s += `<text x="${b.x1 + 4 / k}" y="${b.y0}" font-size="${12 / k}" font-weight="700" fill="#d9480f">↻</text>`;
+      }
+    });
+    df.added.forEach(it => {
+      const b = box(it);
+      if (it.type === 'cable') {
+        // ケーブルは線そのものが印。始まり（マイク側）に＋
+        const q = (it.pts || [[0, 0]])[0], sx = it.x + q[0], sy = it.y + q[1];
+        // つながっているマイクも増えたときは、マイクの印だけにする（印が重ならないように）
+        if (df.added.some(o => o !== it && o.type !== 'cable' && (b2 => sx >= b2.x0 - 10 && sx <= b2.x1 + 10 && sy >= b2.y0 - 10 && sy <= b2.y1 + 10)(box(o)))) return;
+        s += badge(it.x + q[0] + 12 / k, it.y + q[1] - 12 / k, '＋', '#1e8e4e');
+      } else if (Math.max(b.x1 - b.x0, b.y1 - b.y0) > 130) {
+        // 大きい物（ひな壇など）は外枠の四角
+        s += `<rect x="${b.x0 - 6}" y="${b.y0 - 6}" width="${b.x1 - b.x0 + 12}" height="${b.y1 - b.y0 + 12}" rx="${8 / k}" fill="none" stroke="#1e8e4e" stroke-width="${2.6 / k}"/>`;
+        s += badge(b.x1 + 6, b.y0 - 6, '＋', '#1e8e4e');
+      } else {
+        const r = Math.max(b.x1 - b.x0, b.y1 - b.y0) / 2 + 8;
+        s += `<circle cx="${it.x}" cy="${it.y}" r="${r}" fill="none" stroke="#1e8e4e" stroke-width="${2.6 / k}"/>`;
+        s += badge(it.x + r * 0.71, it.y - r * 0.71, '＋', '#1e8e4e');
+      }
+    });
+    return s + '</g>';
+  };
+
   // ---------------------------------------------------------------- 図面（用紙・縮尺・情報欄）
   R.PAPERS = { A4: [297, 210], A3: [420, 297] }; // 横向きの mm
   R.SCALES = [20, 30, 50, 75, 100, 150, 200, 250, 300, 400, 500];
@@ -478,6 +564,7 @@ window.SS = window.SS || {};
     let s = R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
     if (ex.underlay && doc.underlay) s += R.underlaySVG(doc.underlay, { id: 'ex' });
     s += R.itemsSVG(doc, opts, conductor, false);
+    if (ex.compare) s += R.compareSVG(R.diffItems(ex.compare.items, doc.items), k, opts);
     if (opts.dims) s += R.dimsSVG(doc, k, null);
     s += R.marksSVG(doc, k, opts.dims);
     return s;
@@ -537,8 +624,9 @@ window.SS = window.SS || {};
       [['会場', info.venue || doc.hall || ''], ['日付', fmtDate(info.date)]],
       [['版', info.version ? `第${info.version}版` : ''], ['作成', info.author || '']],
       [['縮尺', ''], ['用紙', `${pp.size} ${pp.orient === 'portrait' ? '縦' : '横'}`]],
-      [['メモ', [info.memo, info.changeNote].filter(Boolean).join('　')]],
+      [['メモ', info.memo || '']],
     ];
+    if (info.changeNote) rows.push([['変更', info.changeNote]]);
     const TBH = rows.length * rowH;
     let legendItems = [];
     if (assembly) {
@@ -606,7 +694,18 @@ window.SS = window.SS || {};
     out += `<g font-size="2.6" fill="#111">`;
     for (let i = 0; i < 4; i++) out += `<rect x="${sbx + (Lmm / 4) * i}" y="${sby - 1.6}" width="${Lmm / 4}" height="1.6" fill="${i % 2 ? '#fff' : '#111'}" stroke="#111" stroke-width="0.25"/>`;
     out += `<text x="${sbx}" y="${sby - 2.6}">0</text><text x="${sbx + Lmm / 2}" y="${sby - 2.6}" text-anchor="middle">${L / 200}m</text><text x="${sbx + Lmm}" y="${sby - 2.6}" text-anchor="middle">${L / 100}m</text>`;
-    out += `<text x="${sbx + Lmm + 3}" y="${sby}" >縮尺 ${scaleText}</text></g>`;
+    out += `<text x="${sbx + Lmm + 3}" y="${sby}" >縮尺 ${scaleText}</text>`;
+    if (ex.compare && !assembly) {
+      // 違いの印の見方（白黒でも分かるよう形で）
+      const lx = sbx + Lmm + 44, ly = sby - 0.6, r = 1.3, mono = !!opts.mono;
+      const cG = mono ? '#fff' : '#1e8e4e', cR = mono ? '#fff' : '#c92a2a', cO = mono ? '#111' : '#d9480f', tc = mono ? '#111' : '#fff', sk = mono ? ' stroke="#111" stroke-width="0.3"' : '';
+      out += `<text x="${lx}" y="${sby}" font-weight="700">${SS.esc(ex.compare.name || '前の版')}とくらべて：</text>`;
+      const x1 = lx + 3 + (SS.esc(ex.compare.name || '前の版').length + 6) * 2.6;
+      out += `<circle cx="${x1}" cy="${ly}" r="${r}" fill="${cG}"${sk}/><text x="${x1}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">＋</text><text x="${x1 + 2.2}" y="${sby}">増えた</text>`;
+      out += `<rect x="${x1 + 13 - r}" y="${ly - r}" width="${r * 2}" height="${r * 2}" fill="${cR}"${sk}/><text x="${x1 + 13}" y="${ly}" dy="0.36em" text-anchor="middle" font-size="2" fill="${tc}" font-weight="700">−</text><text x="${x1 + 15.2}" y="${sby}">減った</text>`;
+      out += `<path d="M${x1 + 25} ${ly}h4.5M${x1 + 28} ${ly - 1.2}L${x1 + 29.5} ${ly}L${x1 + 28} ${ly + 1.2}" fill="none" stroke="${cO}" stroke-width="0.5"/><text x="${x1 + 31}" y="${sby}">動いた</text>`;
+    }
+    out += '</g>';
     // 情報欄（右下）
     const tx = PW - M - TBW, ty = PH - M - TBH;
     out += `<g font-size="3" fill="#111"><rect x="${tx}" y="${ty}" width="${TBW}" height="${TBH}" fill="#fff" stroke="#111" stroke-width="0.45"/>`;
@@ -769,13 +868,20 @@ window.SS = window.SS || {};
   R.savedList = function () {
     try { return JSON.parse(localStorage.getItem(LIST_KEY) || '[]'); } catch (e) { return []; }
   };
-  R.saveToList = function (name, doc) {
+  // prev：版を上げたときの、上げる前の配置図（前の版としてとっておき、あとでくらべられる。10版まで）
+  R.saveToList = function (name, doc, prev) {
     const list = R.savedList();
-    const slim = JSON.parse(JSON.stringify(doc));
-    delete slim.underlay;
-    const existing = list.find(x => x.name === name);
+    const slimOf = d => { const x = JSON.parse(JSON.stringify(d)); delete x.underlay; return x; };
+    const slim = slimOf(doc);
+    let existing = list.find(x => x.name === name);
     if (existing) { existing.doc = slim; existing.date = Date.now(); }
-    else list.unshift({ id: Date.now().toString(36), name, date: Date.now(), doc: slim });
+    else { existing = { id: Date.now().toString(36), name, date: Date.now(), doc: slim }; list.unshift(existing); }
+    if (prev) {
+      const v = (prev.info && prev.info.version) || 1;
+      existing.versions = (existing.versions || []).filter(x => x.version !== v);
+      existing.versions.unshift({ version: v, date: Date.now(), doc: slimOf(prev) });
+      existing.versions = existing.versions.slice(0, 10);
+    }
     localStorage.setItem(LIST_KEY, JSON.stringify(list));
   };
   R.deleteFromList = function (id) {
