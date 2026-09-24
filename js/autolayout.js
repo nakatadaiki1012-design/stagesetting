@@ -119,9 +119,10 @@ window.SS = window.SS || {};
     const lx = dx * Math.cos(t) - dy * Math.sin(t), ly = dx * Math.sin(t) + dy * Math.cos(t);
     const a = SS.hinaArc(it);
     if (!a) return Math.abs(lx) <= (it.w || 728) / 2 + m && Math.abs(ly) <= (it.h || 182) / 2 + m;
-    // 扇形の外形の中か（m の余裕は、中心から外へ／内へ・左右へ広げて近似）
-    if (inPoly(lx, ly, SS.hinaOutline(it))) return true;
-    if (!m) return false;
+    // 扇形の外形の中か（m の余裕は、中心から外へ／内へ・左右へ広げて近似。m がマイナスなら縁から m だけ内側）
+    const inside = inPoly(lx, ly, SS.hinaOutline(it));
+    if (inside && m >= 0) return true;
+    if (!m || (m < 0 && !inside)) return false;
     const r = Math.hypot(lx, a.cy - ly), ang = Math.atan2(lx, a.cy - ly);
     return r >= a.R - m && r <= a.R + a.h + m && Math.abs(ang) <= a.th / 2 + m / r;
   };
@@ -188,6 +189,9 @@ window.SS = window.SS || {};
 
   // 舞台奥の通路（反射板と、ひな壇・楽器のあいだに空ける幅 cm）。ステージの設定で変えられる
   A.DEFAULT_AISLE = 60;
+  A.DEFAULT_PODIUM_GAP = 100;
+  A.podiumGapOf = stage => (stage && stage.podiumGap != null && isFinite(+stage.podiumGap) ? Math.max(0, +stage.podiumGap) : A.DEFAULT_PODIUM_GAP);
+  A.podiumYOf = stage => Math.round(R().frontAt(stage, stage.w / 2) - A.podiumGapOf(stage) - 38);
   A.aisleOf = stage => (stage && stage.backAisle != null && isFinite(+stage.backAisle) ? Math.max(0, +stage.backAisle) : A.DEFAULT_AISLE);
   // 反射板の位置（ホールの設備で入れたとき）から通路を取る。図の奥のふちから、段・楽器を置いてよい所までの距離
   const backLimit = stage => A.aisleOf(stage) + (stage && stage.fixtures && stage.fixtures.shell != null && isFinite(+stage.fixtures.shell) ? Math.max(0, +stage.fixtures.shell) : 0);
@@ -198,7 +202,7 @@ window.SS = window.SS || {};
     const counts = {};
     e.parts.forEach(([k, n]) => { counts[k] = n; });
     return {
-      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: type === 'orch' ? 'top' : 'back', lowOuter: type === 'band', layout: 'std',
+      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: type === 'orch' ? 'timpTop' : 'back', lowOuter: type === 'band', layout: 'std',
       hina: type === 'orch' ? { steps: 3, panel: '46', orient: 'h', deep: 1 } : type === 'strings' ? { steps: 0, panel: '36', orient: 'h', deep: 2 } : { steps: 2, panel: '36', orient: 'h', deep: 2 },
     };
   };
@@ -346,7 +350,12 @@ window.SS = window.SS || {};
   }
 
   // ---------------------------------------------------------------- 共通の部品
-  const podiumY = stage => stage.d - 90;
+  // 指揮台の位置：指揮台の前のふちから舞台の縁まで podiumGap（はじめは1m）空ける。指揮台の奥行は76cm
+  const podiumY = stage => A.podiumYOf(stage);
+  // ひな壇の前の列：段の前のふちから奏者（椅子の真ん中）まで。譜面台（約64cm前）も段の上に乗るように
+  const ROW_FRONT = 76;
+  // その列の楽器の譜面台（弦バスは約78cm前）まで段に乗るよう、列ごとに前のふちからの距離を決める
+  const rowFront = labels => Math.max(ROW_FRONT, ...labels.map(l => (typeof l === 'string' && SS.standOffset ? SS.standOffset({ label: l }, { figure: true })[1] + 14 : 0)));
   const inside = (stage, it, m) => R().insideStage(stage, it, m);
 
   // 1列をまっすぐに並べる（ひな壇の上）。幅に入らなければ間隔を詰める
@@ -394,6 +403,11 @@ window.SS = window.SS || {};
   function splitPerc(list, place) {
     const res = { top: [], left: [], back: [] };
     if (!list.length) return res;
+    if (place === 'timpTop') {
+      // ティンパニ（と Timp の人）は最上段の中央、ほかの打楽器は下手
+      list.forEach(it => ((TIMP.includes(it.type) || (it.type === 'player' && /^tim/i.test(it.label || ''))) ? res.top : res.left).push(it));
+      return res;
+    }
     if (place !== 'both') { res[place === 'top' ? 'top' : place === 'left' ? 'left' : 'back'] = list.slice(); return res; }
     const inst = list.filter(it => it.type !== 'player');
     const pl = list.filter(it => it.type === 'player');
@@ -535,7 +549,7 @@ window.SS = window.SS || {};
     const std = [21.2, 42.4, 63.6, 84.8];
     rows.forEach((r, i) => {
       const d = r.need ? r.need(W) : r.depth;
-      if (r.hgt) out.tiers.push({ type: 'hina', x: cx, y: yFront - d / 2, w: W, h: d, hgt: r.hgt, panel: H.panel || '36', orient: H.orient || 'h', step: i + 1, rot: 0 });
+      if (r.hgt) out.tiers.push({ type: 'hina', x: cx, y: yFront - d / 2, w: W, h: d, hgt: r.hgt, panel: r.panel || H.panel || '36', orient: r.orient || H.orient || 'h', step: i + 1, rot: 0 });
       out.items.push(...r.place(cx, yFront, d, W));
       yFront -= d;
     });
@@ -642,10 +656,10 @@ window.SS = window.SS || {};
           const mark = (list, off) => list.map((p, i) => { const l = row[i + off]; if (typeof l === 'object') { p.pair = l.pair; p.straight = true; } return p; });
           if (row.length > cap(W) && !hasBox) {
             const half = Math.ceil(row.length / 2);
-            return mark(lineRow(labels.slice(0, half), yFront - 55, cx, sp, W - 70), 0)
-              .concat(mark(lineRow(labels.slice(half), yFront - 55 - 100, cx, sp, W - 70), half));
+            return mark(lineRow(labels.slice(0, half), yFront - ROW_FRONT, cx, sp, W - 70), 0)
+              .concat(mark(lineRow(labels.slice(half), yFront - ROW_FRONT - 100, cx, sp, W - 70), half));
           }
-          const yRow = hasBox ? yFront - 62 : yFront - d / 2 + 12;
+          const yRow = hasBox ? yFront - ROW_FRONT : yFront - Math.max(rowFront(labels), d / 2 - 12);
           return mark(lineRow(labels, yRow, cx, sp, W - 70), 0);
         },
       };
@@ -663,9 +677,9 @@ window.SS = window.SS || {};
     // 低音グループ：いちばん外側の床の弧の、さらに外側（上手側）に並べる
     if (lowLabels.length) {
       // 1本の弧で置けなければ、2本の弧（内側：B.Cl・Euph／外側：Tuba・弦バス）にして短くする
-      const arc = (labels, Rl) => {
+      const arc = (labels, Rl, t0) => {
         const pts = [];
-        let t = 1.48;
+        let t = t0 || 1.48;
         for (let i = labels.length - 1; i >= 0; i--) {
           const p = G().fromPolar(Rl, t, c);
           pts.unshift({ type: 'player', label: labels[i], x: p.x, y: p.y, rot: G().faceAngle(p, c) });
@@ -673,14 +687,18 @@ window.SS = window.SS || {};
         }
         return pts;
       };
+      // 低音どうし（椅子と、前にいる人の譜面台）が重ならないかも ⚠ 確認と同じ見方で調べる
+      const clashes = pts => SS.checks ? SS.checks({ stage, items: pts.concat(items.filter(o => o.type === 'player' && pts.some(p => Math.hypot(o.x - p.x, o.y - p.y) < 160))) }).some(w => w.kind === 'overlap') : false;
       const blocked = pts => pts.some(p => !inside(stage, p, 30) || tp.tiers.some(h => Math.abs(p.x - h.x) < h.w / 2 + 40 && Math.abs(p.y - h.y) < h.h / 2 + 40) ||
         tp.items.some(o => o.type !== 'player' && Math.hypot(o.x - p.x, o.y - p.y) < 90) ||
-        items.some(o => o.type === 'player' && Math.hypot(o.x - p.x, o.y - p.y) < 60));
+        items.some(o => o.type === 'player' && Math.hypot(o.x - p.x, o.y - p.y) < 60)) || clashes(pts);
       const Rl = maxR + gap;
       let pts = arc(lowLabels, Rl);
       if (blocked(pts) && lowLabels.length > 2) {
-        const k = Math.ceil(lowLabels.length / 2);
-        pts = arc(lowLabels.slice(0, k), Rl - gap * 0.15).concat(arc(lowLabels.slice(k), Rl + gap * 0.75));
+        // 2本の弧：外側の弧は半人分ずらして、前の人の椅子の間に譜面台がくるように
+        const k = Math.ceil(lowLabels.length / 2), Ri = Rl - gap * 0.15, Ro = Rl + gap * 0.75;
+        const tries = [1.48 - (sp * 0.5) / Ro, 1.48 + (sp * 0.5) / Ro, 1.48];
+        for (const t0 of tries) { pts = arc(lowLabels.slice(0, k), Ri).concat(arc(lowLabels.slice(k), Ro, t0)); if (!blocked(pts)) break; }
       }
       // ひな壇や打楽器とぶつかる・舞台からはみ出すときは、ふつうの列に戻す
       if (blocked(pts)) return band(st, stage, tune, true);
@@ -741,8 +759,8 @@ window.SS = window.SS || {};
   // ---------------------------------------------------------------- オーケストラ・弦楽
   // 1列 m 人を、2人ずつの組（譜面台1本）に。組の2人は少し近く、組と組のあいだは少し広く（平均は sp のまま）
   // 戻り値 [[列の真ん中からの距離, 組の番号(1〜)], …]
-  function deskRow(m, sp) {
-    const g1 = Math.min(sp, 64), g2 = 2 * sp - g1, out = [];
+  function deskRow(m, sp, pair) {
+    const g1 = Math.min(sp, pair || 64), g2 = 2 * sp - g1, out = [];
     let x = 0;
     for (let i = 0; i < m; i++) { if (i) x += i % 2 ? g1 : g2; out.push([x, Math.floor(i / 2) + 1]); }
     return out.map(([v, d]) => [v - x / 2, d]);
@@ -754,48 +772,72 @@ window.SS = window.SS || {};
     const anti = st.antiphonal;
     const order = anti ? ['Vn1', 'Vc', 'Va', 'Vn2'] : ['Vn1', 'Vn2', 'Va', 'Vc'];
     const gapDeg = 3;
-    const avail = 180 - gapDeg * (order.length - 1);
+    // 扇を左右に広げるとき（tune.span が1より大きい）は、180°より少し広く使う
+    const fan = 180 * Math.max(1, tune.span);
+    const avail = fan - gapDeg * (order.length - 1);
     const sumN = order.reduce((a, kk) => a + (n[kk] || 0), 0) || 1;
-    let t = -90;
+    let t = -fan / 2;
     const items = [];
     let maxR = 200;
     const secRange = {}, secR = {};
     const rad = d => (d * Math.PI) / 180;
     const spS = tune.spacing, gapR = Math.max(100, tune.gap * 0.9);
-    // どのパートも同じ半径の列（同心円）に座り、扇の角度は人数に比例。列の中は等間隔で、扇の真ん中にそろえる
-    order.forEach(k => {
-      const cnt = n[k] || 0;
-      if (!cnt) return;
-      const span = Math.max(16, (avail * cnt) / sumN);
-      const mid = rad(t + span / 2);
-      let left = cnt, row = 0, desk = 0;
-      while (left > 0 && row < 14) {
-        const R = tune.r0 - 20 + row * gapR;
-        let cap = Math.max(1, Math.floor((rad(span - 2) * R) / spS) + 1);
-        // 2人で1本の譜面台（プルト）なので、列の人数はなるべく偶数に
-        if (cap > 1 && cap % 2 && left > cap) cap--;
-        const m = Math.min(left, cap);
-        deskRow(m, spS).forEach(([off, dn]) => {
-          const p = G().fromPolar(R, mid + off / R, c);
-          items.push({ type: 'player', label: k, x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `${k}-${desk + dn}` });
-        });
-        desk += Math.ceil(m / 2);
-        maxR = Math.max(maxR, R);
-        secR[k] = R;
-        left -= m; row++;
+    // 同心円の列（リング）ごとに、扇の左から パートの順（例：Vn1・Vn2・Va・Vc）に座る。
+    // 各リングの席は、残りの人数に比例して各パートに分け（2人で1本の譜面台なので、なるべく偶数）、
+    // パートとパートのあいだは1人分＋20cmあける。前のリングから順に埋めるので、パートは扇形のかたまりになる
+    const secs = order.filter(k => (n[k] || 0) > 0).map(k => ({ k, left: n[k], desk: 0, a0: Infinity, a1: -Infinity }));
+    const SEC_GAP = spS + 20;
+    for (let ring = 0; ring < 14 && secs.some(q => q.left > 0); ring++) {
+      const R = tune.r0 + (0) + ring * gapR;
+      const act = secs.filter(q => q.left > 0);
+      const total = act.reduce((a, q) => a + q.left, 0);
+      const cap = Math.min(total, Math.max(act.length, Math.floor((rad(fan) * R - SEC_GAP * (act.length - 1)) / spS) + act.length));
+      // 比例で分ける → 偶数にそろえる → 合計を cap に合わせる
+      let alloc = act.map(q => Math.max(1, Math.min(q.left, Math.round((cap * q.left) / total))));
+      alloc = alloc.map((m, i) => (m > 1 && m % 2 && m < act[i].left ? m - 1 : m));
+      const sum = () => alloc.reduce((a, v) => a + v, 0);
+      while (sum() > cap) { const i = alloc.indexOf(Math.max(...alloc)); alloc[i]--; }
+      for (let guard = 0; sum() < cap && guard < 40; guard++) {
+        // 残りの多いパートに、2人ずつ（入らなければ1人）足す
+        let bi = -1;
+        act.forEach((q, i) => { if (alloc[i] < q.left && (bi < 0 || q.left - alloc[i] > act[bi].left - alloc[bi])) bi = i; });
+        if (bi < 0) break;
+        alloc[bi] += Math.min(cap - sum() >= 2 && act[bi].left - alloc[bi] >= 2 ? 2 : 1, act[bi].left - alloc[bi]);
       }
-      secRange[k] = [t, t + span];
-      t += span + gapDeg;
-    });
+      const len = alloc.reduce((a, m) => a + (m - 1) * spS, 0) + SEC_GAP * (act.length - 1);
+      let s0 = -len / 2;
+      act.forEach((q, i) => {
+        const m = alloc[i];
+        if (!m) return;
+        const mid = s0 + ((m - 1) * spS) / 2;
+        deskRow(m, spS).forEach(([off, dn]) => {
+          const a = (mid + off) / R;
+          const p = G().fromPolar(R, a, c);
+          items.push({ type: 'player', label: q.k, x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `${q.k}-${q.desk + dn}` });
+          q.a0 = Math.min(q.a0, (a * 180) / Math.PI); q.a1 = Math.max(q.a1, (a * 180) / Math.PI);
+        });
+        q.desk += Math.ceil(m / 2);
+        q.left -= m;
+        secR[q.k] = R;
+        maxR = Math.max(maxR, R);
+        s0 += (m - 1) * spS + SEC_GAP;
+      });
+    }
+    secs.forEach(q => { secRange[q.k] = [q.a0, q.a1]; });
+    void t; void avail; void sumN;
     if (n.Cb) {
       // コントラバスはチェロの後ろ（上手寄り）に、90cm 間隔で
       const vr = secRange.Vc || [60, 88];
       const midD = Math.min((vr[0] + vr[1]) / 2 - 4, 66);
-      let left = n.Cb, R = (secR.Vc || maxR) + gapR, cbDesk = 0;
+      // その方向（チェロの角度の範囲の少し外まで）で、いちばん後ろにいる弦の人より後ろに
+      const inDir = it => { const a = (Math.atan2(it.x - c.x, c.y - it.y) * 180) / Math.PI; return a >= vr[0] - 12 && a <= vr[1] + 12; };
+      const behind = Math.max(secR.Vc || 0, ...items.filter(inDir).map(it => Math.hypot(it.x - c.x, it.y - c.y)));
+      // コントラバスの譜面台は約78cm前にあるので、前の列（チェロ）から25cm多めに離す
+      let left = n.Cb, R = (behind || maxR) + gapR + 25, cbDesk = 0;
       while (left > 0) {
-        const cap = Math.max(1, Math.floor((rad(vr[1] - vr[0] + 10) * R) / 90) + 1);
+        const cap = Math.max(1, Math.floor((rad(vr[1] - vr[0] + 10) * R) / 95) + 1);
         const m = Math.min(left, cap);
-        deskRow(m, 90).forEach(([off, dn]) => {
+        deskRow(m, 95, 84).forEach(([off, dn]) => {
           const p = G().fromPolar(R, rad(midD) + off / R, c);
           items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `Cb-${cbDesk + dn}` });
         });
@@ -817,32 +859,10 @@ window.SS = window.SS || {};
     const specs = rowsW.map((row, i) => ({
       depth: tierD, want: row.length * sp + 60,
       hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[i]) : 0,
-      place: (cx, yFront, d, W) => lineRow(row, yFront - d / 2 + 8, cx, sp, W - 70),
+      place: (cx, yFront, d, W) => lineRow(row, yFront - Math.max(rowFront(row), d / 2 - 8), cx, sp, W - 70),
     }));
     const hrN = n.Hr || 0;
     const brass = [...rep('Tp', n.Tp), ...rep('Tb', n.Tb), ...rep('Tuba', n.Tuba)];
-    if (hrN || brass.length) {
-      const i = specs.length;
-      const box = st.hornBox && hrN >= 3;
-      const hrSlots = box ? Math.ceil(hrN / 2) : hrN;
-      const wh = hrSlots * sp, wb = brass.length * sp, mid = 90;
-      specs.push({
-        depth: box ? Math.max(tierD, 182 + 30) : tierD,
-        want: wh + mid + wb + 60,
-        hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[Math.min(i, 3)]) : 0,
-        place: (cx, yFront, d) => {
-          const out = [];
-          const yRow = box ? yFront - 55 : yFront - d / 2 + 8;
-          const x0 = cx - (wh + mid + wb) / 2;
-          for (let k = 0; k < hrSlots; k++) {
-            out.push({ type: 'player', label: 'Hr', x: x0 + sp / 2 + k * sp, y: yRow, rot: 0 });
-            if (box && k < Math.floor(hrN / 2)) out.push({ type: 'player', label: 'Hr', x: x0 + sp / 2 + k * sp, y: yRow - 80, rot: 0 });
-          }
-          brass.forEach((l, k) => out.push({ type: 'player', label: l, x: x0 + wh + mid + sp / 2 + k * sp, y: yRow, rot: 0 }));
-          return out;
-        },
-      });
-    }
     // ティンパニ・打楽器
     const P = n.Perc || 0;
     let perc = [];
@@ -850,7 +870,52 @@ window.SS = window.SS || {};
       const stations = st.percInst ? PERC_STATIONS_ORCH.slice(0, Math.min(P, 7)) : [];
       perc = percItems(n.Timp ? 4 : 0, stations, [...rep('Timp', n.Timp ? 1 : 0), ...rep('Perc', P)]);
     }
-    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, specs, H, perc, st.percPlace || 'back', { c, R: maxR });
+    // 「ティンパニは最上段の中央」：いちばん高い段（金管の段）の真ん中、Hr と Tp のあいだの奥に置く。ほかの打楽器は下手
+    const timpOnTop = st.percPlace === 'timpTop' && n.Timp && (hrN || brass.length) && H.steps > specs.length;
+    let timpSet = [];
+    if (timpOnTop) {
+      timpSet = perc.filter(it => TIMP.includes(it.type) || (it.type === 'player' && /^tim/i.test(it.label || '')));
+      perc = perc.filter(it => !timpSet.includes(it));
+    }
+    const TW = timpOnTop ? 330 : 0;
+    if (hrN || brass.length) {
+      const i = specs.length;
+      const box = st.hornBox && hrN >= 3;
+      const hrSlots = box ? Math.ceil(hrN / 2) : hrN;
+      const wh = hrSlots * sp, wb = brass.length * sp, mid = timpOnTop ? TW : 90;
+      specs.push({
+        // ティンパニの段は 3×6尺を横2列（奥行182cm）：ティンパニ4台と奏者が入る
+        depth: timpOnTop ? Math.max(tierD, 182) : box ? Math.max(tierD, ROW_FRONT + 80 + 45) : tierD,
+        panel: timpOnTop && tierD < 182 ? '36' : undefined, orient: timpOnTop && tierD < 182 ? 'h' : undefined,
+        want: wh + mid + wb + 60,
+        hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[Math.min(i, 3)]) : 0,
+        place: (cx, yFront, d, W) => {
+          const out = [];
+          const yRow = box ? yFront - ROW_FRONT : yFront - Math.max(ROW_FRONT, d / 2 - 8);
+          // 段の幅に入りきらないときは、奏者の間隔を詰める（段からはみ出さないように）
+          const room = (W || 1e9) - 60;
+          // それでも入らないときは、ホルンを前後2列（ボックス）にする（段の奥行が足りるときだけ）
+          const box2 = box || (hrN >= 3 && hrN * sp + mid + wb > room && d >= ROW_FRONT + 80 + 26);
+          const hrS = box2 ? Math.ceil(hrN / 2) : hrN, slots = hrS + brass.length;
+          const sp2 = slots && (hrS + brass.length) * sp + mid > room ? Math.max(62, (room - mid) / slots) : sp;
+          const wh2 = hrS * sp2, wb2 = brass.length * sp2;
+          const x0 = cx - (wh2 + mid + wb2) / 2;
+          for (let k = 0; k < hrS; k++) {
+            out.push({ type: 'player', label: 'Hr', x: x0 + sp2 / 2 + k * sp2, y: box2 && !box ? yFront - ROW_FRONT : yRow, rot: 0 });
+            // 後ろの列は半人分ずらす（後ろの人の譜面台が、前の人の椅子のあいだにくるように）
+            if (box2 && k < Math.floor(hrN / 2)) out.push({ type: 'player', label: 'Hr', x: x0 + sp2 / 2 + k * sp2 + (box ? 0 : sp2 / 2), y: (box2 && !box ? yFront - ROW_FRONT : yRow) - 80, rot: 0 });
+          }
+          brass.forEach((l, k) => out.push({ type: 'player', label: l, x: x0 + wh2 + mid + sp2 / 2 + k * sp2, y: yRow, rot: 0 }));
+          if (timpOnTop) {
+            const zc = x0 + wh2 + TW / 2;
+            A.arrangePerc(timpSet, stage, { yTop: yFront - d + 12, x0: zc - TW / 2, x1: zc + TW / 2 });
+            out.push(...timpSet);
+          }
+          return out;
+        },
+      });
+    }
+    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR });
     items.push(...tp.items);
     rep('Hp', n.Hp).forEach((l, i) => {
       // 奏者は指揮者の方を向き、ハープはその前（響板の上が奏者側）
@@ -889,9 +954,14 @@ window.SS = window.SS || {};
   const TUNES = [
     { spacing: 82, gap: 125, r0: 205, span: 0.92, clear: 70 },
     { spacing: 80, gap: 115, r0: 195, span: 0.95, clear: 60 },
+    // 扇形を左右に広げて（180°より少し広く）、舞台の左右の空いた所も使う
+    { spacing: 80, gap: 112, r0: 190, span: 1.08, clear: 55 },
+    { spacing: 78, gap: 108, r0: 185, span: 1.14, clear: 50 },
     { spacing: 77, gap: 108, r0: 185, span: 0.97, clear: 50 },
     { spacing: 74, gap: 102, r0: 175, span: 0.98, clear: 45 },
     // ここから先は、ひな壇の奥行を 4×6尺1枚（121cm）まで詰める
+    { spacing: 82, gap: 118, r0: 195, span: 1.1, clear: 50, slim: true },
+    { spacing: 80, gap: 112, r0: 190, span: 1.14, clear: 45, slim: true },
     { spacing: 77, gap: 108, r0: 185, span: 0.97, clear: 45, slim: true },
     { spacing: 72, gap: 98, r0: 168, span: 0.99, clear: 40, slim: true },
     { spacing: 68, gap: 94, r0: 160, span: 0.99, clear: 35, slim: true },
@@ -937,6 +1007,12 @@ window.SS = window.SS || {};
     return fallback;
   }
 
+  function clashCount(items, stage, c) {
+    if (!SS.checks) return 0;
+    const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge').reduce((a, w) => a + w.spots.length, 0);
+  }
+
   A.build = function (st, stage) {
     AISLE = backLimit(stage);
     const f = st.type === 'band' ? band : orch;
@@ -950,15 +1026,18 @@ window.SS = window.SS || {};
       const r = f(s3, stage, tune);
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
       const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < AISLE - 1).length;
-      const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + (tune.slim ? 1 : 0);
+      // 椅子・譜面台・楽器の重なり、ひな壇の縁にかかる人（⚠ 確認と同じ見方）
+      const clash = clashCount(r.items, stage, r.c);
+      const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + clash * 2 + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
+      if (A.debug) A.debug.push({ tune, outside, hinaOut, overlap: r.overlap, clash, score });
       if (!best || score < best.score) best = Object.assign(r, { score, outside });
       if (score === 0) break;
     }
     // それでも入らないときは、打楽器の場所を変えて試す（最上段 → 最上段＋下手 → 下手）
     if (best.score > 1 && st.type !== 'strings' && !st._retry) {
       let alt = null;
-      for (const pl of ['back', 'both', 'left']) {
+      for (const pl of st.type === 'orch' ? ['timpTop', 'left', 'back', 'both'] : ['back', 'both', 'left']) {
         if (pl === st.percPlace) continue;
         const r2 = A.build(Object.assign({}, st, { percPlace: pl, _retry: true }), stage);
         r2.percMoved = pl;

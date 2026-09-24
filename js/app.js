@@ -1472,6 +1472,7 @@
     $('optGuides').checked = o.guides;
     $('optHinaDetail').checked = o.hinaDetail !== false;
     if (document.activeElement !== $('stageAisle')) $('stageAisle').value = SS.auto.aisleOf(d.stage);
+    if (document.activeElement !== $('stagePodiumGap')) $('stagePodiumGap').value = SS.auto.podiumGapOf(d.stage);
     renderFixtures();
     syncArcCurve();
   }
@@ -1512,6 +1513,14 @@
     const v = Math.round(+el.value);
     if (el.value === '' || !(v >= 0 && v <= 300)) { el.value = SS.auto.aisleOf(doc().stage); return; }
     doc().stage.backAisle = v;
+    if (doc().items.some(it => it.auto)) applyAuto({ noHistory: true });
+  });
+
+  // 指揮台の前から舞台の縁まで：かんたん編成で並べた配置なら、この幅を空けて並べ直す
+  bindSetting('stagePodiumGap', 'change', el => {
+    const v = Math.round(+el.value);
+    if (el.value === '' || !(v >= 0 && v <= 500)) { el.value = SS.auto.podiumGapOf(doc().stage); return; }
+    doc().stage.podiumGap = v;
     if (doc().items.some(it => it.auto)) applyAuto({ noHistory: true });
   });
 

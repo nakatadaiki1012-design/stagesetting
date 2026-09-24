@@ -80,13 +80,13 @@ window.SS = window.SS || {};
       words: ['2管編成', '二管編成', '2管', '二管'], // AI・読み取りで、このひな形を指すことば
       name: 'オーケストラ（通常配置）',
       desc: '左からVn1・Vn2・Va・Vc。2管編成、管楽器はひな壇3段（4×6尺）、ティンパニはその後ろ',
-      make: auto('orch', SHELL_L, { percPlace: 'back' }),
+      make: auto('orch', SHELL_L, { percPlace: 'timpTop' }),
     },
     {
       id: 'orch-antiphonal',
       name: 'オーケストラ（対向配置）',
       desc: 'Vn1とVn2が向かい合う古典的な配置',
-      make: auto('orch', SHELL_L, { antiphonal: true, percPlace: 'back' }),
+      make: auto('orch', SHELL_L, { antiphonal: true, percPlace: 'timpTop' }),
     },
     {
       id: 'strings',
@@ -114,7 +114,7 @@ window.SS = window.SS || {};
           { type: 'player', label: 'Drs', x: 1230, y: 275, rot: 0 },
           { type: 'player', label: 'Bass', x: 1070, y: 470, rot: 0 },
           { type: 'amp', x: 1070, y: 400, rot: 0 },
-          { type: 'player', label: 'Gt', x: 960, y: 560, rot: 0 },
+          { type: 'player', label: 'Gt', x: 1010, y: 575, rot: 0 },
           { type: 'mic', x: 700, y: 820, rot: 0 },
           { type: 'text', x: 700, y: 880, label: 'ソロマイク', fontSize: 26, w: 200, h: 40 },
         ];
@@ -127,7 +127,7 @@ window.SS = window.SS || {};
       desc: 'ステージと指揮台だけ',
       make() {
         const stage = Object.assign({}, SHELL);
-        return { stage, items: [podium({ x: 900, y: 1060 })] };
+        return { stage, items: [podium({ x: stage.w / 2, y: SS.auto.podiumYOf(stage) })] };
       },
     },
   ];

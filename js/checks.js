@@ -126,6 +126,17 @@ window.SS = window.SS || {};
       out.push({ kind: 'loadin', msg: `${names(heavy, hno)}を${nameOf(p.it, hno)}に運び上げる通路（幅1.2mほど）がありません。段の横か前を1.2m以上空けてください`, spots: [p.b].concat(heavy.map(it => bx.get(it))) });
     });
 
+    // ---- 指揮台から舞台の縁まで
+    const pod = doc.items.find(it => it.type === 'podium');
+    if (pod && SS.auto && SS.auto.podiumGapOf) {
+      const need = SS.auto.podiumGapOf(st), pb = bx.get(pod) || box(pod);
+      const gap = R().frontAt(st, pod.x) - pb.y1;
+      if (gap < need - 1) out.push({ kind: 'podium', msg: `指揮台から舞台の縁まで${(Math.max(0, gap) / 100).toFixed(2)}mしかありません（${(need / 100).toFixed(1)}m以上あけてください）。指揮台を奥へ動かすか、舞台の奥行を確かめてください`, spots: [pb] });
+    }
+
+    // ---- 人や物どうしの重なり（椅子・譜面台・楽器）
+    overlaps(doc, items, bx, hno, out);
+
     // ---- ホールの設備との重なり
     const hitList = test => items.filter(it => test(bx.get(it))); // 段・奏者・楽器・上がり段など
     if (fg.shell) {
@@ -155,6 +166,62 @@ window.SS = window.SS || {};
     }
     return out;
   };
+
+  // ---- 重なりの確認
+  // 奏者の椅子＝半径23cmの丸、譜面台＝支柱と机のまわり半径12cmの丸（2人で1本なら2人の真ん中に1本）、
+  // 楽器・台など＝外枠の四角。8cm以上食い込んでいたら「重なり」とする
+  const CHAIR = 23, STAND = 12, DEPTH = 8;
+  const PLAYS_ITEM = new Set(['perc', 'drs', 'pf', 'hp', 'bass', 'gt']);
+  function overlaps(doc, items, bx, hno, out) {
+    const ps = items.filter(it => it.type === 'player');
+    const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
+    const fig = { figure: true };
+    const shapes = [];
+    ps.forEach(p => {
+      shapes.push({ kind: 'chair', it: p, x: p.x, y: p.y, r: CHAIR });
+      const kind = SS.instrumentKind ? SS.instrumentKind(p.label) : '';
+      if (['perc', 'drs', 'pf', 'hp'].includes(kind)) return;
+      const b = pairs.get(p);
+      if (b && doc.items.indexOf(b) < doc.items.indexOf(p)) return; // 2人で1本：1本だけ
+      const s1 = SS.standPoint(p, fig), s2 = b ? SS.standPoint(b, fig) : s1;
+      shapes.push({ kind: 'stand', it: p, it2: b || null, x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2, r: STAND });
+    });
+    const things = items.filter(it => it.type !== 'player' && !PLATFORM.has(it.type) && it.type !== 'stairs' && it.type !== 'podium');
+    // 丸い楽器（ティンパニ・太鼓・シンバル）は丸で
+    const ROUND = new Set(['timp', 'drumhead', 'cym', 'circle']);
+    const circOf = t => { const c = SS.CATALOG[t.type] || {}; if (!ROUND.has(c.shape)) return null; const s = SS.itemSize(t, {}); return { x: t.x, y: t.y, r: Math.min(s.w, s.h) / 2 }; };
+    const circBox = (c, b) => { const nx = Math.max(b.x0, Math.min(b.x1, c.x)), ny = Math.max(b.y0, Math.min(b.y1, c.y)); return c.r - Math.hypot(c.x - nx, c.y - ny); };
+    const hits = [], who = [];
+    const owner = s => [s.it, s.it2].filter(Boolean);
+    for (let i = 0; i < shapes.length; i++) for (let j = i + 1; j < shapes.length; j++) {
+      const a = shapes[i], c = shapes[j];
+      if (owner(a).some(o => owner(c).includes(o))) continue; // 自分の椅子と自分の譜面台
+      const depth = a.r + c.r - Math.hypot(a.x - c.x, a.y - c.y);
+      if (depth >= DEPTH) { hits.push({ x0: Math.min(a.x, c.x) - 20, x1: Math.max(a.x, c.x) + 20, y0: Math.min(a.y, c.y) - 20, y1: Math.max(a.y, c.y) + 20 }); who.push(a.it, c.it); }
+    }
+    shapes.forEach(sh => things.forEach(t => {
+      // 打楽器・鍵盤・ハープなどの奏者は、自分の楽器のすぐ後ろに立つので、奏者と楽器の重なりは見ない
+      if (sh.kind === 'chair' && PLAYS_ITEM.has(SS.instrumentKind ? SS.instrumentKind(sh.it.label) : '')) return;
+      const b = bx.get(t), tc = circOf(t);
+      if (tc ? sh.r + tc.r - Math.hypot(sh.x - tc.x, sh.y - tc.y) >= DEPTH : circBox(sh, b) >= DEPTH) { hits.push({ x0: Math.min(b.x0, sh.x - sh.r), x1: Math.max(b.x1, sh.x + sh.r), y0: Math.min(b.y0, sh.y - sh.r), y1: Math.max(b.y1, sh.y + sh.r) }); who.push(sh.it, t); }
+    }));
+    for (let i = 0; i < things.length; i++) for (let j = i + 1; j < things.length; j++) {
+      const a = bx.get(things[i]), c = bx.get(things[j]), ca = circOf(things[i]), cc = circOf(things[j]);
+      if (ca && cc ? ca.r + cc.r - Math.hypot(ca.x - cc.x, ca.y - cc.y) >= DEPTH : ca || cc ? circBox(ca || cc, ca ? c : a) >= DEPTH : Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0) >= DEPTH && Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0) >= DEPTH) { hits.push({ x0: Math.min(a.x0, c.x0), x1: Math.max(a.x1, c.x1), y0: Math.min(a.y0, c.y0), y1: Math.max(a.y1, c.y1) }); who.push(things[i], things[j]); }
+    }
+    if (hits.length) out.push({ kind: 'overlap', msg: `人や物が重なっています（${hits.length}か所：${names(who, hno)}）。椅子・譜面台・楽器の間をあけてください`, spots: hits });
+    // ひな壇の縁にかかっている椅子・譜面台（段の上と床にまたがっている）
+    const tiers = doc.items.filter(it => it.type === 'hina');
+    const edge = [];
+    const tierOf = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
+    shapes.forEach(sh => {
+      const r = sh.kind === 'chair' ? 18 : 8;
+      if (tiers.some(t => SS.hinaContains(t, sh.x, sh.y, r) && !SS.hinaContains(t, sh.x, sh.y, -r))) edge.push(sh);
+      // 奏者は段の上なのに、譜面台が段から落ちている（段の前の床に立っている）
+      else if (sh.kind === 'stand') { const t = tierOf(sh.it.x, sh.it.y); if (t && tierOf(sh.x, sh.y) !== t && !(sh.it2 && tierOf(sh.it2.x, sh.it2.y) !== t)) edge.push(sh); }
+    });
+    if (edge.length) out.push({ kind: 'tieredge', msg: `ひな壇の縁にかかっています（${edge.length}か所：${names(edge.map(s => s.it), hno)}${edge.some(s => s.kind === 'stand') ? 'の椅子・譜面台' : ''}）。段の上か床に、きちんと置いてください（「✨きれいに整える」でも直せます）`, spots: edge.map(s => ({ x0: s.x - s.r - 6, x1: s.x + s.r + 6, y0: s.y - s.r - 6, y1: s.y + s.r + 6 })) });
+  }
 
   // 段の4つの辺のどこかに、幅 PATH_W・奥行 PATH_W の空いた床（または同じ高さの段）があるか
   function hasPath(p, stage, all, bx) {

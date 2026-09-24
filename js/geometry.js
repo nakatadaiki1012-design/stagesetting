@@ -223,6 +223,14 @@ window.SS = window.SS || {};
     return rows.sort((a, b) => m(a) - m(b));
   }
 
+  // 段の前のふちから i 列目（前から）の奏者まで。前の列は譜面台も段に乗るよう76cm、後ろの列は奥のふちから30cm
+  function rowDist(i, k, h) {
+    const f = Math.max(Math.min(76, h - 30), h / 2 - 12);
+    if (k === 1) return f;
+    const b = Math.max(f, h - 30);
+    return f + ((b - f) * i) / (k - 1);
+  }
+
   /**
    * ひな壇 t の上の奏者 items を、段の上にきちんと並べる（はみ出さない・落ちない）。
    * まっすぐの段：段の向きにまっすぐの列。弧の段：段の弧に沿った列で、指揮者 c の方を向く。
@@ -239,7 +247,7 @@ window.SS = window.SS || {};
       let rows = mergeRows(G.cluster1D(L, o => -o.q.y, 45), o => -o.q.y, Math.max(1, Math.floor(h / 70))); // 前の列から
       const k = rows.length;
       rows.forEach((row, i) => {
-        const y = k === 1 ? 8 : h / 2 - ((i + 0.5) * h) / k;
+        const y = h / 2 - rowDist(i, k, h);
         row.sort((a, b) => a.q.x - b.q.x);
         if ((row.length - 1) * opt.minGap > w - 2 * EDGE) tight = true;
         const xs = fitRange(row.map(o => o.q.x), -w / 2 + EDGE, w / 2 - EDGE, opt);
@@ -256,7 +264,7 @@ window.SS = window.SS || {};
     let rows = mergeRows(G.cluster1D(P, o => o.r, 45), o => o.r, Math.max(1, Math.floor(arc.h / 70)));
     const k = rows.length;
     rows.forEach((row, i) => {
-      const r = k === 1 ? arc.R + arc.h / 2 - 8 : arc.R + ((i + 0.5) * arc.h) / k;
+      const r = arc.R + rowDist(i, k, arc.h);
       const lim = arc.th / 2 * r - EDGE; // 弧に沿った長さで、真ん中から端まで
       row.sort((a, b) => a.a - b.a);
       if ((row.length - 1) * opt.minGap > 2 * lim) tight = true;

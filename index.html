@@ -69,6 +69,7 @@
           <option value="top">ひな壇の最上段</option>
           <option value="left">下手側（客席から見て左）</option>
           <option value="both">最上段（ティンパニ・鍵盤）＋下手（太鼓類）</option>
+          <option value="timpTop">ティンパニは最上段の中央＋ほかは下手</option>
         </select>
       </label>
       <div class="hina-box">
@@ -353,6 +354,8 @@
       <h3>安全・ホールの設備</h3>
       <label class="field">舞台奥の通路（反射板とのあいだ, cm）<input id="stageAisle" type="number" step="10" min="0" max="300"></label>
       <p class="hint small">かんたん編成・ひな形はこの幅を空けて並べます。これより狭い所は「⚠ 確認」に出ます。</p>
+      <label class="field">指揮台の前から舞台の縁まで（cm）<input id="stagePodiumGap" type="number" step="10" min="0" max="500"></label>
+      <p class="hint small">かんたん編成・ひな形は、指揮台の前をこの幅だけ空けて並べます（はじめは1m）。空けられないときは「⚠ 確認」に出ます。</p>
       <details class="fixtures" id="fxBox">
         <summary>ホールの設備（分かるものだけ入力）</summary>
         <p class="hint small">空欄のものは描きません。ホールの舞台図面などで確かめた値だけを入れてください。奏者や物が重なると「⚠ 確認」に出ます。</p>
