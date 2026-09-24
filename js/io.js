@@ -333,7 +333,7 @@ window.SS = window.SS || {};
     return s;
   };
 
-  const LAYER = { riser: 0, riser46: 0, hina: 0, text: 3, player: 2 };
+  const LAYER = { riser: 0, riser46: 0, hina: 0, stairs: 0, text: 3, player: 2 };
   R.sortedItems = items => items.map((it, i) => ({ it, i })).sort((a, b) => ((LAYER[a.it.type] ?? 1) - (LAYER[b.it.type] ?? 1)) || a.i - b.i).map(o => o.it);
 
   R.seatNumbers = function (doc, conductor) {

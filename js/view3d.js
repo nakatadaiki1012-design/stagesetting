@@ -613,6 +613,9 @@ window.SS = window.SS || {};
       }
       case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
       case 'hina': makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100); break;
+      case 'stairs': // 上がり段：奥（ひな壇の側）へ3段上がる
+        for (let i = 0; i < 3; i++) { const h = (i + 1) * 0.14; box(g, w, h, d / 3, '#d8c7a4', 0, h / 2, d / 2 - d / 6 - (i * d) / 3); }
+        break;
       case 'timp32': case 'timp29': case 'timp26': case 'timp23': case 'timp': {
         const r = Math.min(w, d) / 2 * 0.9;
         const bowl = mesh(new T.SphereGeometry(r, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), '#b87333', METAL);

@@ -60,6 +60,7 @@ window.SS = window.SS || {};
     riser:   { name: '平台 3×6尺', cat: '基本', w: 182, h: 91, shape: 'riser', fill: '#efe3cc', label: '', note: 'サブロク 910×1820mm' },
     riser46: { name: '平台 4×6尺', cat: '基本', w: 182, h: 121, shape: 'riser', fill: '#efe3cc', label: '', note: 'ヨンロク 1212×1820mm' },
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
+    stairs:  { name: '上がり段', cat: '基本', w: 91, h: 60, shape: 'stairs', fill: '#efe3cc', label: '', note: 'ひな壇に上がる階段。段の横か前にくっつけて置く（矢印の向きに上がる）' },
     text:    { name: '文字', cat: '基本', w: 200, h: 50, shape: 'text', label: 'テキスト', fontSize: 36 },
     box:     { name: '四角', cat: '基本', w: 120, h: 70, shape: 'rect', fill: '#f2f2f2', label: '' },
     circle:  { name: '丸', cat: '基本', w: 80, h: 80, shape: 'circle', fill: '#f2f2f2', label: '' },
@@ -256,12 +257,48 @@ window.SS = window.SS || {};
           const shade = Math.max(0, Math.min(1, hv / 90));
           const col = `rgb(${Math.round(236 - 40 * shade)},${Math.round(220 - 45 * shade)},${Math.round(190 - 50 * shade)})`;
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${col}" stroke="#8a6d3b" stroke-width="3"/>`;
+          if (SS.hinaMaterials && opts.hinaNo) {
+            // 組み図：平台1枚ずつの線と番号（段の番号-前の列の下手から数えた番号）、箱馬（足）の位置
+            const m = SS.hinaMaterials(it), cw = w / m.across, cd = h / m.deep, big = !!opts.assembly;
+            let p = '', nums = '', legs = '';
+            for (let i = 1; i < m.across; i++) p += `M${(-w / 2 + i * cw).toFixed(1)} ${-h / 2}V${h / 2}`;
+            for (let j = 1; j < m.deep; j++) p += `M${-w / 2} ${(h / 2 - j * cd).toFixed(1)}H${w / 2}`;
+            body += `<path d="${p}" stroke="#8a6d3b" stroke-width="${big ? 2.5 : 1.6}"/>`;
+            if (m.legs) {
+              const ls = big ? 16 : 11;
+              for (let j = 0; j <= m.deep; j++) for (let i = 0; i <= m.across * 2; i++) {
+                const lx = Math.max(-w / 2 + ls / 2 + 1, Math.min(w / 2 - ls / 2 - 1, -w / 2 + (i * cw) / 2)), ly = Math.max(-h / 2 + ls / 2 + 1, Math.min(h / 2 - ls / 2 - 1, h / 2 - j * cd));
+                legs += `<rect x="${(lx - ls / 2).toFixed(1)}" y="${(ly - ls / 2).toFixed(1)}" width="${ls}" height="${ls}"/>`;
+              }
+              body += `<g class="hina-legs" fill="#6b5024" fill-opacity="${big ? 0.85 : 0.45}" stroke="none">${legs}</g>`;
+            }
+            const fs = big ? Math.min(34, cw * 0.2, cd * 0.25) : Math.min(15, cw * 0.14, cd * 0.2);
+            for (let j = 0; j < m.deep; j++) for (let i = 0; i < m.across; i++) {
+              const n = `${opts.hinaNo}-${j * m.across + i + 1}`;
+              const nx = big ? -w / 2 + (i + 0.5) * cw : -w / 2 + i * cw + 16, ny = big ? h / 2 - (j + 0.5) * cd : h / 2 - (j + 1) * cd + fs + 8;
+              nums += `<text x="${nx.toFixed(1)}" y="${ny.toFixed(1)}" ${big ? 'dy="0.35em" text-anchor="middle" ' : ''}font-size="${fs.toFixed(1)}" font-weight="700" fill="#6b5024" fill-opacity="${big ? 1 : 0.8}">${esc(n)}</text>`;
+            }
+            body += nums;
+          } else {
+            let p = '';
+            for (let xx = -w / 2 + pn.w; xx < w / 2 - 5; xx += pn.w) p += `M${xx.toFixed(1)} ${-h / 2}V${h / 2}`;
+            for (let yy = -h / 2 + pn.d; yy < h / 2 - 5; yy += pn.d) p += `M${-w / 2} ${yy.toFixed(1)}H${w / 2}`;
+            body += `<path d="${p}" stroke="#b39463" stroke-width="1.5" stroke-dasharray="8 5"/>`;
+          }
+          const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : opts.hinaNo && !/^\d+$/.test(opts.hinaNo) ? 'ひな壇' + opts.hinaNo + ' ' : ''}${Math.round(hv)}cm`;
+          // 組み図では段の大きさ（幅×奥行）も書き、平台の番号とぶつからないよう小さめに下のふちへ
+          if (opts.assembly) text += `<text x="${(x - w / 2 + 8).toFixed(1)}" y="${(y + h / 2 - 6).toFixed(1)}" font-size="16" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}・${(w / 100).toFixed(2)}m×${(h / 100).toFixed(2)}m</text>`;
+          else text += `<text x="${(x - w / 2 + 10).toFixed(1)}" y="${(y + h / 2 - 12).toFixed(1)}" font-size="22" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}</text>`;
+          break;
+        }
+        case 'stairs': {
+          // 上がり段：踏み板の線と、上がる向き（奥＝図の上）の矢印
+          body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#8a6d3b" stroke-width="2.5"/>`;
           let p = '';
-          for (let xx = -w / 2 + pn.w; xx < w / 2 - 5; xx += pn.w) p += `M${xx.toFixed(1)} ${-h / 2}V${h / 2}`;
-          for (let yy = -h / 2 + pn.d; yy < h / 2 - 5; yy += pn.d) p += `M${-w / 2} ${yy.toFixed(1)}H${w / 2}`;
-          body += `<path d="${p}" stroke="#b39463" stroke-width="1.5" stroke-dasharray="8 5"/>`;
-          const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : ''}${Math.round(hv)}cm`;
-          text += `<text x="${(x - w / 2 + 10).toFixed(1)}" y="${(y + h / 2 - 12).toFixed(1)}" font-size="22" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke">${esc(tag)}</text>`;
+          for (let i = 1; i < 3; i++) p += `M${-w / 2} ${(-h / 2 + (h * i) / 3).toFixed(1)}H${w / 2}`;
+          body += `<path d="${p}" stroke="#8a6d3b" stroke-width="1.5"/>`;
+          const aw = Math.min(w, h) * 0.22;
+          body += `<path d="M0 ${(h / 2 - 6).toFixed(1)}V${(-h / 2 + 8).toFixed(1)}M${-aw} ${(-h / 2 + 8 + aw).toFixed(1)}L0 ${(-h / 2 + 8).toFixed(1)}L${aw} ${(-h / 2 + 8 + aw).toFixed(1)}" fill="none" stroke="#6b5024" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
           break;
         }
         case 'riser':
