@@ -2399,11 +2399,36 @@
     r.readAsText(file);
   }
 
+  // 配置図をファイル（.stage.json）に保存する
+  function saveToFile() {
+    const blob = new Blob([JSON.stringify(doc(), null, 1)], { type: 'application/json' });
+    SS.render.download(blob, SS.render.safeName(doc().title || '配置図') + '.stage.json');
+  }
+  // 書き出した（PDF・PNG・印刷）あとに1回だけ、「ファイルにも保存しておきますか？」と案内する（「今後表示しない」を選べる）
+  let nudged = false;
+  function afterExport() {
+    if (nudged) return;
+    nudged = true;
+    try { if (localStorage.getItem('stagesetting.noFileNudge')) return; } catch (e) { /* ignore */ }
+    const el = document.createElement('div');
+    el.className = 'file-nudge';
+    el.id = 'fileNudge';
+    el.innerHTML = `<p><b>💾 ファイルにも保存しておきますか？</b><br>配置図はこのブラウザの中にだけ保存されています。ファイルにしておくと、ブラウザのデータを消したり機種を変えたりしても、あとで開いて直せます。</p>
+      <div class="btn-row"><button class="btn primary" id="fnSave">⬇ ファイルに保存</button><button class="btn" id="fnLater">今はしない</button><button class="btn" id="fnNever">今後表示しない</button></div>`;
+    document.body.appendChild(el);
+    const close = () => el.remove();
+    $('fnSave').onclick = () => { saveToFile(); close(); toast('ファイルに保存しました。「💾 保存/開く」の「⬆ ファイルを開く」で開けます', true); };
+    $('fnLater').onclick = close;
+    $('fnNever').onclick = () => { try { localStorage.setItem('stagesetting.noFileNudge', '1'); } catch (e) { /* ignore */ } close(); };
+  }
+
   $('btnFile').onclick = () => {
     const list = SS.render.savedList();
     const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
     openModal(`
       <h2>保存・開く</h2>
+      <div class="safe-note">⚠ 配置図は<b>このブラウザの中にだけ</b>保存されています。ブラウザのデータを消したり、機種を変えたりすると消えてしまいます。<b>大事な図は「ファイルに保存」もしておくと安心です。</b>
+        <button class="btn" id="saveFileTop">⬇ ファイルに保存</button></div>
       <p class="hint">作業中の内容は自動でこのブラウザに保存されています。名前を付けて保存しておくと、いくつもの配置図を切り替えられます。</p>
       <div class="btn-row">
         <input id="saveName" style="flex:1;min-width:160px;padding:7px;border:1px solid #dde2ea;border-radius:7px;font:inherit" value="${SS.esc(doc().title || '配置図')}">
@@ -2446,10 +2471,7 @@
         askConfirm('この配置図を削除しますか？', '削除する', () => { try { SS.render.deleteFromList(id); } catch (e) { /* ignore */ } $('btnFile').onclick(); });
       };
     });
-    $('saveFile').onclick = () => {
-      const blob = new Blob([JSON.stringify(doc(), null, 1)], { type: 'application/json' });
-      SS.render.download(blob, SS.render.safeName(doc().title || '配置図') + '.stage.json');
-    };
+    $('saveFile').onclick = $('saveFileTop').onclick = saveToFile;
     $('openFile').onchange = e => { if (e.target.files[0]) loadJSONFile(e.target.files[0]); };
     document.querySelectorAll('[data-cmp]').forEach(b => {
       b.onclick = () => { const x = SS.render.savedList().find(s2 => s2.id === b.getAttribute('data-cmp')); if (x) startCompare(x.name + (x.doc.info && x.doc.info.version ? `（第${x.doc.info.version}版）` : ''), x.doc); };
@@ -2611,6 +2633,7 @@
         const url = URL.createObjectURL(blob);
         $('ctResult').innerHTML = `<p class="hint">✅ PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存してください。</p>`;
         toast('PDFを作りました');
+        afterExport();
       } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。PNG画像で作ってください'); }
     };
     $('ctPng').onclick = async () => {
@@ -2621,6 +2644,7 @@
         const url = URL.createObjectURL(blob);
         $('ctResult').innerHTML = `<p class="hint">✅ 画像を作りました。保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="コンクール提出用の配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
         toast('画像を作りました');
+        afterExport();
       } catch (e) { toast(e.message); }
     };
   }
@@ -2662,6 +2686,7 @@
         $('exResult').innerHTML = `<p class="hint">保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
         $('exResult').scrollIntoView({ block: 'nearest' });
         toast('画像を作りました');
+        afterExport();
       } catch (e) { toast(e.message); }
     };
     $('exPdf').onclick = async () => {
@@ -2672,11 +2697,13 @@
         const url = URL.createObjectURL(blob);
         $('exResult').innerHTML = `<p class="hint">PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存するか、「📤 書き出す」の「🖨 印刷」から「PDFに保存」をえらんでください。</p>`;
         toast('PDFを作りました');
+        afterExport();
       } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。「📤 書き出す」の「🖨 印刷」から「PDFに保存」をえらんでください'); }
     };
     $('exSvg').onclick = () => {
       const r = buildSheet(extra());
       SS.render.download(new Blob([r.svg], { type: 'image/svg+xml' }), name() + '.svg');
+      afterExport();
     };
   }
 
@@ -2704,7 +2731,7 @@
       if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.appendChild(st); }
       st.textContent = `@media print { @page { size: ${p.size} ${p.orient}; margin: 0; } #printArea svg { width: ${r.info.paperW}mm !important; height: ${r.info.paperH}mm !important; max-height: none !important; } }`;
       $('printArea').innerHTML = r.svg;
-      setTimeout(() => window.print(), 50);
+      setTimeout(() => { window.print(); afterExport(); }, 50);
     };
   }
 

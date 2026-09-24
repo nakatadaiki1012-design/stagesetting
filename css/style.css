@@ -434,3 +434,9 @@ body.modal-open .tidy-bar, body.modal-open .warn-chip, body.modal-open .cmp-bar 
 .contest-actions { position: static; margin: 12px 0 10px; padding: 0; border-top: none; box-shadow: none; }
 .contest-actions .btn.big { flex: 1 1 180px; font-size: 16px; padding: 13px 14px; }
 .contest-opts { align-items: end; }
+/* 保存の案内 */
+.safe-note { background: #fff7e0; border: 1.5px solid #f0c75e; border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; font-size: 13.5px; line-height: 1.6; }
+.safe-note .btn { margin-top: 6px; }
+.file-nudge { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 120; width: min(440px, calc(100% - 24px)); background: #fff; border: 1.5px solid #9fbef0; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
+.file-nudge p { margin: 0 0 8px; }
+.file-nudge .btn-row { flex-wrap: wrap; }
