@@ -234,6 +234,14 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 }
 @media (max-width: 820px) {
   .brand span { display: none; }
+  /* スマホ：上のボタンはアイコンの下に小さな文字。3Dは左の「もっと…」の中へ */
+  .topbar { padding: 4px 6px; gap: 4px; }
+  .topbar-actions { gap: 2px; flex: 1; justify-content: flex-end; }
+  .topbar-actions .btn { flex-direction: column; gap: 1px; padding: 3px 4px; min-width: 50px; font-size: 17px; line-height: 1.1; }
+  .topbar-actions .btn .lbl { display: block; font-size: 10px; }
+  .topbar-actions .btn .lbl-d { display: none; }
+  .topbar-actions .sep { margin: 0 1px; }
+  #btn3d { display: none; }
   /* スマホ：パネルは画面の下半分に出す（上半分で舞台図の変化が見える） */
   .panel {
     position: fixed; left: 0; right: 0; bottom: 56px; top: auto; width: auto; height: 50vh; height: 50dvh; z-index: 50;
@@ -447,3 +455,10 @@ body.modal-open .tidy-bar, body.modal-open .warn-chip, body.modal-open .cmp-bar 
 /* かんたん編成：くわしい設定の箱の前の見出し */
 .fold-lead { margin: 14px 0 0; font-weight: 700; color: var(--muted); }
 details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border-color: #c9d8f5; }
+
+/* スマホだけに出す文字・ボタン */
+.lbl-m, .mobile-only { display: none; }
+@media (max-width: 820px) { .mobile-only { display: block; } }
+.more-3d { font: inherit; background: none; border: none; text-align: left; border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text); font-size: 13px; }
+.more-3d:hover { background: #f4f7fb; }
+.more-3d small { display: block; font-size: 11px; color: var(--muted); }

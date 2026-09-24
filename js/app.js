@@ -1661,6 +1661,8 @@
     $('tabMore').setAttribute('aria-expanded', open ? 'true' : 'false');
   }
   $('tabMore').onclick = e => { e.stopPropagation(); showTabMore($('tabMoreMenu').hidden); };
+  // スマホでは上の「🧊 3D」をしまったので、ここから3Dを開く
+  $('more3d').onclick = () => { showTabMore(false); closePanels(); $('btn3d').click(); };
   document.addEventListener('pointerdown', e => { if (!$('tabMoreMenu').hidden && !e.target.closest('#tabMoreMenu, #tabMore')) showTabMore(false); });
   const openRightTab = id => openTab('rightPanel', id);
   const isMobile = () => window.matchMedia('(max-width: 820px)').matches;

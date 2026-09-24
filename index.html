@@ -15,11 +15,11 @@
     <button class="btn" id="btnUndo" title="元に戻す (Ctrl+Z)">↶<span class="lbl">戻す</span></button>
     <button class="btn" id="btnRedo" title="やり直す (Ctrl+Y)">↷<span class="lbl">進む</span></button>
     <span class="sep"></span>
-    <button class="btn" id="btnFile" title="保存・読み込み">💾<span class="lbl">保存/開く</span></button>
+    <button class="btn" id="btnFile" title="保存・読み込み">💾<span class="lbl lbl-d">保存/開く</span><span class="lbl lbl-m">保存</span></button>
     <button class="btn accent3d" id="btn3d" title="3Dで見る（ネット接続が必要です）">🧊<span class="lbl">3D</span></button>
     <button class="btn" id="btnOut" title="画像・PDF・印刷">📤<span class="lbl">書き出す</span></button>
     <button class="btn" id="btnShare" title="共有リンクをコピー">🔗<span class="lbl">共有</span></button>
-    <button class="btn" id="btnHelp" title="使い方">？</button>
+    <button class="btn" id="btnHelp" title="使い方">？<span class="lbl lbl-m">使い方</span></button>
   </div>
 </header>
 
@@ -34,6 +34,7 @@
       <div class="tab-more-menu" id="tabMoreMenu" hidden>
         <button class="tab" data-tab="quickTab">一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
         <button class="tab" data-tab="traceTab">トレース<small>ホールの舞台図を下に重ねる</small></button>
+        <button class="more-3d mobile-only" id="more3d" type="button">🧊 3Dで見る<small>立体で確認（ネット接続が必要です）</small></button>
       </div>
     </nav>
 
