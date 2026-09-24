@@ -96,30 +96,32 @@ window.SS = window.SS || {};
       make: auto('strings', SHELL_S, {}),
     },
     {
+      id: 'brassband',
+      words: ['ブラスバンド', 'ブリティッシュ', '金管バンド'], // AI・読み取りで、このひな形を指すことば
+      name: 'ブラスバンド（ブリティッシュ・スタイル）',
+      desc: 'コルネット10・ホルン3・バリトン2・トロンボーン3・ユーフォ2・ベース4＋打楽器。前：ソロ・コルネット〜ユーフォ、後ろ：コルネット・ベース・トロンボーン',
+      make: auto('brass', SHELL, {}),
+    },
+    {
       id: 'bigband',
+      words: ['ビッグバンド', 'ジャズ'], // AI・読み取りで、このひな形を指すことば
       name: 'ビッグバンド',
-      desc: 'Sax・Tb・Tpのひな壇＋リズム隊',
-      make() {
-        const stage = { shape: 'rect', w: 1500, d: 950 };
-        // 平台3×6尺を横4枚・奥2枚（728×182cm）。1段目7寸、2段目1尺4寸
-        const items = [
-          { type: 'hina', x: 600, y: 470, w: 728, h: 182, hgt: 21.2, panel: '36', step: 1, rot: 0 },
-          { type: 'hina', x: 600, y: 288, w: 728, h: 182, hgt: 42.4, panel: '36', step: 2, rot: 0 },
-          ...lineRow(['B.Sx', 'T.Sx2', 'A.Sx1', 'A.Sx2', 'T.Sx1'], 650, 600, 115),
-          ...lineRow(['Tb4', 'Tb3', 'Tb1', 'Tb2'], 480, 600, 120),
-          ...lineRow(['Tp4', 'Tp3', 'Tp1', 'Tp2'], 298, 600, 115),
-          { type: 'piano', x: 1270, y: 680, rot: -90 },
-          { type: 'player', label: 'Pf', x: 1135, y: 690, rot: -90 },
-          { type: 'drums', x: 1230, y: 360, rot: 0 },
-          { type: 'player', label: 'Drs', x: 1230, y: 275, rot: 0 },
-          { type: 'player', label: 'Bass', x: 1070, y: 470, rot: 0 },
-          { type: 'amp', x: 1070, y: 400, rot: 0 },
-          { type: 'player', label: 'Gt', x: 1010, y: 575, rot: 0 },
-          { type: 'mic', x: 700, y: 820, rot: 0 },
-          { type: 'text', x: 700, y: 880, label: 'ソロマイク', fontSize: 26, w: 200, h: 40 },
-        ];
-        return { stage, items };
-      },
+      desc: 'サックス5（前）・トロンボーン4（1段目）・トランペット4（2段目）、リズム隊（ピアノ・ギター・ベース・ドラム）は下手',
+      make: auto('bigband', { shape: 'rect', w: 1500, d: 950 }, {}),
+    },
+    {
+      id: 'choir',
+      words: ['合唱', '混声合唱', 'コーラス'], // AI・読み取りで、このひな形を指すことば
+      name: '合唱（混声4部・40人＋ピアノ）',
+      desc: '下手から S・A・T・B。前の列は床、うしろは合唱用のひな壇3段（うしろの列は半人分ずらす）。ピアノは下手',
+      make: auto('choir', SHELL, { layout: 'satb' }),
+    },
+    {
+      id: 'choir-women',
+      words: ['女声合唱'], // AI・読み取りで、このひな形を指すことば
+      name: '女声合唱（32人＋ピアノ）',
+      desc: 'ソプラノ・アルトを下手から。ひな壇3段',
+      make: auto('choir', SHELL, { layout: 'satb' }, { S: 16, A: 16, T: 0, B: 0 }),
     },
     {
       id: 'blank',

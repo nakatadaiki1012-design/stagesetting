@@ -45,6 +45,7 @@
       <p class="hall-warn" id="hallWarn" hidden></p>
       <div class="seg" id="ensType">
         <button data-ens="band">吹奏楽</button><button data-ens="orch">オーケストラ</button><button data-ens="strings">弦楽</button>
+        <button data-ens="brass">ブラスバンド</button><button data-ens="bigband">ビッグバンド</button><button data-ens="choir">合唱</button>
       </div>
       <p class="hint small">▲▼で人数を変えると、すぐに並べ直します。名前は同じパートの人に引き継がれます。</p>
       <div id="partSteppers" class="steppers"></div>
@@ -69,7 +70,7 @@
         <div class="seg" id="ensSpace">
           <button data-space="tight">つめる</button><button data-space="normal">ふつう</button><button data-space="wide">ゆったり</button>
         </div>
-      <label class="field" id="bandLayoutWrap">並び方（吹奏楽）
+      <label class="field" id="bandLayoutWrap"><span id="bandLayoutLbl">並び方（吹奏楽）</span>
         <select id="bandLayout"></select>
       </label>
       <div class="ens-opts">

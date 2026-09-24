@@ -185,6 +185,29 @@ window.SS = window.SS || {};
       name: '弦楽合奏',
       parts: [['Vn1', 6], ['Vn2', 5], ['Va', 4], ['Vc', 4], ['Cb', 2]],
     },
+    // ブリティッシュ・スタイルのブラスバンド（金管とパーカッションだけ。コルネットは9＋ソプラノ1）
+    brass: {
+      name: 'ブラスバンド',
+      parts: [
+        ['SopCnt', 1], ['SoloCnt', 4], ['RepCnt', 1], ['2ndCnt', 2], ['3rdCnt', 2], ['Flh', 1],
+        ['SoloHn', 1], ['1stHn', 1], ['2ndHn', 1], ['Bar1', 1], ['Bar2', 1], ['Tb1', 1], ['Tb2', 1], ['B.Tb', 1],
+        ['Euph', 2], ['EbBass', 2], ['BbBass', 2], ['Perc', 3],
+      ],
+    },
+    // ビッグバンド（サックス5・トロンボーン4・トランペット4・リズム隊）
+    bigband: {
+      name: 'ビッグバンド',
+      parts: [
+        ['A.Sx1', 1], ['A.Sx2', 1], ['T.Sx1', 1], ['T.Sx2', 1], ['B.Sx', 1],
+        ['Tb1', 1], ['Tb2', 1], ['Tb3', 1], ['B.Tb', 1], ['Tp1', 1], ['Tp2', 1], ['Tp3', 1], ['Tp4', 1],
+        ['Pf', 1], ['Gt', 1], ['Bass', 1], ['Drs', 1], ['Vib', 0],
+      ],
+    },
+    // 合唱（混声4部。女声・男声合唱は、使わないパートを0人に）
+    choir: {
+      name: '合唱',
+      parts: [['S', 12], ['A', 12], ['T', 8], ['B', 8], ['Pf', 1]],
+    },
   };
 
   // 舞台奥の通路（反射板と、ひな壇・楽器のあいだに空ける幅 cm）。ステージの設定で変えられる
@@ -202,8 +225,9 @@ window.SS = window.SS || {};
     const counts = {};
     e.parts.forEach(([k, n]) => { counts[k] = n; });
     return {
-      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: type === 'orch' ? 'timpTop' : 'back', lowOuter: type === 'band', layout: 'std',
-      hina: type === 'orch' ? { steps: 3, panel: '46', orient: 'h', deep: 1 } : type === 'strings' ? { steps: 0, panel: '36', orient: 'h', deep: 2 } : { steps: 2, panel: '36', orient: 'h', deep: 2 },
+      type: type || 'band', counts, antiphonal: false, percInst: true, hornBox: false, percPlace: type === 'orch' ? 'timpTop' : 'back', lowOuter: type === 'band', layout: type === 'choir' ? 'satb' : 'std',
+      hina: type === 'orch' ? { steps: 3, panel: '46', orient: 'h', deep: 1 } : type === 'strings' || type === 'brass' ? { steps: 0, panel: '36', orient: 'h', deep: 2 }
+        : type === 'choir' ? { steps: 3, panel: '36', orient: 'h', deep: 1 } : { steps: 2, panel: '36', orient: 'h', deep: 2 },
     };
   };
 
@@ -246,7 +270,34 @@ window.SS = window.SS || {};
       ],
     },
   };
-  const bandRows = st => (A.BAND_LAYOUTS[st.layout] || A.BAND_LAYOUTS.std).rows;
+  // ブラスバンドの並び方（前の列から。1列の中は 下手→上手＝指揮者から見て左→右）
+  // 前の列：ソロ・コルネット → フリューゲル → テナーホルン → バリトン → ユーフォニアム
+  // 後ろの列：ソプラノ → レピアノ・2nd・3rd コルネット → ベース（真ん中） → バストロンボーン → トロンボーン
+  A.BRASS_LAYOUTS = {
+    std: {
+      name: '標準（前：コルネット・ホルン・バリトン・ユーフォ／後ろ：コルネット・ベース・トロンボーン）',
+      rows: [
+        ['SoloCnt', 'Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1', 'Euph'],
+        ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
+      ],
+    },
+    hornsIn: {
+      name: 'ホルン・フリューゲルを内側に（前：コルネット・ユーフォ／中：ホルン・バリトン）',
+      rows: [
+        ['SoloCnt', 'Euph'],
+        ['Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1'],
+        ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
+      ],
+    },
+  };
+  // 合唱の並び方
+  A.CHOIR_LAYOUTS = {
+    satb: { name: 'S・A・T・B を下手から（パートごとに縦のかたまり）' },
+    womenFront: { name: '女声が前・男声が後ろ（前：S・A／後ろ：T・B）' },
+    stba: { name: 'S・T・B・A（外声を外側に）' },
+  };
+  A.layoutsOf = type => (type === 'brass' ? A.BRASS_LAYOUTS : type === 'choir' ? A.CHOIR_LAYOUTS : A.BAND_LAYOUTS);
+  const bandRows = st => (st.type === 'brass' ? (A.BRASS_LAYOUTS[st.layout] || A.BRASS_LAYOUTS.std) : (A.BAND_LAYOUTS[st.layout] || A.BAND_LAYOUTS.std)).rows;
 
   // ---------------------------------------------------------------- 打楽器の整列
   const TIMP = ['timp32', 'timp29', 'timp26', 'timp23', 'timp'];
@@ -513,7 +564,7 @@ window.SS = window.SS || {};
   const PERC_STATIONS_BAND = ['timp', 'sd', 'bd', 'marimba', 'glock', 'xylo', 'chimes', 'vib'];
   const PERC_STATIONS_ORCH = ['bd', 'sd', 'glock', 'xylo', 'chimes', 'marimba', 'cym'];
   // かんたん編成で、打楽器の楽器を1つずつ増やしたり減らしたりできる（st.percKit）。決めていなければ、人数から自動で
-  A.PERC_KIT = [['timp', 'ティンパニ（4台で1組）'], ['bd', '大太鼓'], ['sd', '小太鼓'], ['cym', 'シンバル'], ['tam', 'タムタム'], ['glock', 'グロッケン'], ['xylo', 'シロフォン'], ['vib', 'ヴィブラフォン'], ['marimba', 'マリンバ'], ['chimes', 'チャイム'], ['table', '小物台'], ['drums', 'ドラムセット']];
+  A.PERC_KIT = [['timp', 'ティンパニ'], ['bd', '大太鼓'], ['sd', '小太鼓'], ['cym', 'シンバル'], ['tam', 'タムタム'], ['glock', 'グロッケン'], ['xylo', 'シロフォン'], ['vib', 'ヴィブラフォン'], ['marimba', 'マリンバ'], ['chimes', 'チャイム'], ['table', '小物台'], ['drums', 'ドラムセット']];
   A.autoPercKit = function (st) {
     const n = st.counts || {}, P = n.Perc || 0, kit = {};
     const list = st.type === 'orch' ? (n.Timp ? ['timp'] : []).concat(PERC_STATIONS_ORCH.slice(0, Math.min(P, 7))) : PERC_STATIONS_BAND.slice(0, Math.min(P, 8));
@@ -974,6 +1025,119 @@ window.SS = window.SS || {};
     return false;
   }
 
+  // ---------------------------------------------------------------- ビッグバンド
+  // 前の列：サックス（下手から T1・A2・A1・T2・Bari。リードのA1が真ん中、ソロのT1がリズム隊の近く、Bariは上手）
+  // 2列目：トロンボーン（1段目の台。Tb2・Tb1・Tb3・B.Tb）／3列目：トランペット（2段目の台。Tp2・Tp1・Tp3・Tp4）
+  // リズム隊は下手にまとめる：ピアノが前、ギター、ベースとドラムは奥でおたがいの手と顔が見えるように。管のリードは縦にそろえる
+  const SAX_ORDER = ['T.Sx1', 'A.Sx2', 'A.Sx1', 'T.Sx2', 'B.Sx'];
+  const TB_ORDER = ['Tb2', 'Tb1', 'Tb3', 'B.Tb'];
+  const TP_ORDER = ['Tp2', 'Tp1', 'Tp3', 'Tp4'];
+  function bigBand(st, stage, tune) {
+    const n = st.counts, H = st.hina || { steps: 2 };
+    const f = tune.spacing / 80; // ゆったり・つめる
+    const row = order => order.flatMap(k => rep(k, n[k]));
+    const sax = row(SAX_ORDER), tb = row(TB_ORDER), tp = row(TP_ORDER);
+    const items = [], tiers = [];
+    const front = R().frontAt(stage, stage.w / 2);
+    const sp = { sax: 82 * f, tb: 90 * f, tp: 80 * f };
+    const D = 182; // 台の奥行（3×6尺を横に2列）
+    // 管の横幅と、リズム隊（下手）の幅
+    const Ww = Math.max((sax.length - 1) * sp.sax, (tb.length - 1) * sp.tb, (tp.length - 1) * sp.tp) + 140;
+    const rhythmW = n.Pf || n.Drs || n.Bass || n.Gt ? 500 : 0;
+    const [xl, xr] = R().xRange(stage, front - 300);
+    const total = Ww + rhythmW + 40;
+    const x0 = Math.max(xl + 30, (xl + xr) / 2 - total / 2); // リズム隊の左はし
+    const cx = Math.min(xr - 30 - Ww / 2, x0 + rhythmW + 40 + Ww / 2); // 管の真ん中
+    // 前の列（床）：サックス。舞台の前のふちから約2.3m
+    const ySax = front - 230;
+    // 台：1段目（トロンボーン）・2段目（トランペット）。段がないときは床に1.3mずつ
+    const fe1 = ySax - 45, onT1 = H.steps >= 1, onT2 = H.steps >= 2;
+    const W = Math.max(364, Math.ceil(Ww / 182) * 182);
+    const std = [21.2, 42.4];
+    let yTb, yTp;
+    if (onT1) { tiers.push({ type: 'hina', x: cx, y: fe1 - D / 2, w: W, h: D, hgt: (H.heights && H.heights[0]) || std[0], panel: '36', orient: 'h', deep: 2, step: 1, rot: 0 }); yTb = fe1 - Math.max(rowFront(tb), D / 2 - 12); } else yTb = ySax - 130 * f;
+    const fe2 = onT1 ? fe1 - D : yTb - 45;
+    if (onT2) { tiers.push({ type: 'hina', x: cx, y: fe2 - D / 2, w: W, h: D, hgt: (H.heights && H.heights[1]) || std[1], panel: '36', orient: 'h', deep: 2, step: 2, rot: 0 }); yTp = fe2 - Math.max(rowFront(tp), D / 2 - 12); } else yTp = (onT1 ? fe2 : yTb) - 110 * f;
+    const line = (labels, y, spc) => labels.map((l, i) => ({ type: 'player', label: l, x: cx + (i - (labels.length - 1) / 2) * spc, y, rot: 0 }));
+    items.push(...line(sax, ySax, sp.sax), ...line(tb, yTb, sp.tb), ...line(tp, yTp, sp.tp));
+    // リズム隊（下手にまとめる）：ピアノは前（ピアニストは下手側に座り、バンドの方を向く）、ギターはピアノの後ろ、
+    // ベースはドラムのとなり（おたがいの手と顔が見える）、ドラムはいちばん奥
+    // 楽器と、その後ろ（向きの反対側）に奏者。rot：奏者の向き（0＝客席）
+    const station = (type, label, x, y, rot, back) => {
+      const a = (rot * Math.PI) / 180;
+      const out = type ? [{ type, x, y, rot }] : [];
+      out.push({ type: 'player', label, x: x + Math.sin(a) * back, y: y - Math.cos(a) * back, rot });
+      return out;
+    };
+    const yD = Math.min(yTb, ySax - 200);
+    if (n.Pf) items.push({ type: 'piano', x: x0 + 300, y: ySax, rot: -90 }, { type: 'player', label: 'Pf', x: x0 + 300 - 118, y: ySax + 10, rot: -90 });
+    if (n.Gt) items.push(...station(null, 'Gt', x0 + 380, ySax - 185, -40, 0), { type: 'amp', x: x0 + 440, y: ySax - 250, rot: -40 });
+    if (n.Bass) items.push(...station(null, 'Bass', x0 + 250, yD - 70, -70, 0), { type: 'amp', x: x0 + 250, y: yD - 150, rot: -70 });
+    if (n.Drs) items.push(...station('drums', 'Drs', x0 + 110, yD - 20, -55, 85));
+    rep('Vib', n.Vib).forEach((l, i) => items.push({ type: 'vib', x: cx + Ww / 2 + 100, y: yTb + 20 + i * 140, rot: 90 }, { type: 'player', label: l, x: cx + Ww / 2 + 170, y: yTb + 20 + i * 140, rot: 90 }));
+    const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1) || items.some(it => it.y < AISLE);
+    return { items: tiers.concat(items), c: { x: cx, y: front + 200 }, overlap: over };
+  }
+
+  // ---------------------------------------------------------------- 合唱
+  // 立って歌う。前の列は床、うしろの列はひな壇（合唱用の山台）に1段1列。うしろの列は半人分ずらして、前の人の頭のあいだから顔が見えるように。
+  // 並び方：S・A・T・B を下手から（パートごとに縦のかたまり）／女声が前・男声が後ろ／S・T・B・A
+  const VOICE_ORDER = { satb: ['S', 'A', 'T', 'B'], stba: ['S', 'T', 'B', 'A'], womenFront: ['S', 'A', 'T', 'B'] };
+  function choir(st, stage, tune) {
+    const n = st.counts, H = st.hina || { steps: 3 };
+    const c = { x: stage.w / 2, y: podiumY(stage) };
+    const sp = Math.round(58 * (tune.spacing / 80)); // となりとの間隔（肩幅＋少し）
+    const order = VOICE_ORDER[st.layout] || VOICE_ORDER.satb;
+    const voices = order.flatMap(v => rep(v, n[v]));
+    const N = voices.length;
+    const items = [], tiers = [];
+    if (!N) return { items: [{ type: 'podium', x: c.x, y: c.y, rot: 0 }], c, overlap: false };
+    const pn = SS.panelSize(H), D = Math.max(pn.d * (H.deep || 1), 76);
+    const rowsN = Math.max(1, Math.min((H.steps || 0) + 1, Math.ceil(N / 2)));
+    // 列の割り当て：列ごとの人数はだいたい同じ。パートは縦のかたまりになるように、列ごとに同じ順番で分ける
+    const perRow = Math.ceil(N / rowsN);
+    const rows = Array.from({ length: rowsN }, () => []);
+    const assign = (list, rs) => {
+      // list を rs 本の列に、パートの割合を保って分ける（前の列から）
+      const cnt = {}; list.forEach(v => { cnt[v] = (cnt[v] || 0) + 1; });
+      const kinds = Object.keys(cnt).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      rs.forEach((r, ri) => kinds.forEach(k => { const share = Math.floor(cnt[k] / rs.length) + (ri < cnt[k] % rs.length ? 1 : 0); for (let i = 0; i < share; i++) r.push(k); }));
+    };
+    if (st.layout === 'womenFront') {
+      const women = voices.filter(v => v === 'S' || v === 'A'), men = voices.filter(v => v === 'T' || v === 'B');
+      const rw = !men.length ? rowsN : !women.length ? 0 : Math.max(1, Math.min(rowsN - 1, Math.round((rowsN * women.length) / N)));
+      assign(women, rows.slice(0, rw));
+      assign(men, rows.slice(rw));
+    } else assign(voices, rows);
+    void perRow;
+    // 前の列（床）は指揮者から約1.9m。うしろの列は段ごとに1列（段の前のふちは、前の列の人の約60cm後ろ）
+    const yFront = c.y - 190;
+    const maxLen = Math.max(...rows.map(r => r.length));
+    const W = Math.ceil(((maxLen - 1) * sp + sp + 80) / pn.w) * pn.w;
+    const std = [21.2, 42.4, 63.6, 84.8];
+    rows.forEach((r, ri) => {
+      let yr = yFront;
+      if (ri > 0) {
+        const fe = yFront - 60 - (ri - 1) * D, yc = fe - D / 2;
+        tiers.push({ type: 'hina', x: c.x, y: yc, w: W, h: D, hgt: (H.heights && H.heights[ri - 1]) || std[Math.min(ri - 1, 3)], panel: H.panel || '36', orient: H.orient || 'h', step: ri, rot: 0 });
+        yr = yc;
+      }
+      const off = ri % 2 ? sp / 2 : 0;
+      r.forEach((v, i) => items.push({ type: 'player', label: v, x: c.x + (i - (r.length - 1) / 2) * sp + off, y: yr, rot: 0 }));
+    });
+    // 指揮者の方を向く（まっすぐな列でも、端の人は少し内向きに）
+    items.forEach(it => { const a = G().faceAngle(it, c); it.rot = Math.max(-25, Math.min(25, a)); });
+    if (n.Pf) {
+      // ピアノは下手の前。ピアニストはピアノの下手側に座り、上手（指揮者・合唱）の方を向く
+      const [xl] = R().xRange(stage, c.y);
+      const px = Math.max(xl + 250, c.x - (maxLen * sp) / 2 - 150);
+      items.push({ type: 'piano', x: px, y: c.y - 40, rot: -90 }, { type: 'player', label: 'Pf', x: px - 118, y: c.y - 30, rot: -90 });
+    }
+    items.push({ type: 'podium', x: c.x, y: c.y, rot: 0 });
+    const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1);
+    return { items: tiers.concat(items), c, overlap: over };
+  }
+
   // ---------------------------------------------------------------- オーケストラ・弦楽
   // 1列 m 人を、2人ずつの組（譜面台1本）に。組の2人は少し近く、組と組のあいだは少し広く（平均は sp のまま）
   // 戻り値 [[列の真ん中からの距離, 組の番号(1〜)], …]
@@ -1262,7 +1426,7 @@ window.SS = window.SS || {};
   };
   function buildInner(st, stage) {
     AISLE = backLimit(stage);
-    const f = st.type === 'band' ? band : orch;
+    const f = st.type === 'band' || st.type === 'brass' ? band : st.type === 'bigband' ? bigBand : st.type === 'choir' ? choir : orch;
     const s2 = st.type === 'strings' ? Object.assign({}, st, { percInst: false, counts: Object.assign({}, st.counts) }) : st;
     let best = null;
     // となりとの間隔：ゆったり＝1割広い並べ方から試す（入らなければ、ふつうの並べ方へ）／つめる＝1割近くつめた並べ方だけ
@@ -1287,7 +1451,7 @@ window.SS = window.SS || {};
       if (score === 0) break;
     }
     // それでも入らないときは、打楽器の場所を変えて試す（最上段 → 最上段＋下手 → 下手）
-    if (best.score > 1 && st.type !== 'strings' && !st._retry) {
+    if (best.score > 1 && ['band', 'orch', 'brass'].includes(st.type) && !st._retry) {
       let alt = null;
       for (const pl of st.type === 'orch' ? ['timpTop', 'left', 'back', 'both'] : ['back', 'both', 'left']) {
         if (pl === st.percPlace) continue;
@@ -1300,7 +1464,8 @@ window.SS = window.SS || {};
     }
     const r = best;
     if (st.hina && st.hina.curve && !r.bent) { r.curveFallback = bendTiers(r.items, r.c, stage); r.bent = true; }
-    r.items.push({ type: 'podium', x: r.c.x, y: r.c.y, rot: 0 });
+    // 指揮台（ビッグバンドは指揮者なし、合唱は自分で置く）
+    if (st.type !== 'bigband' && st.type !== 'choir') r.items.push({ type: 'podium', x: r.c.x, y: r.c.y, rot: 0 });
     // それでもはみ出したものはステージの内側に寄せる
     r.items.forEach(it => {
       it.auto = true;
