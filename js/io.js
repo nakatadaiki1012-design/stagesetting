@@ -298,6 +298,7 @@ window.SS = window.SS || {};
   }
   // 部品の外形（回転が90°くらいなら幅と奥行を入れかえる）
   function bboxOf(it) {
+    if (it.type === 'hina' && SS.hinaArc && SS.hinaArc(it)) { const b = SS.itemAABB(it, {}); return Object.assign(b, { w: b.x1 - b.x0, h: b.y1 - b.y0 }); }
     const sz = SS.itemSize(it, {});
     const a = Math.abs(((it.rot || 0) % 180 + 180) % 180);
     const swap = a > 45 && a < 135;

@@ -62,9 +62,81 @@ window.SS = window.SS || {};
   SS.heightName = v => { const h = SS.RISER_HEIGHTS.find(x => Math.abs(x.v - v) < 0.6); return h ? h.name : `${Math.round(v)}cm`; };
   SS.heightHow = v => { const h = SS.RISER_HEIGHTS.find(x => Math.abs(x.v - v) < 0.6); return h ? h.how : ''; };
 
+  // ---------------------------------------------------------------- 弧（円形）のひな壇
+  // it.curve：前のふちの半径（cm）。円の中心は段の前（客席側・指揮者の方）。w＝前のふちの弧の長さ、h＝奥行
+  // 部品の中の座標（向き rot を回す前）で、円の中心は (0, curve + h/2)
+  SS.hinaArc = function (it) {
+    if (!it || it.type !== 'hina' || !(+it.curve > 0)) return null;
+    const R = +it.curve, h = it.h || 182;
+    return { R, h, th: Math.min(Math.PI * 1.6, (it.w || 728) / R), cy: R + h / 2 };
+  };
+  // 平台1枚ずつの位置（部品の中の座標）。行 row は前から、列 col は下手から
+  // まっすぐの段は格子。弧の段は、各列の平台の前の角が円にのるように、平台を扇に並べる
+  SS.hinaPanels = function (it) {
+    const P = SS.panelSize(it), a = SS.hinaArc(it), out = [];
+    const w = it.w || 728, h = it.h || 182;
+    if (!a) {
+      const across = Math.max(1, Math.round(w / P.w)), deep = Math.max(1, Math.round(h / P.d));
+      const cw = w / across, cd = h / deep;
+      for (let j = 0; j < deep; j++) for (let i = 0; i < across; i++) out.push({ x: -w / 2 + (i + 0.5) * cw, y: h / 2 - (j + 0.5) * cd, rot: 0, w: cw, d: cd, row: j, col: i });
+      return out;
+    }
+    const deep = Math.max(1, Math.round(h / P.d));
+    for (let j = 0; j < deep; j++) {
+      const rf = a.R + j * P.d, dl = 2 * Math.asin(Math.min(1, P.w / 2 / rf));
+      const n = Math.max(1, Math.floor(a.th / dl + 0.25));
+      const dist = rf * Math.cos(dl / 2) + P.d / 2;
+      for (let i = 0; i < n; i++) {
+        const ph = -((n - 1) * dl) / 2 + i * dl;
+        out.push({ x: dist * Math.sin(ph), y: a.cy - dist * Math.cos(ph), rot: (ph * 180) / Math.PI, w: P.w, d: P.d, row: j, col: i });
+      }
+    }
+    return out;
+  };
+  // 部品の中の座標で、段の外形（弧の段は扇形）
+  SS.hinaOutline = function (it) {
+    const a = SS.hinaArc(it), w = it.w || 728, h = it.h || 182;
+    if (!a) return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+    // 平台の角をつないだ形（うしろの角のあいだの三角のすき間も段に含める）
+    const ps = SS.hinaPanels(it), rows = Math.max(...ps.map(q => q.row));
+    const corner = (q, sx, sy) => { const t = (q.rot * Math.PI) / 180, lx = (sx * q.w) / 2, ly = (sy * q.d) / 2; return [q.x + lx * Math.cos(t) - ly * Math.sin(t), q.y + lx * Math.sin(t) + ly * Math.cos(t)]; };
+    const back = ps.filter(q => q.row === rows), front = ps.filter(q => q.row === 0).reverse();
+    const pts = [];
+    back.forEach(q => pts.push(corner(q, -1, -1), corner(q, 1, -1)));
+    front.forEach(q => pts.push(corner(q, 1, 1), corner(q, -1, 1)));
+    return pts;
+  };
+  const inPoly = (x, y, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  // 部品の中の座標での外枠 { x0, x1, y0, y1 }
+  SS.hinaBounds = function (it) {
+    const o = SS.hinaOutline(it);
+    return { x0: Math.min(...o.map(p => p[0])), x1: Math.max(...o.map(p => p[0])), y0: Math.min(...o.map(p => p[1])), y1: Math.max(...o.map(p => p[1])) };
+  };
+  // 点（図の座標）が段の上か。m：ふちの余裕（cm）
+  SS.hinaContains = function (it, px, py, m) {
+    m = m || 0;
+    const t = -((it.rot || 0) * Math.PI) / 180, dx = px - it.x, dy = py - it.y;
+    const lx = dx * Math.cos(t) - dy * Math.sin(t), ly = dx * Math.sin(t) + dy * Math.cos(t);
+    const a = SS.hinaArc(it);
+    if (!a) return Math.abs(lx) <= (it.w || 728) / 2 + m && Math.abs(ly) <= (it.h || 182) / 2 + m;
+    // 扇形の外形の中か（m の余裕は、中心から外へ／内へ・左右へ広げて近似）
+    if (inPoly(lx, ly, SS.hinaOutline(it))) return true;
+    if (!m) return false;
+    const r = Math.hypot(lx, a.cy - ly), ang = Math.atan2(lx, a.cy - ly);
+    return r >= a.R - m && r <= a.R + a.h + m && Math.abs(ang) <= a.th / 2 + m / r;
+  };
+
   // ひな壇1段に使う部材の数（目安）
   SS.hinaMaterials = function (it) {
     const pn = SS.PANELS[it.panel || '36'], P = SS.panelSize(it);
+    if (SS.hinaArc(it)) {
+      // 弧の段：平台は1枚ずつ扇に並ぶので、足は1枚ごとに6か所（四隅と長い辺の真ん中）の目安
+      const ps = SS.hinaPanels(it), v = it.hgt || 21.2;
+      const across = Math.max(...ps.map(p => p.col)) + 1, deep = Math.max(...ps.map(p => p.row)) + 1;
+      const legs = v > 13 ? ps.length * 6 : 0;
+      const legName = v <= 13 ? '' : v < 25 ? '3寸の足（角材）' : v < 35 ? '箱馬（6寸の向き）' : v < 50 ? '箱馬（1尺の向き）' : v < 70 ? '箱馬（1尺7寸の向き）' : '高足（開き足）';
+      return { panels: ps.length, panelName: pn.name + (it.orient === 'v' && it.panel !== '66' ? '・縦置き' : ''), across, deep, legs, legName, arc: true };
+    }
     const across = Math.max(1, Math.round((it.w || 182) / P.w));
     const deep = Math.max(1, Math.round((it.h || 182) / P.d));
     const panels = across * deep;
@@ -825,6 +897,46 @@ window.SS = window.SS || {};
     { spacing: 68, gap: 94, r0: 160, span: 0.99, clear: 35, slim: true },
   ];
 
+  // 弧（円形）のひな壇：まっすぐに並べた段を、指揮者を中心にした弧に曲げる。
+  // 段の上の人・楽器も、指揮者からの距離と、列の中の間隔（弧の長さ）を保ったまま弧にのせ、指揮者の方を向ける。
+  // 舞台からはみ出す段・床の人とぶつかる段は、まっすぐのままにする（戻り値 true）
+  function bendTiers(items, c, stage) {
+    const tiers = items.filter(it => it.type === 'hina');
+    const onTier = new Map();
+    items.forEach(it => {
+      if (it.type === 'hina') return;
+      let best = null;
+      tiers.forEach(t => { if (SS.hinaContains(t, it.x, it.y) && (!best || (t.hgt || 0) > (best.hgt || 0))) best = t; });
+      if (best) onTier.set(it, best);
+    });
+    const floor = items.filter(it => it.type !== 'hina' && !onTier.has(it));
+    let fallback = false;
+    // 弧の中心：ふつうは指揮者。幅の広い段が急な弧（約63°より大きい）にならないよう、必要なら中心を客席側へずらす（どの段も同じ中心）
+    const TH = 1.1;
+    const yc = Math.max(c.y, ...tiers.filter(t => !Math.abs(t.rot || 0)).map(t => t.y + t.h / 2 + t.w / TH));
+    // 前の段から順に。曲げられない段があったら、それより奥の段もまっすぐのまま（曲げた段の両はしが前の段に重ならないように）
+    let stop = false;
+    tiers.slice().sort((p, q) => (q.y + q.h / 2) - (p.y + p.h / 2)).forEach(t => {
+      const Rf = Math.round(yc - (t.y + t.h / 2));
+      if (stop) return;
+      const no = () => { stop = true; if (!t.perc) fallback = true; };
+      if (Rf < 150 || Math.abs(t.rot || 0) > 1) { no(); return; }
+      const trial = Object.assign({}, t, { curve: Rf });
+      const cx = t.x;
+      const outline = SS.hinaOutline(trial).map(([lx, ly]) => ({ x: t.x + lx, y: t.y + ly }));
+      if (!outline.every(p => R().insideStage(stage, p, 5)) || floor.some(f => SS.hinaContains(trial, f.x, f.y, 30))) { no(); return; }
+      t.curve = Rf;
+      onTier.forEach((tt, it) => {
+        if (tt !== t) return;
+        const r = yc - it.y, a = (it.x - cx) / r;
+        it.x = cx + r * Math.sin(a); it.y = yc - r * Math.cos(a);
+        // 奏者は指揮者の方を向く。楽器は弧に合わせて回す
+        it.rot = it.type === 'player' ? G().faceAngle(it, c) : (it.rot || 0) + (a * 180) / Math.PI;
+      });
+    });
+    return fallback;
+  }
+
   A.build = function (st, stage) {
     AISLE = backLimit(stage);
     const f = st.type === 'band' ? band : orch;
@@ -856,6 +968,7 @@ window.SS = window.SS || {};
       if (alt && alt.score < best.score) return alt;
     }
     const r = best;
+    if (st.hina && st.hina.curve && !r.bent) { r.curveFallback = bendTiers(r.items, r.c, stage); r.bent = true; }
     r.items.push({ type: 'podium', x: r.c.x, y: r.c.y, rot: 0 });
     // それでもはみ出したものはステージの内側に寄せる
     r.items.forEach(it => {

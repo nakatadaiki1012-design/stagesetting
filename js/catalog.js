@@ -286,6 +286,32 @@ window.SS = window.SS || {};
           const hv = it.hgt || 21.2;
           const shade = Math.max(0, Math.min(1, hv / 90));
           const col = `rgb(${Math.round(236 - 40 * shade)},${Math.round(220 - 45 * shade)},${Math.round(190 - 50 * shade)})`;
+          const arc = SS.hinaArc && SS.hinaArc(it);
+          if (arc) {
+            // 弧（円形）のひな壇：扇形の外形と、扇に並べた平台1枚ずつ
+            const big = !!opts.assembly, detail = !!opts.hinaNo;
+            body += `<path d="M${SS.hinaOutline(it).map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L')}Z" fill="${col}" stroke="#8a6d3b" stroke-width="3" stroke-linejoin="round"/>`;
+            const ps = SS.hinaPanels(it), m = SS.hinaMaterials(it);
+            let pp = '', nums = '', legs = '';
+            const ls = big ? 16 : 11, fs = big ? Math.min(34, ps[0].w * 0.2, ps[0].d * 0.25) : Math.min(15, ps[0].w * 0.14, ps[0].d * 0.2);
+            ps.forEach((q, k) => {
+              const g0 = `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)}) rotate(${q.rot.toFixed(2)})`;
+              pp += `<rect transform="${g0}" x="${-q.w / 2}" y="${-q.d / 2}" width="${q.w}" height="${q.d}" fill="none" stroke="${detail ? '#8a6d3b' : '#b39463'}" stroke-width="${detail ? (big ? 2.5 : 1.6) : 1.5}"${detail ? '' : ' stroke-dasharray="8 5"'}/>`;
+              if (!detail) return;
+              if (m.legs) [[-1, -1], [0, -1], [1, -1], [-1, 1], [0, 1], [1, 1]].forEach(([sx, sy]) => { legs += `<rect transform="${g0}" x="${(sx * (q.w / 2 - ls / 2 - 1) - ls / 2).toFixed(1)}" y="${(sy * (q.d / 2 - ls / 2 - 1) - ls / 2).toFixed(1)}" width="${ls}" height="${ls}"/>`; });
+              const n = `${opts.hinaNo}-${k + 1}`;
+              nums += `<text transform="${g0}" ${big ? 'y="0" dy="0.35em" text-anchor="middle"' : `x="${(-q.w / 2 + 16).toFixed(1)}" y="${(-q.d / 2 + fs + 8).toFixed(1)}"`} font-size="${fs.toFixed(1)}" font-weight="700" fill="#6b5024" fill-opacity="${big ? 1 : 0.8}">${esc(n)}</text>`;
+            });
+            body += `<g>${pp}</g>`;
+            if (legs) body += `<g class="hina-legs" fill="#6b5024" fill-opacity="${big ? 0.85 : 0.45}" stroke="none">${legs}</g>`;
+            body += nums;
+            // 段の名前は、下手のはしの前のふちに沿って（組み図では平台の番号と重ならないよう、段のすぐ前に）
+            const tag = `${it.perc ? '打楽器の段 ' : it.step ? it.step + '段 ' : opts.hinaNo && !/^\d+$/.test(opts.hinaNo) ? 'ひな壇' + opts.hinaNo + ' ' : ''}${Math.round(hv)}cm${big ? `・弧 半径${(arc.R / 100).toFixed(1)}m` : ''}`;
+            const t0 = -arc.th / 2 + 60 / arc.R, lr = big ? arc.R - 18 : arc.R + 14, lxl = lr * Math.sin(t0), lyl = arc.cy - lr * Math.cos(t0);
+            const ra = (rot * Math.PI) / 180, tx = x + lxl * Math.cos(ra) - lyl * Math.sin(ra), ty = y + lxl * Math.sin(ra) + lyl * Math.cos(ra);
+            text += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="${big ? 16 : 22}" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke" transform="rotate(${(rot + (t0 * 180) / Math.PI).toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${esc(tag)}</text>`;
+            break;
+          }
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${col}" stroke="#8a6d3b" stroke-width="3"/>`;
           if (SS.hinaMaterials && opts.hinaNo) {
             // 組み図：平台1枚ずつの線と番号（段の番号-前の列の下手から数えた番号）、箱馬（足）の位置
@@ -467,6 +493,19 @@ window.SS = window.SS || {};
     if (it.type === 'player') { const r = (opts && opts.seatR) || SS.PLAYER_R; return { w: r * 2, h: r * 2 }; }
     const c = SS.CATALOG[it.type] || SS.CATALOG.box;
     return { w: it.w || c.w, h: it.h || c.h };
+  };
+
+  // 部品の中の座標（向きを回す前）での外枠。ふつうは真ん中が (0,0) の四角。弧のひな壇は扇形の外枠
+  SS.itemBounds = function (it, opts) {
+    if (it.type === 'hina' && SS.hinaArc && SS.hinaArc(it)) return SS.hinaBounds(it);
+    const s = SS.itemSize(it, opts);
+    return { x0: -s.w / 2, x1: s.w / 2, y0: -s.h / 2, y1: s.h / 2 };
+  };
+  // 図の座標での外枠（向きも考える）
+  SS.itemAABB = function (it, opts) {
+    const b = SS.itemBounds(it, opts), a = ((it.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const pts = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(([x, y]) => [it.x + x * c - y * s, it.y + x * s + y * c]);
+    return { x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])) };
   };
 
   // パレット用の小さなアイコン

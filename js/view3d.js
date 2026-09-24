@@ -467,6 +467,7 @@ window.SS = window.SS || {};
   function heightAt(x, y, rh) {
     let h = 0;
     rh.forEach((hh, r) => {
+      if (r.type === 'hina' && SS.hinaArc(r)) { if (SS.hinaContains(r, x, y, 2)) h = Math.max(h, hh); return; }
       const a = -(r.rot || 0) * Math.PI / 180;
       const dx = x - r.x, dy = y - r.y;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
@@ -618,7 +619,18 @@ window.SS = window.SS || {};
         break;
       }
       case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
-      case 'hina': makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100); break;
+      case 'hina':
+        if (SS.hinaArc(it)) {
+          // 弧のひな壇：平台を1枚ずつ扇に並べる
+          SS.hinaPanels(it).forEach(q => {
+            const pg = new T.Group();
+            makeRiser(pg, q.w / 100, q.d / 100, riserH, q.d / 100, q.w / 100);
+            pg.position.set(q.x / 100, 0, q.y / 100);
+            pg.rotation.y = -(q.rot * Math.PI) / 180;
+            g.add(pg);
+          });
+        } else makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100);
+        break;
       case 'cable': case 'outlet': case 'tap': break; // 床の線・コンセントは3Dでは描かない
       case 'micTall': // 録音用マイク：3本脚の高いスタンド
         for (let i = 0; i < 3; i++) { const a = (i * 2 * Math.PI) / 3; tube(g, [0, 0.5, 0], [Math.sin(a) * w / 2, 0.01, Math.cos(a) * w / 2], 0.012, '#333', METAL); }

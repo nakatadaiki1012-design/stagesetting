@@ -210,7 +210,8 @@
       if (it.type === 'player') {
         s += `<circle cx="${it.x}" cy="${it.y}" r="${sz.w / 2 + 6}" fill="rgba(47,111,222,.12)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/>`;
       } else {
-        s += `<g transform="translate(${it.x} ${it.y}) rotate(${it.rot || 0})"><rect x="${-sz.w / 2 - 6}" y="${-sz.h / 2 - 6}" width="${sz.w + 12}" height="${sz.h + 12}" fill="rgba(47,111,222,.08)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/></g>`;
+        const bb = SS.itemBounds(it, o);
+        s += `<g transform="translate(${it.x} ${it.y}) rotate(${it.rot || 0})"><rect x="${bb.x0 - 6}" y="${bb.y0 - 6}" width="${bb.x1 - bb.x0 + 12}" height="${bb.y1 - bb.y0 + 12}" fill="rgba(47,111,222,.08)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/></g>`;
       }
     });
     if (sel.length === 1 && sel[0].type === 'cable') {
@@ -226,7 +227,7 @@
       s += `<line x1="0" y1="${-sz.h / 2 - 4}" x2="0" y2="${-back}" stroke="#2f6fde" stroke-width="${2 / k}"/>`;
       s += `<circle data-handle="rotate" cx="0" cy="${-back}" r="${hr * 1.3}" fill="#fff" stroke="#2f6fde" stroke-width="${2.5 / k}" style="cursor:grab"/>`;
       s += `<text x="0" y="${-back}" dy="0.35em" text-anchor="middle" font-size="${12 / k}" fill="#2f6fde" pointer-events="none">↻</text>`;
-      if (it.type !== 'player') {
+      if (it.type !== 'player' && !(SS.hinaArc && SS.hinaArc(it))) {
         s += `<rect data-handle="resize" x="${sz.w / 2 + 6 - hr}" y="${sz.h / 2 + 6 - hr}" width="${hr * 2}" height="${hr * 2}" fill="#2f6fde" stroke="#fff" stroke-width="${1.5 / k}" style="cursor:nwse-resize"/>`;
       }
       s += '</g>';
@@ -919,7 +920,8 @@
 
   // 弧のカーブ（スライダー）：床の奏者（ひな壇の上の人は除く）を、ゆるい弧〜扇形に
   function onRiser(it) {
-    return doc().items.some(h => h.type === 'hina' && Math.abs(it.x - h.x) < h.w / 2 && Math.abs(it.y - h.y) < h.h / 2);
+    // まっすぐのひな壇の上の人（弧のひな壇の上の人は、弧のまま整える）
+    return doc().items.some(h => h.type === 'hina' && !SS.hinaArc(h) && Math.abs(it.x - h.x) < h.w / 2 && Math.abs(it.y - h.y) < h.h / 2);
   }
   // スライダーを動かし始めたとき、扇形のときの位置（arcBase）を覚えておき、いつもそこから計算する
   function curveStart() {
@@ -1171,11 +1173,14 @@
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
       const curT = SS.hinaTypeOf({ panel: one.panel, orient: one.orient, deep: m.deep });
       h += `<p class="hint small" style="margin:4px 0">平台の置き方（押すと奥行が変わります）</p><div class="hina-types" id="propHinaTypes">${SS.HINA_TYPES.map(t => `<button class="hina-type${curT && curT.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`).join('')}</div>`;
-      h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：横${m.across}枚×奥${m.deep}枚＝${m.panels}枚</p>`;
+      const arcH = SS.hinaArc(one);
+      h += `<div class="row2"><label class="field">形<select id="propHinaShape"><option value="line"${arcH ? '' : ' selected'}>まっすぐ</option><option value="arc"${arcH ? ' selected' : ''}>弧（円形）</option></select></label>${arcH ? `<label class="field">弧の半径（前のふち, m）<input id="propCurve" type="number" step="0.1" min="2" max="40" value="${(arcH.R / 100).toFixed(1)}"></label>` : ''}</div>`;
+      if (arcH) h += `<button class="btn" id="propCurveCenter" title="指揮台が弧の中心になるように、半径と向きを合わせます">🎯 指揮者を弧の中心にする</button>`;
+      h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：${arcH ? `扇に並べて${m.panels}枚（前の列${SS.hinaPanels(one).filter(q => q.row === 0).length}枚）` : `横${m.across}枚×奥${m.deep}枚＝${m.panels}枚`}</p>`;
       h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
     }
     if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable') {
-      h += `<div class="row2"><label class="field">幅(cm)<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
+      h += `<div class="row2"><label class="field">${SS.hinaArc && SS.hinaArc(one) ? '前のふちの弧の長さ(cm)' : '幅(cm)'}<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
     }
     if (one && one.type !== 'cable') {
       h += `<label class="field">向き <span id="propRotVal">${Math.round(one.rot || 0)}°</span><input id="propRot" type="range" min="-180" max="180" step="5" value="${Math.round(one.rot || 0)}"></label>`;
@@ -2581,6 +2586,7 @@
     else if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
     else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
+    else if (r.curveFallback) toast('舞台からはみ出す・床の人とぶつかる段は、弧にせず、まっすぐのままにしました');
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
@@ -2611,6 +2617,7 @@
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
+    document.querySelectorAll('#hinaShape [data-shape]').forEach(b => b.classList.toggle('on', b.getAttribute('data-shape') === (H.curve ? 'arc' : 'line')));
     const cur = SS.hinaTypeOf(H);
     $('hinaTypes').innerHTML = SS.HINA_TYPES.map(t => `<button class="hina-type${cur && cur.id === t.id ? ' on' : ''}" data-ht="${t.id}" title="${SS.esc(t.hint)}">${SS.hinaTypeSVG(t)}<b>${SS.esc(t.name)}</b><small>奥行${Math.round(SS.hinaTypeDepth(t))}cm</small></button>`).join('');
     $('hinaTypes').querySelectorAll('[data-ht]').forEach(b => {
@@ -2677,6 +2684,9 @@
   $('ensLowOuter').onchange = e => { ens().lowOuter = e.target.checked; optAuto(); };
   $('bandLayout').onchange = e => { ens().layout = e.target.value; applyAuto(); };
   $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
+  document.querySelectorAll('#hinaShape [data-shape]').forEach(b => {
+    b.onclick = () => { ens().hina.curve = b.getAttribute('data-shape') === 'arc'; renderSteppers(); applyAuto(); };
+  });
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
   });

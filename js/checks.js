@@ -14,6 +14,7 @@ window.SS = window.SS || {};
 
   // 物が占める範囲（回転も考えた外枠）
   function box(it) {
+    if (it.type === 'hina' && SS.hinaArc(it)) return SS.itemAABB(it, {});
     const s = SS.itemSize(it, {});
     const a = ((it.rot || 0) * Math.PI) / 180, c = Math.abs(Math.cos(a)), n = Math.abs(Math.sin(a));
     const w = s.w * c + s.h * n, h = s.w * n + s.h * c;
@@ -48,7 +49,7 @@ window.SS = window.SS || {};
   // いちばん高い台（その上に乗っているもの）
   function platformUnder(p, plats) {
     let best = null;
-    plats.forEach(pl => { if (inBox(p, pl.b) && (!best || pl.h > best.h)) best = pl; });
+    plats.forEach(pl => { if ((pl.it.type === 'hina' ? SS.hinaContains(pl.it, p.x, p.y) : inBox(p, pl.b)) && (!best || pl.h > best.h)) best = pl; });
     return best;
   }
 
