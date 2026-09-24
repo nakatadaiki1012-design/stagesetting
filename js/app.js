@@ -40,6 +40,8 @@
       options: Object.assign(defaultOptions(), doc.options || {}),
       ensemble: doc.ensemble || null,
       hall: doc.hall || '',
+      // 図面の情報欄（会場・日付・版・作成者・メモ）。古い保存データには無いので空で補う
+      info: Object.assign({ venue: '', date: '', version: 1, author: '', memo: '', changeNote: '' }, doc.info || {}),
     };
     return d;
   }
@@ -61,7 +63,7 @@
     // 舞台図（下絵）は、画像そのものは入れず、位置・大きさ・回転などだけを記録する
     const ul = d.underlay ? Object.assign({}, d.underlay, { src: undefined }) : null;
     if (d.underlay) S.ulSrc = d.underlay.src;
-    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, ul });
+    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul });
   }
   function pushHistory() {
     S.undo.push(snapshot());
@@ -1162,6 +1164,7 @@
     const d = doc(), o = d.options;
     if (document.activeElement !== $('docTitle')) $('docTitle').value = d.title;
     if (document.activeElement !== $('docSubtitle')) $('docSubtitle').value = d.subtitle;
+    [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo']].forEach(([id, key]) => { if (document.activeElement !== $(id)) $(id).value = d.info[key] == null ? '' : d.info[key]; });
     if (document.activeElement !== $('stageW')) $('stageW').value = d.stage.w / 100;
     if (document.activeElement !== $('stageD')) $('stageD').value = d.stage.d / 100;
     $('stageShape').value = d.stage.shape || 'rect';
@@ -1189,6 +1192,8 @@
   }
   bindSetting('docTitle', 'input', el => { doc().title = el.value; });
   bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
+  [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoAuthor', 'author'], ['infoMemo', 'memo']].forEach(([id, key]) => bindSetting(id, 'input', el => { doc().info[key] = el.value; }));
+  bindSetting('infoVersion', 'input', el => { const v = Math.round(+el.value); if (v >= 1) doc().info.version = v; });
   bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageShape', 'change', el => {
@@ -1988,7 +1993,17 @@
     `);
     $('saveHere').onclick = () => {
       const name = $('saveName').value.trim() || '配置図';
-      try { SS.render.saveToList(name, doc()); toast('「' + name + '」を保存しました'); closeModal(); } catch (e) { toast('保存できませんでした（容量がいっぱいです）'); }
+      const v = doc().info.version || 1;
+      const save = bump => {
+        if (bump) { pushHistory(); doc().info.version = v + 1; renderSettings(); scheduleSave(); }
+        try { SS.render.saveToList(name, doc()); toast(`「${name}」を保存しました（第${doc().info.version}版）`); closeModal(); } catch (e) { toast('保存できませんでした（容量がいっぱいです）'); }
+      };
+      // 名前を付けて保存するときは、版を1つ上げるか聞く
+      openModal(`<h2>版を上げますか？</h2>
+        <p style="line-height:1.7">いまは <b>第${v}版</b> です。直したものを配るときは、版を1つ上げておくと、古い図面と見分けられます。</p>
+        <div class="btn-row"><button class="btn primary" id="svUp">第${v + 1}版にして保存</button><button class="btn" id="svKeep">第${v}版のまま保存</button></div>`);
+      $('svUp').onclick = () => save(true);
+      $('svKeep').onclick = () => save(false);
     };
     document.querySelectorAll('[data-load]').forEach(b => {
       b.onclick = () => { const x = SS.render.savedList().find(s => s.id === b.getAttribute('data-load')); if (x) { loadDoc(x.doc, '「' + x.name + '」を開きました'); closeModal(); } };
@@ -2028,39 +2043,107 @@
     });
   }
 
+  // 用紙・縮尺・表示のえらび（画像・PDF・印刷で共通。えらんだものは覚えておく）
+  const paperPref = () => Object.assign({ size: 'A4', orient: 'landscape', scale: 0, style: 'screen' }, opts().paper || {});
+  const paperFieldsHTML = () => {
+    const p = paperPref();
+    const opt = (v, t, cur) => `<option value="${v}"${String(cur) === String(v) ? ' selected' : ''}>${t}</option>`;
+    return `<div class="paper-fields">
+      <div class="row2">
+        <label class="field">用紙<select id="ppSize">${opt('A4', 'A4', p.size)}${opt('A3', 'A3', p.size)}</select></label>
+        <label class="field">向き<select id="ppOrient">${opt('landscape', '横', p.orient)}${opt('portrait', '縦', p.orient)}</select></label>
+      </div>
+      <div class="row2">
+        <label class="field">縮尺<select id="ppScale">${opt(0, '用紙に合わせる', p.scale)}${opt(50, '1/50', p.scale)}${opt(100, '1/100', p.scale)}${opt(200, '1/200', p.scale)}</select></label>
+        <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '図面用（白黒・線だけ）', p.style)}</select></label>
+      </div>
+      <p id="ppWarn" class="pp-warn" hidden></p>
+    </div>`;
+  };
+  function readPaper() {
+    const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value };
+    opts().paper = p;
+    scheduleSave();
+    return p;
+  }
+  // 書き出し用の表示の設定（「図面用」をえらんだときは白黒の線だけ）
+  function sheetOpts(p) {
+    const o = renderOpts();
+    if (p.style === 'mono') Object.assign(o, { mono: true, contest: true, figure: false, colorBy: false });
+    return o;
+  }
+  function buildSheet(extra) {
+    const p = readPaper();
+    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true }, extra));
+  }
+  // 縮尺どおりだと用紙に入らないとき、警告と入る縮尺の案内
+  function paperCheck(extra) {
+    const r = buildSheet(extra);
+    const w = $('ppWarn');
+    const p = paperPref();
+    if (p.scale && !r.info.fits) {
+      w.hidden = false;
+      w.innerHTML = `⚠ 1/${p.scale} では舞台が${p.size}${p.orient === 'portrait' ? '縦' : '横'}の用紙に入りません。` +
+        (r.info.suggest ? ` <b>1/${r.info.suggest}</b> なら入ります。<button class="btn" id="ppUse">1/${r.info.suggest}にする</button>` : ' 大きい用紙か「用紙に合わせる」をえらんでください。');
+      if ($('ppUse')) $('ppUse').onclick = () => { const sel = $('ppScale'); if (![...sel.options].some(o => +o.value === r.info.suggest)) sel.insertAdjacentHTML('beforeend', `<option value="${r.info.suggest}">1/${r.info.suggest}</option>`); sel.value = r.info.suggest; paperCheck(extra); };
+    } else {
+      w.hidden = !p.scale;
+      w.className = 'pp-warn ok';
+      w.textContent = p.scale ? `✓ 1/${p.scale}（紙の上の1cm＝実際の${p.scale / 100}m）で用紙に入ります。` : '';
+    }
+    if (p.scale && !r.info.fits) w.className = 'pp-warn';
+    return r;
+  }
+  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle'].forEach(id => $(id).addEventListener('change', () => paperCheck(extra())));
+
   $('btnExport').onclick = () => {
     openModal(`
-      <h2>画像として保存</h2>
+      <h2>画像・PDFとして保存</h2>
       ${titleFieldsHTML()}
+      ${paperFieldsHTML()}
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
-      ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで紙を広げる</label>' : ''}
-      <label class="field" style="margin-top:10px">画質
-        <select id="exScale"><option value="1">ふつう</option><option value="2" selected>きれい</option><option value="3">とてもきれい（印刷向け）</option></select>
+      ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで入れる</label>' : ''}
+      <label class="field" style="margin-top:10px">画質（PNG・PDF）
+        <select id="exScale"><option value="4">ふつう</option><option value="8" selected>きれい</option><option value="12">とてもきれい（印刷向け）</option></select>
       </label>
       <div class="btn-row">
-        <button class="btn primary" id="exPng">🖼 PNG画像で保存</button>
+        <button class="btn primary" id="exPng">🖼 PNG画像</button>
+        <button class="btn primary" id="exPdf">📄 PDF</button>
         <button class="btn" id="exSvg">SVG（拡大しても荒れない形式）</button>
       </div>
-      <p class="hint small">スマホでは保存した画像が「ファイル」アプリや「ダウンロード」に入ります。</p>
+      <p class="hint small">PDF は用紙の大きさ・縮尺どおりに作ります（ネットにつながっていなくても作れます）。うまく保存できないときは、「🖨 印刷」から <b>「PDFに保存」</b> をえらんでも作れます。<br>スマホでは保存したファイルが「ファイル」アプリや「ダウンロード」に入ります。</p>
       <div id="exResult"></div>
     `);
+    const extra = () => ({ legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
-    const build = () => SS.render.fullSVG(doc(), renderOpts(), conductor(), {
-      legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: $('exUnderlay') && $('exUnderlay').checked, underlayAll: $('exUnderlayAll') && $('exUnderlayAll').checked, pxPerCm: +$('exScale').value,
-    });
+    bindPaper(extra);
+    paperCheck(extra());
+    const name = () => SS.render.safeName(doc().title || '配置図');
     $('exPng').onclick = async () => {
       try {
-        const blob = await SS.render.svgToPng(build());
-        SS.render.download(blob, SS.render.safeName(doc().title || '配置図') + '.png');
+        const r = buildSheet(Object.assign(extra(), { pxPerMm: +$('exScale').value }));
+        const blob = await SS.render.svgToPng(r.svg);
+        SS.render.download(blob, name() + '.png');
         // ダウンロードできない環境（アプリ内ブラウザなど）でも保存できるよう画像を表示する
         const url = URL.createObjectURL(blob);
         $('exResult').innerHTML = `<p class="hint">保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
         toast('画像を作りました');
       } catch (e) { toast(e.message); }
     };
+    $('exPdf').onclick = async () => {
+      try {
+        const r = buildSheet(Object.assign(extra(), { pxPerMm: +$('exScale').value }));
+        const blob = await SS.render.svgToPdf(r.svg, r.info.paperW, r.info.paperH);
+        SS.render.download(blob, name() + '.pdf');
+        const url = URL.createObjectURL(blob);
+        $('exResult').innerHTML = `<p class="hint">PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存するか、「🖨 印刷」から「PDFに保存」をえらんでください。</p>`;
+        toast('PDFを作りました');
+      } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。「🖨 印刷」から「PDFに保存」をえらんでください'); }
+    };
     $('exSvg').onclick = () => {
-      SS.render.download(new Blob([build()], { type: 'image/svg+xml' }), SS.render.safeName(doc().title || '配置図') + '.svg');
+      const r = buildSheet(extra());
+      SS.render.download(new Blob([r.svg], { type: 'image/svg+xml' }), name() + '.svg');
     };
   };
 
@@ -2068,14 +2151,24 @@
     openModal(`
       <h2>印刷</h2>
       ${titleFieldsHTML()}
-      <p class="hint small">A4横で印刷します。編成表（人数）も入ります。</p>
+      ${paperFieldsHTML()}
+      <p class="hint small">編成表（人数）と情報欄も入ります。縮尺どおりに印刷するには、印刷の画面で <b>倍率を「100%」（実際のサイズ）</b> にしてください。PDFにしたいときは、印刷の画面で <b>「PDFに保存」</b> をえらびます。</p>
       <div class="btn-row"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
     `);
+    const extra = () => ({ legend: true, grid: false, underlay: false });
     bindTitleFields();
+    bindPaper(extra);
+    paperCheck(extra());
     $('prNo').onclick = closeModal;
     $('prGo').onclick = () => {
+      const r = buildSheet(extra());
+      const p = paperPref();
       closeModal();
-      $('printArea').innerHTML = SS.render.fullSVG(doc(), renderOpts(), conductor(), { legend: true, grid: false, underlay: false, pxPerCm: 1 });
+      // 用紙の大きさ・向きを印刷に伝える（余白は図面の中にあるので 0）
+      let st = document.getElementById('pageStyle');
+      if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.appendChild(st); }
+      st.textContent = `@media print { @page { size: ${p.size} ${p.orient}; margin: 0; } #printArea svg { width: ${r.info.paperW}mm !important; height: ${r.info.paperH}mm !important; max-height: none !important; } }`;
+      $('printArea').innerHTML = r.svg;
       setTimeout(() => window.print(), 50);
     };
   };

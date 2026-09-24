@@ -239,7 +239,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 
 /* ---------- print ---------- */
 @media print {
-  @page { size: A4 landscape; margin: 10mm; }
+  @page { size: A4 landscape; margin: 0; }
   body { display: block; overflow: visible; background: #fff; }
   body > *:not(#printArea) { display: none !important; }
   #printArea { display: block !important; }
@@ -347,3 +347,9 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 /* 画像保存・印刷の画面のタイトル欄 */
 .title-fields { background: #f6f8fb; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 2px; margin: 0 0 10px; }
 .title-fields .field input { font: inherit; font-size: 14px; color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; background: #fff; width: 100%; box-sizing: border-box; }
+
+/* 用紙・縮尺のえらび */
+.paper-fields { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 2px; margin: 0 0 10px; }
+.pp-warn { font-size: 12.5px; line-height: 1.6; background: #fff4e5; border: 1px solid #f0c27a; border-radius: 8px; padding: 6px 8px; margin: 0 0 8px; }
+.pp-warn.ok { background: #eefaf0; border-color: #9fd7a8; }
+.pp-warn .btn { margin-left: 6px; font-size: 12px; padding: 3px 8px; }

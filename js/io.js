@@ -116,7 +116,7 @@ window.SS = window.SS || {};
       for (let x = cx % g; x <= st.w; x += g) if (Math.abs(x - cx) > 1) d += `M${x.toFixed(1)} -5V${fy + 5}`;
       for (let y = fy - g; y >= -5; y -= g) d += `M-5 ${y.toFixed(1)}H${st.w + 5}`;
       const big = g >= 100;
-      s += `<clipPath id="stageClip"><path d="${p}"/></clipPath><g clip-path="url(#stageClip)" pointer-events="none">`;
+      s += `<clipPath id="stageClip"><path d="${p}"/></clipPath><g class="grid" clip-path="url(#stageClip)" pointer-events="none">`;
       s += `<path d="${d}" fill="none" stroke="${big ? '#c9d2df' : '#d8dde6'}" stroke-width="${big ? 2 : 1}"/>`;
       s += `<path d="M${cx} -5V${fy + 5}" stroke="#b7c2d3" stroke-width="2.5" stroke-dasharray="18 10"/>`;
       s += '</g>';
@@ -405,48 +405,219 @@ window.SS = window.SS || {};
     return { groups: groups.filter(x => x.parts.length), total };
   };
 
-  // 書き出し用の完全なSVG
-  R.fullSVG = function (doc, opts, conductor, ex) {
-    ex = Object.assign({ underlay: false, legend: true, pxPerCm: 1 }, ex);
-    const st = doc.stage;
-    const pad = 60;
-    const titleH = doc.title || doc.subtitle ? 175 : 20;
-    const bottom = R.frontY(st) + 110;
-    let legend = '', legendH = 0;
+  // ---------------------------------------------------------------- 図面（用紙・縮尺・情報欄）
+  R.PAPERS = { A4: [297, 210], A3: [420, 297] }; // 横向きの mm
+  R.SCALES = [20, 30, 50, 75, 100, 150, 200, 250, 300, 400, 500];
+  // 図面用（白黒・線だけ）：色を使わず、白い面と黒い線・黒い文字だけにする
+  R.MONO_CSS = `.mono [fill]:not([fill="none"]):not([fill="transparent"]):not(text):not(image){fill:#fff !important}
+.mono [stroke]:not([stroke="none"]):not([stroke="transparent"]):not(text){stroke:#000 !important}
+.mono text{fill:#000 !important}.mono text[stroke]{stroke:#fff !important}
+.mono .grid path{stroke:#b0b0b0 !important}.mono .item-hina rect:first-child{fill:#fff !important}`;
+
+  const MM_TEXT = 2.8; // 寸法などの文字の大きさ（紙の上の mm）
+  // 紙の上で見た目の文字の大きさを一定にするための k（dimsSVG・marksSVG 用）。f = 1cm が紙の上で何 mm か
+  const kFor = f => (13 * f) / MM_TEXT;
+
+  // 図の中身（舞台・部品・寸法・上手下手など）。単位は cm
+  function drawingContent(doc, opts, conductor, ex, k) {
+    let s = R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
+    if (ex.underlay && doc.underlay) s += R.underlaySVG(doc.underlay, { id: 'ex' });
+    s += R.itemsSVG(doc, opts, conductor, false);
+    if (opts.dims) s += R.dimsSVG(doc, k, null);
+    s += R.marksSVG(doc, k, opts.dims);
+    return s;
+  }
+  // 中身がはみ出さない範囲（文字の大きさまで含めて、ブラウザで実際に測る）
+  let measureEl = null;
+  function measure(svgInner) {
+    if (typeof document === 'undefined') return null;
+    if (!measureEl) {
+      measureEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      measureEl.setAttribute('style', 'position:absolute;left:-99999px;top:0;width:10px;height:10px;visibility:hidden');
+      document.body.appendChild(measureEl);
+    }
+    measureEl.innerHTML = `<g font-family="'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif">${svgInner}</g>`;
+    let b = null;
+    try { const r = measureEl.firstChild.getBBox(); b = { x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height }; } catch (e) { /* ignore */ }
+    measureEl.innerHTML = '';
+    return b;
+  }
+  function contentBounds(doc, opts, conductor, ex, k) {
+    const inner = drawingContent(doc, opts, conductor, Object.assign({}, ex, { underlay: false }), k);
+    let b = measure(inner);
+    if (!b) { const st = doc.stage; b = { x0: -200, y0: -150, x1: st.w + 200, y1: R.frontY(st) + 200 }; }
+    const m = 3 / (k / 4.64); // 約3mmのゆとり
+    b = { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m };
+    if (ex.underlay && doc.underlay && ex.underlayAll) {
+      const u = R.underlayBounds(doc.underlay);
+      b = { x0: Math.min(b.x0, u.x0), y0: Math.min(b.y0, u.y0), x1: Math.max(b.x1, u.x1), y1: Math.max(b.y1, u.y1) };
+    }
+    return b;
+  }
+  const niceLen = cm => { const c = [50, 100, 200, 250, 500, 1000, 2000]; return c.reduce((a, v) => (Math.abs(v - cm) < Math.abs(a - cm) ? v : a), c[0]); };
+  const fmtDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${+m[1]}年${+m[2]}月${+m[3]}日` : (v || ''); };
+
+  /**
+   * 用紙1枚の図面を作る。
+   * ex.paper: { size: 'A4'|'A3', orient: 'landscape'|'portrait', scale: 0（用紙に合わせる）| 50 | 100 | 200 … }
+   * 戻り値 { svg, info: { f（1cmが紙の上で何mm）, scale, fits, suggest, paperW, paperH, drawBox } }
+   */
+  R.sheet = function (doc, opts, conductor, ex) {
+    ex = Object.assign({ legend: true, pxPerMm: 0 }, ex);
+    const pp = Object.assign({ size: 'A4', orient: 'landscape', scale: 0 }, ex.paper || {});
+    const [pl, ps] = R.PAPERS[pp.size] || R.PAPERS.A4;
+    const PW = pp.orient === 'portrait' ? ps : pl, PH = pp.orient === 'portrait' ? pl : ps;
+    const M = 10; // 紙のふちの余白
+    const info = doc.info || {};
+    // 見出し（公演名・サブタイトル）
+    const headH = doc.title || doc.subtitle ? (doc.title ? 11 : 0) + (doc.subtitle ? 6 : 0) + 3 : 0;
+    // 情報欄（右下）と編成表（左下）
+    const TBW = Math.min(128, PW - 2 * M), rowH = 5.4;
+    const rows = [
+      [['公演名', doc.title || '']],
+      [['会場', info.venue || doc.hall || ''], ['日付', fmtDate(info.date)]],
+      [['版', info.version ? `第${info.version}版` : ''], ['作成', info.author || '']],
+      [['縮尺', ''], ['用紙', `${pp.size} ${pp.orient === 'portrait' ? '縦' : '横'}`]],
+      [['メモ', [info.memo, info.changeNote].filter(Boolean).join('　')]],
+    ];
+    const TBH = rows.length * rowH;
+    let legendItems = [];
     if (ex.legend) {
       const c = R.counts(doc);
-      const cells = [];
-      c.groups.forEach(x => x.parts.forEach(p => cells.push({ color: x.g.color, text: `${p.label} ×${p.n}` })));
-      const colW = 190, perRow = Math.max(1, Math.floor(st.w / colW));
-      legend += `<text x="0" y="${bottom + 20}" font-size="28" font-weight="700" fill="#1f2733">編成（計 ${c.total} 人）</text>`;
-      cells.forEach((cell, i) => {
-        const cx = (i % perRow) * colW, cy = bottom + 60 + Math.floor(i / perRow) * 40;
-        legend += `<circle cx="${cx + 12}" cy="${cy - 8}" r="11" fill="${opts.colorBy ? cell.color : '#fff'}" stroke="#39414d" stroke-width="1.5"/>`;
-        legend += `<text x="${cx + 30}" y="${cy}" font-size="24" fill="#1f2733">${SS.esc(cell.text)}</text>`;
+      c.groups.forEach(x => x.parts.forEach(p => legendItems.push({ color: x.g.color, text: `${p.label} ×${p.n}` })));
+      legendItems.total = c.total;
+    }
+    const cellW = 25, lfs = 3, lrow = 4.6;
+    const sideW = PW - 2 * M - TBW - 4; // 情報欄の左の空き
+    const legendBeside = sideW >= 55;
+    const lCols = Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
+    const legendH = legendItems.length ? 5 + Math.ceil(legendItems.length / lCols) * lrow : 0;
+    const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0);
+    const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - 4 };
+
+    // 縮尺を決める（中身の大きさは文字の大きさで少し変わるので、数回くりかえして合わせる）
+    const fitF = () => {
+      let f = 0.1;
+      for (let i = 0; i < 4; i++) { const b = contentBounds(doc, opts, conductor, ex, kFor(f)); f = Math.min(draw.w / (b.x1 - b.x0), (draw.h - 9) / (b.y1 - b.y0)); }
+      return f;
+    };
+    const fitsAt = n => { const f = 10 / n, b = contentBounds(doc, opts, conductor, ex, kFor(f)); return (b.x1 - b.x0) * f <= draw.w + 0.01 && (b.y1 - b.y0) * f <= draw.h - 9 + 0.01; };
+    let f, scaleN = pp.scale, fits = true, suggest = 0;
+    if (scaleN) {
+      f = 10 / scaleN;
+      fits = fitsAt(scaleN);
+      if (!fits) suggest = R.SCALES.find(n => n > scaleN && fitsAt(n)) || 0;
+    } else {
+      f = fitF();
+      scaleN = 10 / f;
+    }
+    const k = kFor(f);
+    const b = contentBounds(doc, opts, conductor, ex, k);
+    const cw = (b.x1 - b.x0) * f, ch = (b.y1 - b.y0) * f;
+    const ox = draw.x + (draw.w - cw) / 2 - b.x0 * f, oy = draw.y + Math.max(0, (draw.h - 9 - ch) / 2) - b.y0 * f;
+    const scaleText = pp.scale ? `1/${pp.scale}` : `約1/${Math.round(scaleN)}（用紙に合わせる）`;
+    rows[3][0][1] = scaleText;
+
+    const pxW = ex.pxPerMm ? Math.round(PW * ex.pxPerMm) : 0;
+    const font = `'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif`;
+    let out = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ${pxW ? `width="${pxW}" height="${Math.round(PH * ex.pxPerMm)}"` : `width="${PW}mm" height="${PH}mm"`} viewBox="0 0 ${PW} ${PH}" font-family="${font}">`;
+    if (opts.mono) out += `<style>${R.MONO_CSS}</style>`;
+    out += `<rect x="0" y="0" width="${PW}" height="${PH}" fill="#fff"/>`;
+    // 見出し
+    let hy = M;
+    if (doc.title) { out += `<text x="${PW / 2}" y="${hy + 7.5}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#111">${SS.esc(doc.title)}</text>`; hy += 11; }
+    if (doc.subtitle) out += `<text x="${PW / 2}" y="${hy + 4}" text-anchor="middle" font-size="4.2" fill="#333">${SS.esc(doc.subtitle)}</text>`;
+    // 図（縮尺どおり。はみ出す分は図の枠で切る）
+    out += `<clipPath id="drawClip"><rect x="${draw.x}" y="${draw.y}" width="${draw.w}" height="${draw.h}"/></clipPath>`;
+    out += `<g clip-path="url(#drawClip)"><g${opts.mono ? ' class="mono"' : ''} transform="translate(${ox.toFixed(3)} ${oy.toFixed(3)}) scale(${f.toFixed(6)})">${drawingContent(doc, opts, conductor, ex, k)}</g></g>`;
+    // スケールバー（紙の上の長さが実際の長さと同じ比率）
+    const L = niceLen(38 / f), Lmm = L * f, sbx = draw.x + 1, sby = draw.y + draw.h - 3;
+    out += `<g font-size="2.6" fill="#111">`;
+    for (let i = 0; i < 4; i++) out += `<rect x="${sbx + (Lmm / 4) * i}" y="${sby - 1.6}" width="${Lmm / 4}" height="1.6" fill="${i % 2 ? '#fff' : '#111'}" stroke="#111" stroke-width="0.25"/>`;
+    out += `<text x="${sbx}" y="${sby - 2.6}">0</text><text x="${sbx + Lmm / 2}" y="${sby - 2.6}" text-anchor="middle">${L / 200}m</text><text x="${sbx + Lmm}" y="${sby - 2.6}" text-anchor="middle">${L / 100}m</text>`;
+    out += `<text x="${sbx + Lmm + 3}" y="${sby}" >縮尺 ${scaleText}</text></g>`;
+    // 情報欄（右下）
+    const tx = PW - M - TBW, ty = PH - M - TBH;
+    out += `<g font-size="3" fill="#111"><rect x="${tx}" y="${ty}" width="${TBW}" height="${TBH}" fill="#fff" stroke="#111" stroke-width="0.45"/>`;
+    rows.forEach((row, ri) => {
+      const y = ty + ri * rowH;
+      if (ri) out += `<line x1="${tx}" y1="${y}" x2="${tx + TBW}" y2="${y}" stroke="#111" stroke-width="0.25"/>`;
+      const cw2 = TBW / row.length;
+      row.forEach(([lab, val], ci) => {
+        const x = tx + ci * cw2;
+        if (ci) out += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y + rowH}" stroke="#111" stroke-width="0.25"/>`;
+        out += `<line x1="${x + 13}" y1="${y}" x2="${x + 13}" y2="${y + rowH}" stroke="#111" stroke-width="0.15"/>`;
+        out += `<text x="${x + 1.5}" y="${y + rowH / 2}" dy="0.35em" font-size="2.6" fill="#444">${lab}</text>`;
+        const maxChars = Math.floor((cw2 - 16) / 2.9);
+        const v = String(val);
+        const fs = v.length > maxChars ? Math.max(1.8, (3 * maxChars) / v.length) : 3;
+        out += `<text x="${x + 14.5}" y="${y + rowH / 2}" dy="0.35em" font-size="${fs.toFixed(2)}" font-weight="${lab === '公演名' ? 700 : 400}">${SS.esc(v)}</text>`;
       });
-      legendH = 70 + Math.ceil(cells.length / perRow) * 40;
+    });
+    out += '</g>';
+    // 編成表（情報欄の左、入らなければ上）
+    if (legendItems.length) {
+      const lx = M, ly = legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
+      out += `<g font-size="${lfs}" fill="#111"><text x="${lx}" y="${ly + 3}" font-weight="700" font-size="3.4">編成（計 ${legendItems.total} 人）</text>`;
+      legendItems.forEach((c, i) => {
+        const x = lx + (i % lCols) * cellW, y = ly + 5 + Math.floor(i / lCols) * lrow + 2.6;
+        out += `<circle cx="${x + 1.4}" cy="${y - 1}" r="1.3" fill="${opts.colorBy && !opts.mono ? c.color : '#fff'}" stroke="#333" stroke-width="0.25"/>`;
+        out += `<text x="${x + 3.6}" y="${y}">${SS.esc(c.text)}</text>`;
+      });
+      out += '</g>';
     }
-    let x0 = -pad, y0 = -titleH - pad / 2, W = st.w + pad * 2, H = bottom + legendH + pad - y0;
-    // 下絵（舞台図）を入れるときは、はみ出す部分まで紙を広げる
-    if (ex.underlay && doc.underlay && ex.underlayAll) {
-      const b = R.underlayBounds(doc.underlay);
-      const nx0 = Math.min(x0, b.x0 - 20), ny0 = Math.min(y0, b.y0 - 20);
-      const nx1 = Math.max(x0 + W, b.x1 + 20), ny1 = Math.max(y0 + H, b.y1 + 20);
-      x0 = nx0; y0 = ny0; W = nx1 - nx0; H = ny1 - ny0;
-    }
-    const k = ex.pxPerCm;
-    let s = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.round(W * k)}" height="${Math.round(H * k)}" viewBox="${x0} ${y0} ${W} ${H}" font-family="'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif">`;
-    s += `<rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="#ffffff"/>`;
-    if (doc.title) s += `<text x="${st.w / 2}" y="${-titleH + 30}" text-anchor="middle" font-size="52" font-weight="700" fill="#1f2733">${SS.esc(doc.title)}</text>`;
-    if (doc.subtitle) s += `<text x="${st.w / 2}" y="${-titleH + 88}" text-anchor="middle" font-size="30" fill="#4a5462">${SS.esc(doc.subtitle)}</text>`;
-    s += R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
-    const u = doc.underlay;
-    if (ex.underlay && u) s += R.underlaySVG(u, { id: 'ex' });
-    s += R.itemsSVG(doc, opts, conductor, false);
-    if (opts.dims) s += R.dimsSVG(doc, 0.55, null);
-    s += legend;
-    s += '</svg>';
-    return s;
+    out += '</svg>';
+    return { svg: out, info: { f, scale: scaleN, fits, suggest, paperW: PW, paperH: PH, drawBox: draw, origin: { x: ox, y: oy } } };
+  };
+
+  // これまでの呼び方（書き出し用の SVG 文字列）
+  R.fullSVG = function (doc, opts, conductor, ex) {
+    ex = Object.assign({}, ex);
+    if (!ex.paper) ex.paper = { size: 'A4', orient: 'landscape', scale: 0 };
+    if (ex.pxPerCm && !ex.pxPerMm) ex.pxPerMm = ex.pxPerCm * 4;
+    return R.sheet(doc, opts, conductor, ex).svg;
+  };
+
+  // PDF（1ページ・画像入り）を自分で組み立てる。ネットにつながっていなくても作れる
+  R.pdfFromJpeg = function (jpegBytes, imgW, imgH, pageWmm, pageHmm) {
+    const pt = mm => (mm * 72) / 25.4;
+    const W = pt(pageWmm).toFixed(2), H = pt(pageHmm).toFixed(2);
+    const enc = new TextEncoder();
+    const parts = [], offs = [];
+    let len = 0;
+    const push = x => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); len += b.length; };
+    push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+    const obj = (n, body) => { offs[n] = len; push(`${n} 0 obj\n`); body(); push('\nendobj\n'); };
+    const content = `q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
+    obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
+    obj(2, () => push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+    obj(3, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`));
+    obj(4, () => { push(`<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`); push(jpegBytes); push('\nendstream'); });
+    obj(5, () => push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+    const xref = len;
+    push(`xref\n0 6\n0000000000 65535 f \n${[1, 2, 3, 4, 5].map(n => String(offs[n]).padStart(10, '0') + ' 00000 n \n').join('')}`);
+    push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+    return new Blob(parts, { type: 'application/pdf' });
+  };
+  R.svgToPdf = function (svg, pageWmm, pageHmm) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        c.toBlob(b => {
+          if (!b) return reject(new Error('PDFを作れませんでした'));
+          b.arrayBuffer().then(buf => resolve(R.pdfFromJpeg(new Uint8Array(buf), c.width, c.height, pageWmm, pageHmm)));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('PDFを作れませんでした')); };
+      img.src = url;
+    });
   };
 
   R.svgToPng = function (svg) {
