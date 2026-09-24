@@ -1026,6 +1026,41 @@
     return { symmetric: $('optSymmetric').checked, evenRows: $('optEvenRows').checked, minGap: opts().seatR * 2 + 14 };
   }
 
+  /**
+   * ↔ 間隔を広げる／→← つめる（f 倍）。
+   * 床の人：指揮者からの距離を f 倍（向きはそのまま）→ となりとの間隔も列と列の間も広がる。
+   * 段の上の人：段ごとに、段の真ん中から横の間隔を f 倍（段の幅に入る所まで）。
+   * 舞台・段からはみ出す／段にかかる／重なりが増えるときは、f を 1 に近づけて、できる所まで。戻り値：使った f（できなければ 0）
+   */
+  function spreadPlayers(list, f) {
+    const d = doc(), st = d.stage, c = conductor();
+    const tiers = d.items.filter(it => it.type === 'hina');
+    const tierOf = p => tiers.find(t => SS.hinaContains(t, p.x, p.y, 0)) || null;
+    const orig = new Map(list.map(p => [p, { x: p.x, y: p.y, t: tierOf(p) }]));
+    const ovCount = () => SS.checks(d).filter(w => w.kind === 'overlap' || w.kind === 'tieredge').reduce((a, w) => a + w.spots.length, 0);
+    const base = ovCount();
+    const apply = k => {
+      const groups = new Map();
+      list.forEach(p => { const o = orig.get(p); if (o.t) { if (!groups.has(o.t)) groups.set(o.t, []); groups.get(o.t).push(p); } else { p.x = c.x + (o.x - c.x) * k; p.y = c.y + (o.y - c.y) * k; } });
+      groups.forEach((ps, t) => {
+        const a = ((t.rot || 0) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+        ps.forEach(p => { const o = orig.get(p), lx = (o.x - t.x) * ca + (o.y - t.y) * sa, ly = -(o.x - t.x) * sa + (o.y - t.y) * ca, nx = lx * k; p.x = t.x + nx * ca - ly * sa; p.y = t.y + nx * sa + ly * ca; });
+      });
+    };
+    const ok = k => {
+      apply(k);
+      return list.every(p => { const o = orig.get(p); return onExtension(p) || (SS.render.insideStage(st, p, 26) && (o.t ? SS.hinaContains(o.t, p.x, p.y, -28) || !SS.hinaContains(o.t, o.x, o.y, -28) : !tierOf(p) || !!tierOf(o))); }) && ovCount() <= base;
+    };
+    // f から 1 へ少しずつ近づけて、できるいちばん大きな（つめるときは小さな）ものを使う
+    for (let i = 0; i <= 8; i++) {
+      const k = f + ((1 - f) * i) / 8;
+      if (Math.abs(k - 1) < 0.004) break;
+      if (ok(k)) return k;
+    }
+    apply(1);
+    return 0;
+  }
+
   // ステージからはみ出したものを内側へ入れる。動かした数を返す
   function fitInStage(list) {
     let n = 0;
@@ -1256,6 +1291,14 @@
         const place = (doc().ensemble && doc().ensemble.percPlace) || 'back';
         SS.auto.arrangePercIn(doc().items, doc().stage, place, { side: !['orch', 'strings'].includes((doc().ensemble || {}).type) });
         toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側（扇形の外側、前から）に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
+        break;
+      }
+      case 'spreadOut': case 'spreadIn': {
+        const list = targetsPlayers(); if (list.length < 2) return toast('奏者が2人以上必要です');
+        pushHistory();
+        const r = spreadPlayers(list, name === 'spreadOut' ? 1.08 : 0.94);
+        if (!r) toast(name === 'spreadOut' ? 'これ以上広げると、舞台やひな壇からはみ出します' : 'これ以上つめると、いすや譜面台が重なります');
+        else toast(name === 'spreadOut' ? `間隔を${Math.round((r - 1) * 100)}%広げました` : `間隔を${Math.round((1 - r) * 100)}%つめました`, true);
         break;
       }
       case 'alignHina': {
@@ -2998,6 +3041,8 @@
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
     else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
     else if (r.curveFallback) toast('舞台からはみ出す・床の人とぶつかる段は、弧にせず、まっすぐのままにしました');
+    else if (st.space === 'wide' && r.tune && !r.tune.scaled) toast('舞台がせまいので、「ゆったり」にはできませんでした（ふつうの間隔で並べました）', true);
+    else if (r.tune && r.tune.spacing <= 74 && st.space !== 'tight') toast('舞台がせまいので、となりとの間隔をつめて並べました。窮屈なときは、人数・段数を見直すか、右の「整える」の「↔ 間隔を広げる」を試してください', true);
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
@@ -3023,7 +3068,9 @@
     const st = ens(), H = st.hina, cur = SS.hinaTypeOf(H);
     $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : '');
     const lay = SS.auto.BAND_LAYOUTS[st.layout || 'std'];
-    $('layoutBoxNow').textContent = st.type === 'band' ? (lay ? lay.name.split('（')[0] : '') : st.antiphonal ? '対向配置' : '通常配置';
+    const SPACE = { tight: '・間隔つめる', wide: '・間隔ゆったり' };
+    $('layoutBoxNow').textContent = (st.type === 'band' ? (lay ? lay.name.split('（')[0] : '') : st.antiphonal ? '対向配置' : '通常配置') + (SPACE[st.space] || '');
+    document.querySelectorAll('#ensSpace [data-space]').forEach(b => b.classList.toggle('on', b.getAttribute('data-space') === (st.space || 'normal')));
     $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.curve ? '・弧' : ''}` : 'なし';
   }
   function renderSteppers() {
@@ -3126,6 +3173,7 @@
     };
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
+  document.querySelectorAll('#ensSpace [data-space]').forEach(b => { b.onclick = () => { ens().space = b.getAttribute('data-space'); renderEnsNow(); applyAuto(); }; });
   // 配置のくふう（一括作成タブ）：自動配置のときだけ並べ直す。手で置いた配置は消さない
   const optAuto = () => {
     if (doc().items.some(it => it.auto)) applyAuto();

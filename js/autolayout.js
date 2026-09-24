@@ -1156,7 +1156,10 @@ window.SS = window.SS || {};
     const f = st.type === 'band' ? band : orch;
     const s2 = st.type === 'strings' ? Object.assign({}, st, { percInst: false, counts: Object.assign({}, st.counts) }) : st;
     let best = null;
-    for (const tune of TUNES) {
+    // となりとの間隔：ゆったり＝1割広い並べ方から試す（入らなければ、ふつうの並べ方へ）／つめる＝1割近くつめた並べ方だけ
+    const scaleTune = (t, f) => Object.assign({}, t, { spacing: Math.round(t.spacing * f), gap: Math.round(t.gap * f), r0: Math.round(t.r0 * f), scaled: f });
+    const tunes = st.space === 'wide' ? TUNES.map(t => scaleTune(t, 1.1)).concat(TUNES) : st.space === 'tight' ? TUNES.map(t => scaleTune(t, 0.92)) : TUNES;
+    for (const tune of tunes) {
       let s3 = s2;
       if (tune.slim && s2.hina && (SS.panelSize(s2.hina).d * (s2.hina.deep || 1)) > 121) {
         s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, { panel: '46', orient: 'h', deep: 1 }) });
@@ -1168,8 +1171,10 @@ window.SS = window.SS || {};
       const clash = clashCount(r.items, stage, r.c);
       const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + clash * 2 + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
+      r.tune = tune;
       if (A.debug) A.debug.push({ tune, outside, hinaOut, overlap: r.overlap, clash, score });
-      if (!best || score < best.score) best = Object.assign(r, { score, outside });
+      // ゆったり：同じ点数なら、間隔の広いほうを
+      if (!best || score < best.score || (st.space === 'wide' && score === best.score && tune.spacing > best.tune.spacing)) best = Object.assign(r, { score, outside });
       if (score === 0) break;
     }
     // それでも入らないときは、打楽器の場所を変えて試す（最上段 → 最上段＋下手 → 下手）

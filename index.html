@@ -65,6 +65,10 @@
       </details>
       <details class="fold" id="layoutBox">
         <summary>並び方 <span class="fold-now" id="layoutBoxNow"></span></summary>
+        <p class="hint small" style="margin:0 0 4px">となりとの間隔</p>
+        <div class="seg" id="ensSpace">
+          <button data-space="tight">つめる</button><button data-space="normal">ふつう</button><button data-space="wide">ゆったり</button>
+        </div>
       <label class="field" id="bandLayoutWrap">並び方（吹奏楽）
         <select id="bandLayout"></select>
       </label>
@@ -351,6 +355,8 @@
         <button class="btn" data-act="arrangePerc" title="打楽器と奏者を舞台奥にきれいに並べます">🥁 打楽器を整列</button>
         <button class="btn" data-act="fitStage" title="ステージからはみ出したものを内側に入れます">⬚ ステージ内に収める</button>
         <button class="btn" data-act="alignHina" title="ひな壇の段を、いちばん広い段と同じ横幅・同じ中心にそろえます">▤ ひな壇の幅をそろえる</button>
+        <button class="btn" data-act="spreadOut" title="奏者どうしの間隔を少し広げます（舞台・ひな壇からはみ出さない所まで）">↔ 間隔を広げる</button>
+        <button class="btn" data-act="spreadIn" title="奏者どうしの間隔を少しつめます（重ならない所まで）">→← 間隔をつめる</button>
       </div>
       <label class="field arc-curve">弧のカーブ <b id="arcCurveVal">扇形</b>
         <input type="range" id="arcCurve" min="0" max="100" step="1" value="100">
