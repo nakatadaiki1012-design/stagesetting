@@ -350,6 +350,7 @@
       </label>
       <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
       <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>
+      <div id="alignBox" hidden>
       <h4>位置合わせ（2つ以上選択）</h4>
       <div class="tool-grid six">
         <button class="btn" data-act="alignLeft" title="左端にそろえる">⇤</button>
@@ -361,12 +362,13 @@
         <button class="btn span3" data-act="distH" title="横方向に等間隔">横に等間隔</button>
         <button class="btn span3" data-act="distV" title="縦方向に等間隔">縦に等間隔</button>
       </div>
+      </div>
       <h4>操作</h4>
       <div class="tool-grid">
-        <button class="btn" data-act="duplicate">⧉ 複製</button>
-        <button class="btn danger" data-act="delete">🗑 削除</button>
+        <button class="btn sel-only" data-act="duplicate" hidden>⧉ 複製</button>
+        <button class="btn danger sel-only" data-act="delete" hidden>🗑 削除</button>
         <button class="btn" data-act="selectAll">全部選ぶ</button>
-        <button class="btn" data-act="selectSamePart">同じパートを選ぶ</button>
+        <button class="btn sel-only" data-act="selectSamePart" hidden>同じパートを選ぶ</button>
       </div>
     </section>
 

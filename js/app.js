@@ -1237,6 +1237,9 @@
       const h = $('propH'); if (h && document.activeElement !== h) h.value = it.h;
       return;
     }
+    // 選んだときだけ使うボタンは、選んだときだけ出す
+    $('alignBox').hidden = sel.length < 2;
+    document.querySelectorAll('#selTab .sel-only').forEach(b => { b.hidden = !sel.length; });
     if (!sel.length) { info.classList.remove('hidden'); box.innerHTML = ''; return; }
     info.classList.add('hidden');
     const allPlayers = sel.every(it => it.type === 'player');
