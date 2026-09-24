@@ -272,12 +272,13 @@ window.SS = window.SS || {};
   // ---------------------------------------------------------------- 寸法線
   const fmtM = cm => (cm / 100).toFixed(2).replace(/0$/, '') + 'm';
   // 寸法の文字の大きさ（画面の拡大率 k に合わせる）
-  const labelSize = (label, k) => { const fs = 13 / k; return { fs, tw: label.length * fs * 0.62 + 10 / k, th: fs + 6 / k }; };
+  let DS = 1; // 寸法の字の大きさの倍率（スマホの画面では小さく）
+  const labelSize = (label, k) => { const fs = (13 * DS) / k; return { fs, tw: label.length * fs * 0.62 + 10 / k, th: fs + 6 / k }; };
   const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
   let placed = null; // この回に描いた寸法の文字の四角（重なりを避けるため）
   // pos を渡すと、文字をその位置に置き、線の真ん中から細い引き出し線を引く
   function dimLine(x1, y1, x2, y2, label, color, k, side, at, pos) {
-    const sw = 1.6 / k, tk = 9 / k, fs = 13 / k;
+    const sw = 1.6 / k, tk = 9 / k, fs = (13 * DS) / k;
     const vert = Math.abs(x2 - x1) < Math.abs(y2 - y1);
     let s = `<g class="dim" pointer-events="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}"/>`;
     if (vert) s += `<path d="M${x1 - tk} ${y1}H${x1 + tk}M${x2 - tk} ${y2}H${x2 + tk}" stroke="${color}" stroke-width="${sw}"/>`;
@@ -314,6 +315,7 @@ window.SS = window.SS || {};
   R.dimsSVG = function (doc, k, sel, opt) {
     opt = opt || {};
     placed = [];
+    DS = opt.small ? 0.78 : 1;
     const st = doc.stage;
     const C1 = '#3b6bb5', C2 = '#d6336c';
     let s = '';
@@ -358,6 +360,9 @@ window.SS = window.SS || {};
         const my = (pb.y1 + fe) / 2, g = 8 / k;
         const knobR = 26 / k;
         const blocks = placed.slice().concat(opt.knobs ? R.stageKnobs(st).map(q => ({ x0: q.x - knobR, x1: q.x + knobR, y0: q.y - knobR, y1: q.y + knobR })) : []);
+        // 奏者・楽器の上にも重ねない（スマホのように字が大きく見えるとき、舞台の外の「前の幅」の線の上へ逃がす）
+        doc.items.forEach(it => { if (['hina', 'riser', 'riser46', 'stairs', 'podium', 'text', 'cable'].includes(it.type)) return; blocks.push(it.type === 'player' ? { x0: it.x - 26, x1: it.x + 26, y0: it.y - 26, y1: it.y + 26 } : bboxOf(it)); });
+        const fl = placed[0], fy2 = R.frontOuter(st) + 34;
         const cands = [
           { x: lxLine + tw / 2 + g, y: my },                       // 線の右
           { x: pb.x0 - 30 - tw / 2 - g, y: my },                   // 指揮台の左
@@ -368,6 +373,8 @@ window.SS = window.SS || {};
           { x: lxLine + tw / 2 + g, y: pb.y0 - th * 1.5 - g * 3 },   // 右上のさらに上
           { x: pb.x0 - 30 - tw / 2 - g, y: pb.y0 - th * 1.5 - g * 3 },
         ];
+        // 舞台の外：「前の幅」の寸法の字の右・左（同じ線の上）
+        if (fl) cands.splice(1, 0, { x: fl.x1 + tw / 2 + g, y: fy2 }, { x: fl.x0 - tw / 2 - g, y: fy2 });
         const hits = c => blocks.filter(b => overlap({ x0: c.x - tw / 2, x1: c.x + tw / 2, y0: c.y - th / 2, y1: c.y + th / 2 }, b)).length;
         const best = cands.reduce((a, c) => (hits(c) < hits(a) ? c : a), cands[0]);
         // 部品を選んでいて（ピンクの寸法が出ていて）空いた場所がないときは、今は出さない
@@ -375,6 +382,7 @@ window.SS = window.SS || {};
       }
     }
     placed = null;
+    DS = 1;
     return s;
   };
 
