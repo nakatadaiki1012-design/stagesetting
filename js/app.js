@@ -893,7 +893,7 @@
     let n = 0;
     const st = doc().stage;
     list.forEach(it => {
-      if (it.type === 'text') return;
+      if (it.type === 'text' || onExtension(it)) return; // 花道・ピットのふたの上はそのまま
       const sz = SS.itemSize(it, renderOpts());
       const m = it.type === 'player' ? 26 : Math.min(sz.w, sz.h) / 2;
       const q = SS.render.clampToStage(st, it, m);
@@ -902,20 +902,121 @@
     return n;
   }
 
+  // 花道・オーケストラピットのふたの上（舞台の外でも、そのままにしてよい所）
+  function onExtension(p) {
+    const g = SS.fixtureGeom ? SS.fixtureGeom(doc().stage) : {};
+    return [g.pit, g.hanamichi].some(r => r && p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1);
+  }
+
+  /**
+   * ✨きれいに整える
+   * 1) 奏者ごとに、ひな壇の上か床かを決める（ふちから少しはみ出しているだけの人は段に乗せる）
+   * 2) 全体を整えるときは、舞台からはみ出す・舞台奥の通路にかかるひな壇を、上の人・楽器ごと舞台の中へ
+   * 3) 床の人は扇形か横一列に。舞台に入らなければ指揮者の方へ少しずつ詰める
+   * 4) 床の人が段にかかっていたら、段から降ろす
+   * 5) 段の上の人は、段ごとに段の上へきちんと並べる（まっすぐの段は列に、弧の段は弧に）
+   */
   function tidyAuto(list, silent) {
     list = list || targetsPlayers();
     if (list.length < 2) { if (!silent) toast('整える奏者がいません'); return; }
+    const d = doc(), st = d.stage, R = SS.render;
+    const whole = !selected().length;
+    const tiers = d.items.filter(it => it.type === 'hina');
+    const tierOf = (p, m) => tiers.filter(t => SS.hinaContains(t, p.x, p.y, m)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
+    // 1) 段の上か床か
+    const onT = new Map(), floor = [];
+    let lifted = 0;
+    list.forEach(p => {
+      if (onExtension(p)) return; // 花道・ピットのふたの上の人（ソリストなど）はそのまま
+      const t = tierOf(p, 0) || tierOf(p, 14);
+      if (t) { if (!SS.hinaContains(t, p.x, p.y, 0)) lifted++; if (!onT.has(t)) onT.set(t, []); onT.get(t).push(p); } else floor.push(p);
+    });
+    // 0) 指揮台が舞台の外なら舞台の中へ。床の人も同じだけ動かして、形はそのまま
+    let movedPodium = false;
+    const pod = d.items.find(it => it.type === 'podium');
+    if (whole && pod && !R.insideStage(st, pod, 45)) {
+      const q = R.clampToStage(st, pod, 45), dx = q.x - pod.x, dy = q.y - pod.y;
+      // 床にいる物（段の上の人・楽器は動かさない）
+      d.items.filter(it => it === pod || floor.includes(it) || (it.type !== 'hina' && it.type !== 'player' && !onExtension(it) && !tiers.some(t => SS.hinaContains(t, it.x, it.y, 14)))).forEach(it => { it.x += dx; it.y += dy; });
+      movedPodium = true;
+    }
     const c = conductor();
-    // ひな壇の上の人は横一列に、床の人は扇形か横一列（近い方）に
-    const onR = list.filter(onRiser), floor = list.filter(it => !onRiser(it));
+    // 2) ひな壇を舞台の中へ（上の人・楽器もいっしょに）
+    let movedTiers = false;
+    if (whole && tiers.length) {
+      const pts = [];
+      tiers.forEach(t => { const b = SS.itemAABB(t, {}); pts.push({ x: b.x0, y: b.y0 }, { x: b.x1, y: b.y0 }, { x: b.x0, y: b.y1 }, { x: b.x1, y: b.y1 }); });
+      const fx = st.fixtures || {};
+      const back = SS.auto.aisleOf(st) + (fx.shell != null && isFinite(+fx.shell) ? +fx.shell : 0);
+      let dy = Math.max(0, back - Math.min(...pts.map(q => q.y)));
+      dy = Math.min(dy, Math.max(0, R.frontY(st) - 40 - Math.max(...pts.map(q => q.y))));
+      let lo = -Infinity, hi = Infinity;
+      pts.forEach(q => { const [xl, xr] = R.xRange(st, Math.max(0, q.y + dy)); lo = Math.max(lo, xl + 5 - q.x); hi = Math.min(hi, xr - 5 - q.x); });
+      const dx = lo <= hi ? (lo > 0 ? lo : hi < 0 ? hi : 0) : 0;
+      if (Math.abs(dx) > 0.5 || dy > 0.5) {
+        const riders = d.items.filter(it => it.type !== 'hina' && !floor.includes(it) && it.type !== 'podium' && tiers.some(t => SS.hinaContains(t, it.x, it.y, 14)));
+        tiers.concat(riders).forEach(it => { it.x += dx; it.y += dy; });
+        movedTiers = true;
+      }
+    }
+    // 3) 床の人
     const shape = floor.length >= 2 ? G.guessShape(floor, c) : 'line';
     let n = 0;
     if (floor.length >= 2) n += shape === 'arc' ? G.tidyArc(floor, c, tidyOpts()) : G.tidyLine(floor, c, tidyOpts());
-    if (onR.length >= 2) n += G.tidyLine(onR, c, Object.assign(tidyOpts(), { evenRows: false }));
     if (shape === 'arc') { opts().arcCurve = 1; opts().arcBase = null; syncArcCurve(); }
-    G.fixOverlap(list, opts().seatR * 2 + 8);
-    fitInStage(list);
-    if (!silent) toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました`, true);
+    const minD = opts().seatR * 2 + 8;
+    const inside = p => R.insideStage(st, p, 26) || onExtension(p);
+    let squeezed = false;
+    if (floor.length >= 2 && !floor.every(inside)) {
+      // 舞台に入らないときは、指揮者の方へ少しずつ詰める（となりとの間隔が狭くなりすぎない所まで）
+      const base = floor.map(p => ({ x: p.x, y: p.y }));
+      const minPair = () => { let m = Infinity; for (let i = 0; i < floor.length; i++) for (let j = i + 1; j < floor.length; j++) m = Math.min(m, Math.hypot(floor[i].x - floor[j].x, floor[i].y - floor[j].y)); return m; };
+      const setF = f => floor.forEach((p, i) => { p.x = c.x + (base[i].x - c.x) * f; p.y = c.y + (base[i].y - c.y) * f; });
+      let ok = 1;
+      for (let f = 0.98; f >= 0.8; f -= 0.02) {
+        setF(f);
+        if (minPair() < opts().seatR * 2 + 4) break;
+        ok = f;
+        if (floor.every(inside)) break;
+      }
+      setF(ok);
+      squeezed = ok < 1;
+    }
+    // 4) 段から降ろす（重なりを直すと、また段にかかることがあるので数回）
+    const lowered = new Set();
+    for (let k = 0; k < 3; k++) {
+      floor.forEach(p => tiers.forEach(t => { if (G.pushOffTier(p, t, 30)) lowered.add(p); }));
+      G.fixOverlap(floor, minD);
+    }
+    // 5) 段の上の人（打楽器・鍵盤の人は列にせず、段の中へ入れるだけ）
+    let tight = 0;
+    onT.forEach((ps, t) => {
+      const keep = ps.filter(p => ['perc', 'kb'].includes(SS.partGroup(p.label).id));
+      const rowers = ps.filter(p => !keep.includes(p));
+      if (rowers.length && G.tidyOnTier(rowers, t, c, tidyOpts())) tight++;
+      keep.forEach(p => G.clampOnTier(p, t, 30));
+      n++;
+    });
+    // 舞台の中へ入れる → 重なりを直す → 段から降ろす、を数回（ふちに寄せた人どうしが重ならないように）
+    for (let k = 0; k < 6; k++) {
+      fitInStage(floor);
+      floor.forEach(p => tiers.forEach(t => { if (G.pushOffTier(p, t, 30)) lowered.add(p); }));
+      G.fixOverlap(floor, minD);
+    }
+    fitInStage(floor);
+    if (silent) return;
+    const notes = [];
+    const tooWide = whole && tiers.some(t => { const b = SS.itemAABB(t, {}); return [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].some(([x, y]) => !R.insideStage(st, { x, y }, 0)); });
+    if (lifted) notes.push(`段から落ちかけていた${lifted}人を段に乗せました`);
+    if (lowered.size) notes.push(`段にかかっていた${lowered.size}人を床に降ろしました`);
+    if (movedPodium) notes.push('指揮台を舞台の中に動かしました');
+    if (movedTiers) notes.push('ひな壇を舞台の中（奥の通路の前）に動かしました');
+    if (squeezed) notes.push('舞台に入るよう、床の列を少し詰めました');
+    if (tight) notes.push('人数が多い段は、間隔を詰めて段の上に並べました');
+    if (tooWide) notes.push('⚠ 舞台より広い（または深い）ひな壇があります。段の幅・段数を減らしてください');
+    const over = players().filter(q => !R.insideStage(st, q, 20) && !onExtension(q) && !tiers.some(t => SS.hinaContains(t, q.x, q.y, 0)));
+    if (over.length) notes.push(`⚠ 舞台に入りきらない人が${over.length}人います`);
+    toast(`${n}列を${shape === 'arc' ? '扇形' : '横一列'}にきれいにそろえました${notes.length ? '。' + notes.join('。') : ''}`, true);
   }
 
   // 弧のカーブ（スライダー）：床の奏者（ひな壇の上の人は除く）を、ゆるい弧〜扇形に

@@ -185,6 +185,133 @@ window.SS = window.SS || {};
     return rows.length;
   };
 
+  // ---------------------------------------------------------------- ひな壇の上の人を整える
+  // 段の中の座標（段の真ん中が原点、+y が段の前）へ／から
+  const tierLocal = (t, p) => { const a = -((t.rot || 0) * Math.PI) / 180, dx = p.x - t.x, dy = p.y - t.y; return { x: dx * Math.cos(a) - dy * Math.sin(a), y: dx * Math.sin(a) + dy * Math.cos(a) }; };
+  const tierWorld = (t, q) => { const a = ((t.rot || 0) * Math.PI) / 180; return { x: t.x + q.x * Math.cos(a) - q.y * Math.sin(a), y: t.y + q.x * Math.sin(a) + q.y * Math.cos(a) }; };
+  // vals（並び済み）を等間隔にし、[lo, hi] の中に収める（入りきらないときは間隔を詰める）
+  function fitRange(vals, lo, hi, opt) {
+    const n = vals.length;
+    if (!n) return [];
+    if (n === 1) return [Math.max(lo, Math.min(hi, vals[0]))];
+    const gap = Math.min(opt.minGap, (hi - lo) / (n - 1));
+    let out = evenOut(vals, (lo + hi) / 2, Object.assign({}, opt, { minGapV: gap }));
+    const a = out[0], b = out[n - 1];
+    if (b - a > hi - lo) out = out.map(v => lo + ((v - a) * (hi - lo)) / (b - a));
+    else if (a < lo) out = out.map(v => v + (lo - a));
+    else if (b > hi) out = out.map(v => v - (b - hi));
+    return out;
+  }
+  // 列をまとめる：1人だけの列（ふちから乗せた人など）は近い列へ入れる。段の奥行に入る列の数より多ければ、近い列どうしをまとめる
+  function mergeRows(rows, key, maxRows) {
+    const m = row => mean(row.map(key));
+    let changed = true;
+    while (changed && rows.length > 1) {
+      changed = false;
+      const i = rows.findIndex(r => r.length === 1);
+      if (i >= 0 && rows.some((r, j) => j !== i && r.length >= 2)) {
+        let best = -1;
+        rows.forEach((r, j) => { if (j !== i && (best < 0 || Math.abs(m(r) - m(rows[i])) < Math.abs(m(rows[best]) - m(rows[i])))) best = j; });
+        rows[best].push(...rows[i]); rows.splice(i, 1); changed = true;
+      }
+    }
+    while (rows.length > maxRows) {
+      let bi = 0;
+      for (let i = 1; i < rows.length - 1; i++) if (m(rows[i + 1]) - m(rows[i]) < m(rows[bi + 1]) - m(rows[bi])) bi = i;
+      rows[bi].push(...rows[bi + 1]); rows.splice(bi + 1, 1);
+    }
+    return rows.sort((a, b) => m(a) - m(b));
+  }
+
+  /**
+   * ひな壇 t の上の奏者 items を、段の上にきちんと並べる（はみ出さない・落ちない）。
+   * まっすぐの段：段の向きにまっすぐの列。弧の段：段の弧に沿った列で、指揮者 c の方を向く。
+   * 列の数は今の並びから決め、段の奥行の中に等しく割りふる。戻り値：詰めて並べたとき true
+   */
+  G.tidyOnTier = function (items, t, c, opt) {
+    opt = Object.assign({ symmetric: true, minGap: 62 }, opt);
+    const EDGE = 32; // 段のふちから椅子の中心まで（椅子の半分＋少し）
+    const arc = SS.hinaArc && SS.hinaArc(t);
+    let tight = false;
+    if (!arc) {
+      const L = items.map(it => ({ it, q: tierLocal(t, it) }));
+      const h = t.h || 182, w = t.w || 728;
+      let rows = mergeRows(G.cluster1D(L, o => -o.q.y, 45), o => -o.q.y, Math.max(1, Math.floor(h / 70))); // 前の列から
+      const k = rows.length;
+      rows.forEach((row, i) => {
+        const y = k === 1 ? 8 : h / 2 - ((i + 0.5) * h) / k;
+        row.sort((a, b) => a.q.x - b.q.x);
+        if ((row.length - 1) * opt.minGap > w - 2 * EDGE) tight = true;
+        const xs = fitRange(row.map(o => o.q.x), -w / 2 + EDGE, w / 2 - EDGE, opt);
+        row.forEach((o, j) => { const p = tierWorld(t, { x: xs[j], y }); o.it.x = p.x; o.it.y = p.y; o.it.rot = t.rot || 0; });
+      });
+      return tight;
+    }
+    // 弧の段：円の中心 C のまわりの半径と角度で
+    const C = tierWorld(t, { x: 0, y: arc.cy });
+    const axis = ((t.rot || 0) * Math.PI) / 180; // 段の真ん中の向き
+    const P = items.map(it => { const dx = it.x - C.x, dy = C.y - it.y; return { it, r: Math.hypot(dx, dy), a: Math.atan2(dx, dy) - axis }; });
+    // （a は段の真ん中からの角度。右回りを＋）
+    P.forEach(o => { o.a = Math.atan2(Math.sin(o.a), Math.cos(o.a)); });
+    let rows = mergeRows(G.cluster1D(P, o => o.r, 45), o => o.r, Math.max(1, Math.floor(arc.h / 70)));
+    const k = rows.length;
+    rows.forEach((row, i) => {
+      const r = k === 1 ? arc.R + arc.h / 2 - 8 : arc.R + ((i + 0.5) * arc.h) / k;
+      const lim = arc.th / 2 * r - EDGE; // 弧に沿った長さで、真ん中から端まで
+      row.sort((a, b) => a.a - b.a);
+      if ((row.length - 1) * opt.minGap > 2 * lim) tight = true;
+      const ss = fitRange(row.map(o => o.a * r), -lim, lim, opt);
+      row.forEach((o, j) => {
+        const ang = ss[j] / r + axis;
+        o.it.x = C.x + r * Math.sin(ang); o.it.y = C.y - r * Math.cos(ang);
+        o.it.rot = G.faceAngle(o.it, c);
+      });
+    });
+    return tight;
+  };
+  // 段のふちから edge より内側へ入れる（打楽器など、列にしない人用）
+  G.clampOnTier = function (p, t, edge) {
+    const arc = SS.hinaArc && SS.hinaArc(t);
+    if (arc) {
+      const C = tierWorld(t, { x: 0, y: arc.cy }), dx = p.x - C.x, dy = C.y - p.y, axis = ((t.rot || 0) * Math.PI) / 180;
+      let r = Math.hypot(dx, dy), a = Math.atan2(dx, dy) - axis;
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      r = Math.max(arc.R + edge, Math.min(arc.R + arc.h - edge, r));
+      const lim = Math.max(0, arc.th / 2 - edge / r);
+      a = Math.max(-lim, Math.min(lim, a)) + axis;
+      p.x = C.x + r * Math.sin(a); p.y = C.y - r * Math.cos(a);
+      return;
+    }
+    const q = tierLocal(t, p), w = t.w || 728, h = t.h || 182;
+    const w2 = tierWorld(t, { x: Math.max(-w / 2 + edge, Math.min(w / 2 - edge, q.x)), y: Math.max(-h / 2 + edge, Math.min(h / 2 - edge, q.y)) });
+    p.x = w2.x; p.y = w2.y;
+  };
+  // 床の人が段にかかっていたら、段から降ろす（いちばん近い前・横のふちの外へ。段の後ろにいる人は後ろへ）
+  G.pushOffTier = function (p, t, clear) {
+    clear = clear || 30;
+    if (!SS.hinaContains(t, p.x, p.y, clear)) return false;
+    const arc = SS.hinaArc && SS.hinaArc(t);
+    if (arc) {
+      const C = tierWorld(t, { x: 0, y: arc.cy }), dx = p.x - C.x, dy = p.y - C.y, r = Math.hypot(dx, dy) || 1;
+      const nr = r < arc.R + arc.h / 2 ? arc.R - clear : arc.R + arc.h + clear;
+      const a0 = Math.atan2(dx, -dy) - ((t.rot || 0) * Math.PI) / 180, a = Math.abs(Math.atan2(Math.sin(a0), Math.cos(a0)));
+      if (a > arc.th / 2 - 0.02 && Math.abs(r - (arc.R + arc.h / 2)) < arc.h / 2) return false; // 端の横：そのまま
+      p.x = C.x + (dx / r) * nr; p.y = C.y + (dy / r) * nr;
+      return true;
+    }
+    const q = tierLocal(t, p), w = t.w || 728, h = t.h || 182;
+    const exits = [
+      { d: h / 2 + clear - q.y, to: { x: q.x, y: h / 2 + clear } }, // 前へ
+      { d: q.x + w / 2 + clear, to: { x: -w / 2 - clear, y: q.y } }, // 下手へ
+      { d: w / 2 + clear - q.x, to: { x: w / 2 + clear, y: q.y } }, // 上手へ
+    ];
+    if (q.y < 0) exits.push({ d: q.y + h / 2 + clear, to: { x: q.x, y: -h / 2 - clear } }); // 後ろ半分の人は後ろへも
+    const best = exits.reduce((a, b) => (b.d < a.d ? b : a));
+    const w2 = tierWorld(t, best.to);
+    p.x = w2.x; p.y = w2.y;
+    return true;
+  };
+
   // 重なりを直す（少しずつ押し広げる）
   G.fixOverlap = function (items, minD, fixed) {
     fixed = fixed || [];
