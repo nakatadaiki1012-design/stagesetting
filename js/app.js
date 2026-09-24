@@ -186,7 +186,11 @@
         s += `<g transform="translate(${it.x} ${it.y}) rotate(${it.rot || 0})"><rect x="${-sz.w / 2 - 6}" y="${-sz.h / 2 - 6}" width="${sz.w + 12}" height="${sz.h + 12}" fill="rgba(47,111,222,.08)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/></g>`;
       }
     });
-    if (sel.length === 1) {
+    if (sel.length === 1 && sel[0].type === 'cable') {
+      // ケーブル：折れ点をドラッグで動かせる
+      const it = sel[0];
+      (it.pts || []).forEach((q, i) => { s += `<circle data-handle="cpt" data-i="${i}" cx="${it.x + q[0]}" cy="${it.y + q[1]}" r="${9 / k}" fill="#fff" stroke="#1f5fbf" stroke-width="${2.5 / k}" style="cursor:move"/>`; });
+    } else if (sel.length === 1) {
       const it = sel[0];
       const sz = SS.itemSize(it, o);
       const hr = 9 / k;
@@ -378,7 +382,7 @@
       const it = selected()[0];
       if (!it) return;
       pushHistory();
-      drag = { kind: handle.getAttribute('data-handle'), start, it };
+      drag = { kind: handle.getAttribute('data-handle'), start, it, i: +handle.getAttribute('data-i') };
       return;
     }
     if (S.underlayEdit && doc().underlay && !itemEl) {
@@ -474,6 +478,14 @@
           const o = drag.orig.get(it.id);
           if (o) { it.x = o.x + dx; it.y = o.y + dy; }
         });
+        render();
+        break;
+      }
+      case 'cpt': {
+        // ケーブルの折れ点
+        const it = drag.it, abs = cableAbs(it);
+        abs[drag.i] = { x: Math.round(w.x), y: Math.round(w.y) };
+        setCablePts(it, abs);
         render();
         break;
       }
@@ -1051,6 +1063,35 @@
     'Hr', 'Hr1', 'Hr2', 'Hr3', 'Hr4', 'Tp', 'Tp1', 'Tp2', 'Tp3', 'Tb', 'Tb1', 'Tb2', 'Tb3', 'B.Tb', 'Euph', 'Tuba', 'St.B', 'Perc', 'Timp', 'Pf', 'Hp',
     'Vn1', 'Vn2', 'Va', 'Vc', 'Cb'];
 
+  // ------------------------------------------------------------ ケーブル（マイクから舞台袖までの通り道）
+  // pts は (x, y) からの位置。x, y は折れ線の外枠の真ん中
+  const cableAbs = c => (c.pts || []).map(q => ({ x: c.x + q[0], y: c.y + q[1] }));
+  function setCablePts(c, abs) {
+    const xs = abs.map(p => p.x), ys = abs.map(p => p.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    c.x = Math.round((x0 + x1) / 2); c.y = Math.round((y0 + y1) / 2);
+    c.w = Math.max(10, Math.round(x1 - x0)); c.h = Math.max(10, Math.round(y1 - y0));
+    c.pts = abs.map(p => [Math.round(p.x - c.x), Math.round(p.y - c.y)]);
+  }
+  // マイク・モニターから、下手（L）か上手（R）の袖までの道。客席側の物は舞台の前のふちに沿って、
+  // 奥の物は舞台奥の通路を通す（奏者の列を横切らないように）。あとで折れ点をドラッグして直せる
+  function addCable(it, side) {
+    const st = doc().stage, R = SS.render;
+    const fx = st.fixtures || {};
+    const backY = (fx.shell != null && isFinite(+fx.shell) ? +fx.shell : 0) + Math.max(20, SS.auto.aisleOf(st) / 2);
+    const front = it.y > st.d * 0.55;
+    const yr = front ? R.frontAt(st, it.x) - 25 : backY;
+    const [xl, xr] = R.xRange(st, Math.max(1, yr));
+    const xe = side === 'L' ? xl - 120 : xr + 120;
+    const c = { id: newId(), type: 'cable', rot: 0, label: side === 'L' ? '下手袖へ' : '上手袖へ', from: it.id };
+    setCablePts(c, [{ x: it.x, y: it.y }, { x: it.x, y: yr }, { x: side === 'L' ? xl + 10 : xr - 10, y: yr }, { x: xe, y: yr }]);
+    pushHistory();
+    doc().items.push(c);
+    S.sel = new Set([c.id]);
+    renderAll();
+    toast('ケーブルの通り道を引きました。白い丸をドラッグすると道を直せます', true);
+  }
+
   function renderProps(valuesOnly) {
     const sel = selected();
     const info = $('selInfo'), box = $('selProps');
@@ -1074,6 +1115,16 @@
     if (one && one.type === 'player') {
       h += `<label class="field">名前<input id="propName" value="${esc(one.name || '')}" placeholder="例: 山田"></label>`;
     }
+    if (allPlayers) {
+      const lit = sel.filter(it => it.light).length;
+      h += `<label class="check"><input type="checkbox" id="propLight"${lit === sel.length ? ' checked' : ''}> 譜面灯をつける${sel.length > 1 && lit && lit < sel.length ? `（いま${lit}人）` : ''}</label>`;
+    }
+    if (one && ['mic', 'micTall', 'monitor'].includes(one.type)) {
+      h += `<p class="hint small" style="margin:6px 0 4px">ケーブルの通り道を、舞台袖まで線で描きます。</p><div class="row2"><button class="btn" id="propCableL">← 下手の袖へ</button><button class="btn" id="propCableR">上手の袖へ →</button></div>`;
+    }
+    if (one && one.type === 'cable') {
+      h += `<p class="hint small">白い丸（折れ点）をドラッグして通り道を直せます。</p><button class="btn" id="propCablePt">＋ 折れ点を足す</button>`;
+    }
     if (one && one.type === 'text') {
       h += `<label class="field">文字の大きさ<input id="propFont" type="range" min="12" max="120" value="${one.fontSize || 36}"></label>`;
     }
@@ -1085,10 +1136,10 @@
       h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：横${m.across}枚×奥${m.deep}枚＝${m.panels}枚</p>`;
       h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
     }
-    if (one && one.type !== 'player' && one.type !== 'text') {
+    if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable') {
       h += `<div class="row2"><label class="field">幅(cm)<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
     }
-    if (one) {
+    if (one && one.type !== 'cable') {
       h += `<label class="field">向き <span id="propRotVal">${Math.round(one.rot || 0)}°</span><input id="propRot" type="range" min="-180" max="180" step="5" value="${Math.round(one.rot || 0)}"></label>`;
     }
     const col = same('color') || (one ? SS.itemColor(one, renderOpts()) : '#ffffff');
@@ -1109,6 +1160,19 @@
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
     bind('propRot', 'input', el => { one.rot = +el.value; $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
+    if ($('propLight')) $('propLight').onchange = e => { pushHistory(); sel.forEach(it => { if (e.target.checked) it.light = true; else delete it.light; }); render(); renderCounts(); renderProps(); };
+    if ($('propCableL')) $('propCableL').onclick = () => addCable(one, 'L');
+    if ($('propCableR')) $('propCableR').onclick = () => addCable(one, 'R');
+    if ($('propCablePt')) $('propCablePt').onclick = () => {
+      // いちばん長い区間の真ん中に折れ点を足す
+      pushHistory();
+      const abs = cableAbs(one);
+      let bi = 0, bl = -1;
+      for (let i = 0; i < abs.length - 1; i++) { const l = Math.hypot(abs[i + 1].x - abs[i].x, abs[i + 1].y - abs[i].y); if (l > bl) { bl = l; bi = i; } }
+      abs.splice(bi + 1, 0, { x: Math.round((abs[bi].x + abs[bi + 1].x) / 2), y: Math.round((abs[bi].y + abs[bi + 1].y) / 2) });
+      setCablePts(one, abs);
+      render();
+    };
     box.querySelectorAll('#propHinaTypes [data-ht]').forEach(b => {
       b.onclick = () => {
         const t = SS.HINA_TYPES.find(x => x.id === b.getAttribute('data-ht'));
@@ -1193,7 +1257,17 @@
       });
       h += '</ul><p class="hint small"><b>合計</b>：' + Object.keys(pan).map(k => `平台${k} ${pan[k]}枚`).concat(Object.keys(leg).map(k => `${k} ${leg[k]}個`)).concat(sm.stairs ? [`上がり段 ${sm.stairs}台`] : []).join('／') + '<br>※平台の番号は、図の平台に書いた番号と同じです（段の番号-前の列の下手から数えた番号）。<br>※足の数は「平台の前後の辺に、つなぎ目ごとに置く」ときの目安です。ホールの備品数を確認してください。<br>組み図だけを出すときは「🖼 画像」か「🖨 印刷」の「中身」で「ひな壇の組み図」をえらびます。</p>';
     }
+    // 譜面灯・電源
+    const pw = SS.powerSummary(doc().items);
+    h += `<h3 style="margin-top:16px">譜面灯・電源</h3>
+      <p class="hint small" style="margin:0 0 6px">譜面灯 <b>${pw.lights}台</b>${pw.devices ? `／電源が要る機材（アンプ・キーボード・モニター）${pw.devices}台` : ''}<br>
+      必要な差し込み口：<b>${pw.need}口</b>${pw.need ? `（2口のコンセントなら <b>${pw.wall}か所</b>分）` : ''}
+      ${pw.outlets || pw.taps ? `<br>図に置いたもの：コンセント${pw.outlets}か所・延長コード（4口）${pw.taps}本 → 使える口 ${pw.have}口 <b class="${pw.have >= pw.need ? 'q-ok' : 'q-est'}">${pw.have >= pw.need ? '足ります' : `あと${pw.need - pw.have}口足りません`}</b>` : ''}</p>
+      <div class="row2"><button class="btn" id="lightsOn">💡 全員に譜面灯</button><button class="btn" id="lightsOff">全員はずす</button></div>
+      <p class="hint small">1人ずつは、奏者を選んで「選択中」の「譜面灯をつける」で。</p>`;
     $('countTable').innerHTML = h;
+    $('lightsOn').onclick = () => { pushHistory(); players().forEach(it => { it.light = true; }); render(); renderCounts(); toast(`${players().length}人に譜面灯をつけました`, true); };
+    $('lightsOff').onclick = () => { pushHistory(); players().forEach(it => { delete it.light; }); render(); renderCounts(); toast('譜面灯をすべてはずしました', true); };
     $('countTable').querySelectorAll('[data-part]').forEach(td => {
       td.onclick = () => {
         const l = td.getAttribute('data-part');
@@ -2180,13 +2254,15 @@
         <label class="field">縮尺<select id="ppScale">${opt(0, '用紙に合わせる', p.scale)}${opt(50, '1/50', p.scale)}${opt(100, '1/100', p.scale)}${opt(200, '1/200', p.scale)}</select></label>
         <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '図面用（白黒・線だけ）', p.style)}</select></label>
       </div>
+      ${S.compare ? `<label class="check"><input type="checkbox" id="ppCompare" checked> 「${SS.esc(S.compare.name)}」との違いの印（○＋ □− →）を入れる</label>` : ''}
+      ${doc().items.some(SS.isAudio) ? `<label class="check"><input type="checkbox" id="ppAudio"${p.audio === false ? '' : ' checked'}> 音響の機材（マイク・モニター・ケーブル）を入れる</label>` : ''}
       ${hasHina() ? `<label class="field">中身<select id="ppContent">${opt('plan', '配置図', p.content)}${opt('assembly', 'ひな壇の組み図（番号・足・部材表）', p.content)}</select></label>` : ''}
       <p id="ppWarn" class="pp-warn" hidden></p>
     </div>`;
   };
   const hasHina = () => doc().items.some(it => it.type === 'hina');
   function readPaper() {
-    const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value, content: $('ppContent') ? $('ppContent').value : 'plan' };
+    const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value, content: $('ppContent') ? $('ppContent').value : 'plan', audio: $('ppAudio') ? $('ppAudio').checked : paperPref().audio !== false };
     opts().paper = p;
     scheduleSave();
     return p;
@@ -2199,7 +2275,8 @@
   }
   function buildSheet(extra) {
     const p = readPaper();
-    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true, content: p.content === 'assembly' && hasHina() ? 'assembly' : 'plan' }, extra));
+    const cmp = S.compare && $('ppCompare') && $('ppCompare').checked ? S.compare : null;
+    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true, audio: p.audio !== false, compare: cmp, content: p.content === 'assembly' && hasHina() ? 'assembly' : 'plan' }, extra));
   }
   // 縮尺どおりだと用紙に入らないとき、警告と入る縮尺の案内
   function paperCheck(extra) {
@@ -2219,7 +2296,7 @@
     if (p.scale && !r.info.fits) w.className = 'pp-warn';
     return r;
   }
-  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
+  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent', 'ppAudio', 'ppCompare'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
 
   $('btnExport').onclick = () => {
     openModal(`
@@ -2397,14 +2474,18 @@
     // 今の名前を、パートごとに覚えておく
     const names = {};
     d.items.filter(it => it.type === 'player' && it.name).forEach(it => { (names[it.label] = names[it.label] || []).push(it.name); });
+    // 譜面灯も、パートごとの数を覚えておく
+    const lights = {};
+    d.items.filter(it => it.type === 'player' && it.light).forEach(it => { lights[it.label] = (lights[it.label] || 0) + 1; });
     const hadAuto = d.items.some(it => it.auto);
-    const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp']);
+    const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp', 'micTall', 'monitor', 'cable', 'outlet', 'tap', 'stairs']);
     d.items = d.items.filter(it => (hadAuto ? !it.auto : keepTypes.has(it.type)));
     const r = SS.auto.build(st, d.stage);
     opts().arcCurve = 1; opts().arcBase = null; syncArcCurve();
     r.items.forEach(it => {
       it.id = newId();
       if (it.type === 'player' && names[it.label] && names[it.label].length) it.name = names[it.label].shift();
+      if (it.type === 'player' && lights[it.label]) { it.light = true; lights[it.label]--; }
       d.items.push(it);
     });
     S.sel.clear();

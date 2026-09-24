@@ -90,6 +90,33 @@ window.SS = window.SS || {};
     harp:    { name: 'ハープ', cat: '鍵盤など', w: 55, h: 98, shape: 'harp', fill: '#e2c28a', label: 'Hp', note: '約55×98cm（ペダルハープ）' },
     amp:     { name: 'アンプ', cat: '鍵盤など', w: 60, h: 40, shape: 'rect', fill: '#444', label: 'Amp' },
     mic:     { name: 'マイク', cat: '鍵盤など', w: 30, h: 30, shape: 'mic', fill: '#444', label: '' },
+
+    micTall: { name: '録音用マイク（高いスタンド）', cat: '電気・音響', w: 70, h: 70, shape: 'micTall', fill: '#333', label: '', audio: true, note: '3本脚を開くと直径 約70cm。選ぶと袖までのケーブルを引けます' },
+    monitor: { name: 'モニタースピーカー', cat: '電気・音響', w: 55, h: 40, shape: 'monitor', fill: '#3a3f47', label: '', audio: true, power: true, note: '床置きの返しスピーカー（くさび形）。広い辺が音の出る側' },
+    cable:   { name: 'ケーブル', cat: '', w: 10, h: 10, shape: 'cable', label: '', audio: true },
+    outlet:  { name: 'コンセント（2口）', cat: '電気・音響', w: 24, h: 14, shape: 'outlet', fill: '#f4f4f4', label: '', note: '床・壁のコンセントの位置（差し込み口2つ）' },
+    tap:     { name: '延長コード（4口タップ）', cat: '電気・音響', w: 50, h: 14, shape: 'tap', fill: '#f4f4f4', label: '', note: '差し込み口4つ。コンセント1口につなぐ' },
+  };
+  // 音響の機材（書き出し・印刷で出す／出さないを切り替える）
+  SS.isAudio = it => it.type === 'mic' || !!(SS.CATALOG[it.type] && SS.CATALOG[it.type].audio);
+  // 電源が要る機材（譜面灯は奏者ごとに別に数える）
+  SS.needsPower = it => ['amp', 'keyboard', 'monitor'].includes(it.type);
+
+  // 譜面灯（譜面台の右はし、指揮者側）。白黒でも分かるよう、光の線つきの丸
+  function lightSVG(x, y) {
+    let rays = '';
+    for (let i = 0; i < 8; i++) { const a = (i * Math.PI) / 4; rays += `M${(x + Math.cos(a) * 9).toFixed(1)} ${(y + Math.sin(a) * 9).toFixed(1)}L${(x + Math.cos(a) * 13).toFixed(1)} ${(y + Math.sin(a) * 13).toFixed(1)}`; }
+    return `<g class="stand-light"><path d="${rays}" stroke="#b08900" stroke-width="1.8" stroke-linecap="round"/><circle cx="${x}" cy="${y}" r="6.5" fill="#ffe066" stroke="#8a6d00" stroke-width="1.8"/></g>`;
+  }
+  SS.lightSVG = lightSVG;
+  // 譜面灯と電源の数（編成表・図面の編成欄で使う）
+  SS.powerSummary = function (items) {
+    const lights = items.filter(it => it.type === 'player' && it.light).length;
+    const devices = items.filter(SS.needsPower).length;
+    const outlets = items.filter(it => it.type === 'outlet').length, taps = items.filter(it => it.type === 'tap').length;
+    const need = lights + devices;
+    // 2口コンセントは2口、4口タップはコンセント1口を使って4口になる（増えるのは3口）
+    return { lights, devices, need, outlets, taps, have: outlets * 2 + taps * 3, wall: Math.ceil(need / 2) };
   };
 
   SS.PLAYER_R = 24;
@@ -301,6 +328,46 @@ window.SS = window.SS || {};
           body += `<path d="M0 ${(h / 2 - 6).toFixed(1)}V${(-h / 2 + 8).toFixed(1)}M${-aw} ${(-h / 2 + 8 + aw).toFixed(1)}L0 ${(-h / 2 + 8).toFixed(1)}L${aw} ${(-h / 2 + 8 + aw).toFixed(1)}" fill="none" stroke="#6b5024" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
           break;
         }
+        case 'micTall': {
+          // 高いスタンドの録音用マイク：3本脚と、上から見たマイク
+          let p = '';
+          for (let i = 0; i < 3; i++) { const a = (i * 2 * Math.PI) / 3 - Math.PI / 2; p += `M0 0L${(Math.cos(a) * w / 2).toFixed(1)} ${(Math.sin(a) * h / 2).toFixed(1)}`; }
+          body += `<circle r="${w / 2}" fill="transparent"/><path d="${p}" stroke="#555" stroke-width="2.5" stroke-linecap="round"/>`;
+          body += `<rect x="-5" y="-18" width="10" height="22" rx="4" fill="${fill}" stroke="#111" stroke-width="1.5"/><circle r="5" fill="#fff" stroke="#111" stroke-width="2"/>`;
+          break;
+        }
+        case 'monitor':
+          // くさび形。前（図の下＝広い辺）から音が出る
+          body += `<path d="M${-w / 2} ${h / 2}L${w / 2} ${h / 2}L${w * 0.36} ${-h / 2}L${-w * 0.36} ${-h / 2}Z" fill="${fill}" stroke="#111" stroke-width="2"/>`;
+          body += `<path d="M${-w * 0.3} ${h / 2 - 5}Q0 ${h / 2 + 6} ${w * 0.3} ${h / 2 - 5}" fill="none" stroke="#fff" stroke-width="2"/>`;
+          break;
+        case 'outlet':
+          body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="#333" stroke-width="2"/>`;
+          body += `<path d="M${-w / 4 - 2} -3V3M${-w / 4 + 2} -3V3M${w / 4 - 2} -3V3M${w / 4 + 2} -3V3" stroke="#333" stroke-width="1.6"/>`;
+          break;
+        case 'tap': {
+          body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="3" fill="${fill}" stroke="#333" stroke-width="2"/>`;
+          let p = '';
+          for (let i = 0; i < 4; i++) { const cx = -w / 2 + (w * (i + 0.5)) / 4; p += `M${(cx - 2).toFixed(1)} -3V3M${(cx + 2).toFixed(1)} -3V3`; }
+          body += `<path d="${p}" stroke="#333" stroke-width="1.4"/><path d="M${-w / 2} 0h-10" stroke="#333" stroke-width="2"/>`;
+          break;
+        }
+        case 'cable': {
+          // ケーブルの通り道（折れ線）。pts は (x, y) からの位置
+          const pts = it.pts || [];
+          if (pts.length > 1) {
+            const d = 'M' + pts.map(q => `${(+q[0]).toFixed(1)} ${(+q[1]).toFixed(1)}`).join('L');
+            body += `<path d="${d}" fill="none" stroke="transparent" stroke-width="22" stroke-linejoin="round"/>`;
+            body += `<path class="cable-line" d="${d}" fill="none" stroke="#1f5fbf" stroke-width="4" stroke-dasharray="16 6 3 6" stroke-linejoin="round" stroke-linecap="round"/>`;
+            const a = pts[pts.length - 2], b = pts[pts.length - 1];
+            const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+            const ah = (t, r) => `${(b[0] + Math.cos(ang + t) * r).toFixed(1)} ${(b[1] + Math.sin(ang + t) * r).toFixed(1)}`;
+            body += `<path d="M${ah(Math.PI - 0.45, 18)}L${b[0]} ${b[1]}L${ah(Math.PI + 0.45, 18)}" fill="none" stroke="#1f5fbf" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`;
+            body += `<circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="5" fill="#1f5fbf"/>`;
+            if (it.label) text += `<text x="${(x + b[0]).toFixed(1)}" y="${(y + b[1] - 16).toFixed(1)}" text-anchor="middle" font-size="24" font-weight="700" fill="#1f5fbf" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(it.label)}</text>`;
+          }
+          break;
+        }
         case 'riser':
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#b89b6a" stroke-width="2.5"/>`;
           break;
@@ -375,11 +442,19 @@ window.SS = window.SS || {};
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${it.color || '#1f2733'}">${esc(lab)}</text>`;
         // クリックできるよう透明の当たり判定
         body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="transparent"/>`;
-      } else if (lab) {
+      } else if (lab && ['micTall', 'monitor', 'outlet', 'tap'].includes(shape)) {
+        // 小さい機材の名前（例：L・R・1番）は、形の下に黒い字で
+        text += `<text x="${x}" y="${(y + Math.max(w, h) / 2 + 14).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(lab)}</text>`;
+      } else if (lab && shape !== 'cable') {
         const fs = fitFont(lab, Math.max(w, h) * 0.9, Math.min(34, Math.max(12, Math.min(w, h) * 0.38)));
         const tc = shape === 'riser' ? '#8a6d3b' : textColorFor(fill);
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${tc}">${esc(lab)}</text>`;
       }
+    }
+    if (it.type === 'player' && it.light && opts.lights !== false) {
+      // 譜面灯：譜面台の右はし
+      const off = opts.contest ? 52 : opts.figure !== false && SS.drawFigure ? 64 : (opts.seatR || SS.PLAYER_R) + 12;
+      body += lightSVG(27, off);
     }
     return { body: `<g transform="translate(${x} ${y}) rotate(${rot})">${body}</g>`, text, label };
   };

@@ -323,7 +323,7 @@ window.SS = window.SS || {};
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
     const pod = doc.items.find(it => it.type === 'podium');
-    if (sel && sel.type !== 'player' && sel.type !== 'text') {
+    if (sel && sel.type !== 'player' && sel.type !== 'text' && sel.type !== 'cable') {
       const bb = bboxOf(sel);
       const cy = sel.y;
       const [xl, xr] = R.xRange(st, cy);
@@ -519,6 +519,8 @@ window.SS = window.SS || {};
    */
   R.sheet = function (doc, opts, conductor, ex) {
     ex = Object.assign({ legend: true, pxPerMm: 0 }, ex);
+    // 音響の機材（マイク・モニター・ケーブル）を入れないとき
+    if (ex.audio === false && SS.isAudio) doc = Object.assign({}, doc, { items: doc.items.filter(it => !SS.isAudio(it)) });
     const pp = Object.assign({ size: 'A4', orient: 'landscape', scale: 0 }, ex.paper || {});
     const [pl, ps] = R.PAPERS[pp.size] || R.PAPERS.A4;
     const PW = pp.orient === 'portrait' ? ps : pl, PH = pp.orient === 'portrait' ? pl : ps;
@@ -549,6 +551,9 @@ window.SS = window.SS || {};
     } else if (ex.legend) {
       const c = R.counts(doc);
       c.groups.forEach(x => x.parts.forEach(p => legendItems.push({ color: x.g.color, text: `${p.label} ×${p.n}` })));
+      const pw = SS.powerSummary ? SS.powerSummary(doc.items) : null;
+      if (pw && pw.lights) legendItems.push({ color: '#ffe066', text: `譜面灯 ×${pw.lights}` });
+      if (pw && pw.need) legendItems.push({ color: '#fff', text: `電源 ${pw.need}口` });
       legendItems.total = c.total;
     }
     const cellW = 25, lfs = 3, lrow = 4.6;

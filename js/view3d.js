@@ -613,6 +613,15 @@ window.SS = window.SS || {};
       }
       case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
       case 'hina': makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100); break;
+      case 'cable': case 'outlet': case 'tap': break; // 床の線・コンセントは3Dでは描かない
+      case 'micTall': // 録音用マイク：3本脚の高いスタンド
+        for (let i = 0; i < 3; i++) { const a = (i * 2 * Math.PI) / 3; tube(g, [0, 0.5, 0], [Math.sin(a) * w / 2, 0.01, Math.cos(a) * w / 2], 0.012, '#333', METAL); }
+        cyl(g, 0.012, 0.012, 3.0, '#333', 0, 1.5, 0, METAL);
+        box(g, 0.05, 0.16, 0.05, '#222', 0, 3.05, 0);
+        break;
+      case 'monitor': // くさび形のモニタースピーカー
+        box(g, w, 0.3, d, '#2a2d33', 0, 0.15, 0).rotation.x = -0.35;
+        break;
       case 'stairs': // 上がり段：奥（ひな壇の側）へ3段上がる
         for (let i = 0; i < 3; i++) { const h = (i + 1) * 0.14; box(g, w, h, d / 3, '#d8c7a4', 0, h / 2, d / 2 - d / 6 - (i * d) / 3); }
         break;

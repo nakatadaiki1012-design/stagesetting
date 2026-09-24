@@ -5,7 +5,7 @@ window.SS = window.SS || {};
 (function (SS) {
   const R = () => SS.render;
   // 形のない書き込み（文字・四角・丸）は、物ではないので確かめない
-  const NOT_THING = new Set(['text', 'box', 'circle']);
+  const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap']); // 床のケーブル・コンセントも通れるので除く
   const HEAVY = new Set(['marimba', 'marimba43', 'timp32', 'timp29', 'timp26', 'timp23', 'timp', 'piano', 'pianoFull', 'vib', 'chimes', 'xylo', 'tam']);
   const PLATFORM = new Set(['hina', 'riser', 'riser46']);
   const STEP_OK = 25; // 1回で上り下りできる高さの差（cm）。平台1段（21.2cm）まで
