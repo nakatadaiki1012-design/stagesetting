@@ -358,8 +358,10 @@
   function openModal(html) {
     $('modalBody').innerHTML = html;
     $('modal').classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    $('modalBody').parentElement.scrollTop = 0;
   }
-  function closeModal() { $('modal').classList.add('hidden'); }
+  function closeModal() { $('modal').classList.add('hidden'); document.body.classList.remove('modal-open'); }
   // 画面内で確認する（ブラウザの確認ダイアログが使えない環境でも動くように）
   function askConfirm(msg, yesLabel, onYes) {
     openModal(`<h2>確認</h2><p style="line-height:1.7">${SS.esc(msg).replace(/\n/g, '<br>')}</p>
@@ -1497,8 +1499,9 @@
   const INFO_FIELDS = [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']];
   const infoFieldsHTML = () => {
     const f = doc().info, v = k => SS.esc(f[k] == null ? '' : f[k]);
-    return `<details class="fold info-fold"${[f.venue, f.date, f.author, f.memo, f.changeNote].some(Boolean) ? '' : ' open'}>
-      <summary>図面の情報欄（右下に出ます）<span class="fold-now">第${f.version || 1}版${f.venue ? '・' + v('venue') : ''}</span></summary>
+    const now = [`第${f.version || 1}版`, f.venue ? v('venue') : '', f.date ? v('date') : '', f.author ? v('author') : ''].filter(Boolean).join('・');
+    return `<details class="fold info-fold">
+      <summary>図面の情報欄（右下に出ます）<span class="fold-now">${now}</span></summary>
       <div class="row2"><label class="field">会場<input id="infoVenue" value="${v('venue')}" placeholder="空ならホール名"></label><label class="field">日付<input id="infoDate" type="date" value="${v('date')}"></label></div>
       <div class="row2"><label class="field">第何版<input id="infoVersion" type="number" min="1" step="1" value="${v('version')}"></label><label class="field">作った人<input id="infoAuthor" value="${v('author')}" placeholder="例: 舞台監督 山田"></label></div>
       <label class="field">メモ<input id="infoMemo" value="${v('memo')}" placeholder="例: 反射板設置・ひな壇2段"></label>
@@ -2635,13 +2638,13 @@
       <label class="field" style="margin-top:10px">画質（PNG・PDF）
         <select id="exScale"><option value="4">ふつう</option><option value="8" selected>きれい</option><option value="12">とてもきれい（印刷向け）</option></select>
       </label>
-      <div class="btn-row">
-        ${pdf ? '<button class="btn primary" id="exPdf">📄 PDFを作る</button><button class="btn" id="exPng">🖼 PNG画像</button>'
-    : '<button class="btn primary" id="exPng">🖼 PNG画像</button><button class="btn" id="exPdf">📄 PDF</button>'}
-        <button class="btn" id="exSvg">SVG（拡大しても荒れない形式）</button>
-      </div>
       <p class="hint small">PDF は用紙の大きさ・縮尺どおりに作ります（ネットにつながっていなくても作れます）。うまく保存できないときは、「📤 書き出す」の「🖨 印刷」から <b>「PDFに保存」</b> をえらんでも作れます。<br>スマホでは保存したファイルが「ファイル」アプリや「ダウンロード」に入ります。</p>
       <div id="exResult"></div>
+      <div class="modal-actions">
+        ${pdf ? '<button class="btn primary" id="exPdf">📄 PDFを作る</button><button class="btn" id="exPng">🖼 PNG画像</button>'
+    : '<button class="btn primary" id="exPng">🖼 PNG画像</button><button class="btn" id="exPdf">📄 PDF</button>'}
+        <button class="btn" id="exSvg" title="拡大しても荒れない形式">SVG</button>
+      </div>
     `);
     const extra = () => ({ legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
@@ -2657,6 +2660,7 @@
         // ダウンロードできない環境（アプリ内ブラウザなど）でも保存できるよう画像を表示する
         const url = URL.createObjectURL(blob);
         $('exResult').innerHTML = `<p class="hint">保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
+        $('exResult').scrollIntoView({ block: 'nearest' });
         toast('画像を作りました');
       } catch (e) { toast(e.message); }
     };
@@ -2683,7 +2687,7 @@
       ${infoFieldsHTML()}
       ${paperFieldsHTML()}
       <p class="hint small">編成表（人数）と情報欄も入ります。縮尺どおりに印刷するには、印刷の画面で <b>倍率を「100%」（実際のサイズ）</b> にしてください。PDFにしたいときは、印刷の画面で <b>「PDFに保存」</b> をえらびます。</p>
-      <div class="btn-row"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
+      <div class="modal-actions"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
     `);
     const extra = () => ({ legend: true, grid: false, underlay: false });
     bindTitleFields();

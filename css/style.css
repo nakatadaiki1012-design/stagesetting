@@ -417,6 +417,15 @@ details.fold[open] > summary { margin-bottom: 4px; }
 .out-choice > b { grid-area: nm; font-size: 15px; }
 .out-choice > small { grid-area: sm; color: var(--muted); font-size: 12px; }
 
+/* 書き出す画面：作成ボタンはいつも見えるように、画面の下に固定 */
+.modal-actions {
+  position: sticky; bottom: -20px; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 12px -22px -20px; padding: 10px 22px 14px; background: #fff; border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 12px rgba(255,255,255,.9);
+}
+.modal-actions .btn.primary { font-size: 15px; padding: 9px 16px; }
+/* 書き出す画面を開いている間は、後ろの「きれいに整える」などのボタンを出さない */
+body.modal-open .tidy-bar, body.modal-open .warn-chip, body.modal-open .cmp-bar { visibility: hidden; }
 /* 🎺 コンクール提出用 */
 .out-contest { display: grid; grid-template-columns: 40px 1fr; grid-template-areas: "ic nm" "ic sm"; justify-items: start; text-align: left; width: 100%; padding: 14px 14px; white-space: normal; border-radius: 12px; }
 .out-contest > span { grid-area: ic; font-size: 28px; align-self: center; }
