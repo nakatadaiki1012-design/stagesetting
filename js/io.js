@@ -130,9 +130,37 @@ window.SS = window.SS || {};
         for (let n = 1; fy - n * g >= 0; n++) s += `<text x="${st.w + 14}" y="${fy - n * g}" dy="0.35em" font-size="16" fill="#9aa6b8">${lab(n)}</text>`;
       }
     }
-    s += `<text x="${st.w / 2}" y="${R.frontY(st) + 70}" text-anchor="middle" font-size="40" fill="#8a94a3" font-weight="700" letter-spacing="20">客　席</text>`;
-    s += `<text x="${st.w / 2}" y="-78" text-anchor="middle" font-size="26" fill="#a9b1bd">（舞台奥）</text>`;
     return s;
+  };
+
+  /**
+   * 上手・下手・客席・センター（中心線）・舞台奥 の表示。
+   * k：1cm が何単位の大きさで見えるか（画面なら 1cm あたりの px、図面なら文字の大きさの基準）。
+   * 文字は k に合わせて一定の見た目の大きさにし、寸法の文字と重ならない位置に置く。
+   */
+  R.marksSVG = function (doc, k, dimsOn, compact) {
+    const st = doc.stage, fy = R.frontY(st), cx = st.w / 2;
+    const col = '#5b6678', halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
+    let s = '<g class="marks" pointer-events="none">';
+    // 舞台奥：「奥の幅」の寸法の文字の上。その右に「センター」、中心線はそこから客席側のふちまで
+    const shaped = R.backWidth(st) < st.w - 1;
+    const by = dimsOn && shaped ? -36 - (3 + 19 + 6) / k : -8 / k;
+    s += `<line x1="${cx}" y1="${by + 3 / k}" x2="${cx}" y2="${fy}" stroke="#7a8699" stroke-width="${1.3 / k}" stroke-dasharray="${10 / k} ${4 / k} ${2 / k} ${4 / k}"/>`;
+    s += `<text x="${cx - 6 / k}" y="${by}" text-anchor="end" font-size="${11 / k}" fill="${col}" ${halo}>（舞台奥）</text>`;
+    s += `<text x="${cx + 6 / k}" y="${by}" font-size="${11 / k}" font-weight="700" fill="${col}" ${halo}>センター</text>`;
+    // 下手（客席から見て左）・上手（客席から見て右）
+    const fs = 16 / k, y = st.d * 0.74;
+    const [xl, xr] = R.xRange(st, y);
+    const lx = Math.min(xl - 12 / k, dimsOn ? -42 - 12 / k : xl - 12 / k);
+    s += `<text x="${lx}" y="${y}" dy="0.35em" text-anchor="end" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>下手</text>`;
+    if (!compact) s += `<text x="${lx}" y="${y + fs * 1.2}" dy="0.35em" text-anchor="end" font-size="${9 / k}" fill="${col}" ${halo}>（客席から見て左）</text>`;
+    s += `<text x="${xr + 12 / k}" y="${y}" dy="0.35em" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>上手</text>`;
+    if (!compact) s += `<text x="${xr + 12 / k}" y="${y + fs * 1.2}" dy="0.35em" font-size="${9 / k}" fill="${col}" ${halo}>（客席から見て右）</text>`;
+    // 客席：「前の幅」の寸法の文字の下
+    const cy = fy + (dimsOn ? 34 + (3 + 19 + 10) / k : 12 / k) + 16 / k;
+    s += `<text x="${cx}" y="${cy}" dy="0.35em" text-anchor="middle" font-size="${17 / k}" font-weight="700" fill="${col}" letter-spacing="${8 / k}" ${halo}>客　席</text>`;
+    s += `<path d="M${cx - 60 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}M${cx + 48 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}" fill="none" stroke="${col}" stroke-width="${1.5 / k}"/>`;
+    return s + '</g>';
   };
 
   // ---------------------------------------------------------------- 下絵（舞台図の重ね合わせ）
@@ -245,7 +273,8 @@ window.SS = window.SS || {};
     let s = '';
     const b = R.backWidth(st);
     const shaped = b < st.w - 1;
-    s += dimLine(0, st.d + 34, st.w, st.d + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
+    const fyD = R.frontY(st);
+    s += dimLine(0, fyD + 34, st.w, fyD + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
     if (shaped) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
@@ -290,10 +319,14 @@ window.SS = window.SS || {};
           { x: lxLine + tw / 2 + g, y: pb.y0 - th / 2 - g },         // 指揮台の右上
           { x: pb.x0 - 30 - tw / 2 - g, y: pb.y0 - th / 2 - g },     // 指揮台の左上
           { x: pod.x, y: pb.y0 - th / 2 - g * 2 },                  // 指揮台の上
+          { x: pod.x, y: pb.y0 - th * 1.5 - g * 3 },                // もう少し上
+          { x: lxLine + tw / 2 + g, y: pb.y0 - th * 1.5 - g * 3 },   // 右上のさらに上
+          { x: pb.x0 - 30 - tw / 2 - g, y: pb.y0 - th * 1.5 - g * 3 },
         ];
-        const free = c => !blocks.some(b => overlap({ x0: c.x - tw / 2, x1: c.x + tw / 2, y0: c.y - th / 2, y1: c.y + th / 2 }, b));
-        const best = cands.find(free) || cands[0];
-        s += dimLine(lxLine, pb.y1, lxLine, fe, label, C1, k, 1, 0.5, best === cands[0] ? null : best);
+        const hits = c => blocks.filter(b => overlap({ x0: c.x - tw / 2, x1: c.x + tw / 2, y0: c.y - th / 2, y1: c.y + th / 2 }, b)).length;
+        const best = cands.reduce((a, c) => (hits(c) < hits(a) ? c : a), cands[0]);
+        // 部品を選んでいて（ピンクの寸法が出ていて）空いた場所がないときは、今は出さない
+        if (!(sel && hits(best) > 0)) s += dimLine(lxLine, pb.y1, lxLine, fe, label, C1, k, 1, 0.5, best === cands[0] ? null : best);
       }
     }
     placed = null;

@@ -174,7 +174,7 @@
     layerOverlay.innerHTML = s;
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    $('layerDims').innerHTML = opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick) }) : '';
+    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true);
     positionCtxBar();
   }
 
@@ -197,7 +197,9 @@
     }
     const st = doc().stage;
     const mx = opts().dims ? 110 : 80;
-    let x0 = -mx, y0 = -95, x1 = st.w + 80, y1 = SS.render.frontY(st) + 110;
+    // 左右は「下手」「上手」、上は「舞台奥」、下は「客席」の文字の分もあける（文字の大きさは画面上で一定）
+    const kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
+    let x0 = -mx - 48 / kk, y0 = -95, x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontY(st) + 34 + 70 / kk;
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
