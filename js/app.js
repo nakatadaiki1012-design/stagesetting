@@ -45,7 +45,12 @@
       hall: doc.hall || '',
       // 図面の情報欄（会場・日付・版・作成者・メモ）。古い保存データには無いので空で補う
       info: Object.assign({ venue: '', date: '', version: 1, author: '', memo: '', changeNote: '' }, doc.info || {}),
+      // コンクール提出用の図（団体名・メモ・用紙の向き・編成表を入れるか）
+      contest: Object.assign({ org: '', memo: '', orient: 'landscape', legend: false }, doc.contest || {}),
     };
+    // 前の「コンクール用（椅子○・譜面台×）」は、「白黒◯×」に読み替える
+    if (d.options.contest && !d.options.mono) { d.options.mono = true; d.options.contest = false; }
+    if (d.options.paper && d.options.paper.style === 'contest') d.options.paper.style = 'mono';
     return d;
   }
   const doc = () => S.doc;
@@ -1471,7 +1476,7 @@
     $('optStandLegs').checked = o.standLegs !== false;
     $('optNumbers').checked = o.showNumbers;
     $('optGrid').value = o.grid ? String(o.gridSize || 50) : '0';
-    $('optStyle').value = o.mono ? 'mono' : o.contest ? 'contest' : o.figure ? 'figure' : 'circle';
+    $('optStyle').value = o.mono || o.contest ? 'mono' : o.figure ? 'figure' : 'circle';
     $('optSnap').checked = o.snap;
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
@@ -1538,7 +1543,7 @@
   bindSetting('optStandLegs', 'change', el => { opts().standLegs = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
   bindSetting('optGrid', 'change', el => { const v = +el.value; opts().grid = v > 0; if (v) opts().gridSize = v; });
-  bindSetting('optStyle', 'change', el => { opts().mono = el.value === 'mono'; opts().contest = el.value === 'contest'; opts().figure = el.value === 'figure'; renderSettings(); });
+  bindSetting('optStyle', 'change', el => { opts().mono = el.value === 'mono'; opts().contest = false; opts().figure = el.value === 'figure'; renderSettings(); });
   bindSetting('optSnap', 'change', el => { opts().snap = el.checked; });
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
@@ -2496,7 +2501,7 @@
       </div>
       <div class="row2">
         <label class="field">縮尺<select id="ppScale">${opt(0, '用紙に合わせる', p.scale)}${opt(50, '1/50', p.scale)}${opt(100, '1/100', p.scale)}${opt(200, '1/200', p.scale)}</select></label>
-        <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '図面用（白黒・線だけ）', p.style)}</select></label>
+        <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '白黒◯×（椅子○・譜面台×）', p.style)}</select></label>
       </div>
       ${S.compare ? `<label class="check"><input type="checkbox" id="ppCompare" checked> 「${SS.esc(S.compare.name)}」との違いの印（○＋ □− →）を入れる</label>` : ''}
       ${doc().items.some(SS.isAudio) ? `<label class="check"><input type="checkbox" id="ppAudio"${p.audio === false ? '' : ' checked'}> 音響の機材（マイク・モニター・ケーブル）を入れる</label>` : ''}
@@ -2546,17 +2551,76 @@
   $('btnOut').onclick = () => {
     openModal(`
       <h2>書き出す</h2>
-      <p class="hint">どの形で出しますか？</p>
+      <button class="btn primary out-contest" id="outContest"><span>🎺</span><b>コンクール提出用（白黒◯×）</b><small>A4・紙いっぱい。団体名とメモを入れて、PDFかPNGをすぐ作れます</small></button>
+      <p class="hint" style="margin:14px 0 6px">ほかの形で出す</p>
       <div class="out-choices">
         <button class="btn out-choice" id="outImage"><span>🖼</span><b>画像</b><small>PNG・SVG。LINEやメールで送る・資料に貼る</small></button>
         <button class="btn out-choice" id="outPdf"><span>📄</span><b>PDF</b><small>用紙（A4・A3）と縮尺どおりの図面</small></button>
         <button class="btn out-choice" id="outPrint"><span>🖨</span><b>印刷</b><small>プリンターで紙に出す</small></button>
       </div>
     `);
+    $('outContest').onclick = openContest;
     $('outImage').onclick = () => openExport('image');
     $('outPdf').onclick = () => openExport('pdf');
     $('outPrint').onclick = openPrint;
   };
+
+  // 🎺 コンクール提出用：白黒◯×・A4・紙いっぱい。入れるのは団体名とメモだけ（どちらも空でも作れる）
+  function openContest() {
+    const c = doc().contest;
+    const sel = (v, t) => `<option value="${v}"${c.orient === v ? ' selected' : ''}>${t}</option>`;
+    openModal(`
+      <h2>🎺 コンクール提出用（白黒◯×）</h2>
+      <label class="field">団体名（学校名）<input id="ctOrg" value="${SS.esc(c.org)}" placeholder="例: ○○市立○○中学校 吹奏楽部"></label>
+      <label class="field">メモ（部門・出演順など自由に）<input id="ctMemo" value="${SS.esc(c.memo)}" placeholder="例: A部門・出演順12番"></label>
+      <div class="modal-actions contest-actions">
+        <button class="btn primary big" id="ctPdf">📄 PDFを作る</button>
+        <button class="btn big" id="ctPng">🖼 PNG画像を作る</button>
+      </div>
+      <div class="row2 contest-opts">
+        <label class="field">用紙の向き（A4）<select id="ctOrient">${sel('landscape', '横')}${sel('portrait', '縦')}</select></label>
+        <label class="check" style="align-self:end"><input type="checkbox" id="ctLegend"${c.legend ? ' checked' : ''}> 編成表（人数）を入れる</label>
+      </div>
+      <p class="hint small">椅子は○、譜面台は×、パート名つきの白黒の図です。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
+      <div id="ctResult"></div>
+    `);
+    let pushed = false;
+    const save = () => {
+      if (!pushed) { pushHistory(); pushed = true; }
+      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked });
+      scheduleSave();
+      $('ctResult').innerHTML = '';
+    };
+    ['ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
+    ['ctOrient', 'ctLegend'].forEach(id => $(id).addEventListener('change', save));
+    const sheet = pxPerMm => {
+      save();
+      const cc = doc().contest;
+      const o = Object.assign(renderOpts(), { mono: true, contest: true, figure: false, colorBy: false });
+      return SS.render.sheet(doc(), o, conductor(), { content: 'contest', org: cc.org, memo: cc.memo, legend: cc.legend, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
+    };
+    const name = () => SS.render.safeName((doc().contest.org || doc().title || '配置図') + '_コンクール提出用');
+    $('ctPdf').onclick = async () => {
+      try {
+        const r = sheet(8);
+        const blob = await SS.render.svgToPdf(r.svg, r.info.paperW, r.info.paperH);
+        SS.render.download(blob, name() + '.pdf');
+        const url = URL.createObjectURL(blob);
+        $('ctResult').innerHTML = `<p class="hint">✅ PDFを作りました。保存されない場合は <a href="${url}" target="_blank" rel="noopener">ここを開いて</a> 保存してください。</p>`;
+        toast('PDFを作りました');
+      } catch (e) { toast((e && e.message) || 'PDFを作れませんでした。PNG画像で作ってください'); }
+    };
+    $('ctPng').onclick = async () => {
+      try {
+        const r = sheet(8);
+        const blob = await SS.render.svgToPng(r.svg);
+        SS.render.download(blob, name() + '.png');
+        const url = URL.createObjectURL(blob);
+        $('ctResult').innerHTML = `<p class="hint">✅ 画像を作りました。保存されない場合は、下の画像を<b>長押し</b>（パソコンは右クリック）して保存してください。</p><img src="${url}" alt="コンクール提出用の配置図" style="width:100%;border:1px solid #dde2ea;border-radius:8px">`;
+        toast('画像を作りました');
+      } catch (e) { toast(e.message); }
+    };
+  }
 
   function openExport(mode) {
     const pdf = mode === 'pdf';
