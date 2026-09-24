@@ -499,6 +499,22 @@ window.SS = window.SS || {};
   // 人数から打楽器の楽器を用意する（奏者1人に1つの持ち場）
   const PERC_STATIONS_BAND = ['timp', 'sd', 'bd', 'marimba', 'glock', 'xylo', 'chimes', 'vib'];
   const PERC_STATIONS_ORCH = ['bd', 'sd', 'glock', 'xylo', 'chimes', 'marimba', 'cym'];
+  // かんたん編成で、打楽器の楽器を1つずつ増やしたり減らしたりできる（st.percKit）。決めていなければ、人数から自動で
+  A.PERC_KIT = [['timp', 'ティンパニ（4台で1組）'], ['bd', '大太鼓'], ['sd', '小太鼓'], ['cym', 'シンバル'], ['tam', 'タムタム'], ['glock', 'グロッケン'], ['xylo', 'シロフォン'], ['vib', 'ヴィブラフォン'], ['marimba', 'マリンバ'], ['chimes', 'チャイム'], ['table', '小物台'], ['drums', 'ドラムセット']];
+  A.autoPercKit = function (st) {
+    const n = st.counts || {}, P = n.Perc || 0, kit = {};
+    const list = st.type === 'orch' ? (n.Timp ? ['timp'] : []).concat(PERC_STATIONS_ORCH.slice(0, Math.min(P, 7))) : PERC_STATIONS_BAND.slice(0, Math.min(P, 8));
+    A.PERC_KIT.forEach(([k]) => { kit[k] = 0; });
+    list.forEach(k => { kit[k] = (kit[k] || 0) + 1; });
+    return kit;
+  };
+  A.percKitOf = st => Object.assign(A.autoPercKit(st), st.percKit || {});
+  // 楽器の一覧（ティンパニは組の数、ほかは台数）→ percItems へ
+  function kitList(st) {
+    const kit = A.percKitOf(st), out = [];
+    A.PERC_KIT.forEach(([k]) => { if (k !== 'timp') for (let i = 0; i < (kit[k] || 0); i++) out.push(k); });
+    return { timp: Math.min(1, kit.timp || 0), stations: out };
+  }
   function percItems(timpN, stations, players) {
     const out = [];
     if (timpN) {
@@ -850,9 +866,9 @@ window.SS = window.SS || {};
     const P = n.Perc || 0;
     let perc = [];
     if (P) {
-      const stations = st.percInst ? PERC_STATIONS_BAND.slice(0, Math.min(P, 8)) : [];
-      const hasTimp = stations.includes('timp');
-      perc = percItems(hasTimp ? 4 : 0, stations.filter(s => s !== 'timp'), rep('Perc', P).map((l, i) => (hasTimp && i === 0 ? 'Timp' : l)));
+      const kl = st.percInst ? kitList(st) : { timp: 0, stations: [] };
+      const hasTimp = !!kl.timp;
+      perc = percItems(hasTimp ? 4 : 0, kl.stations, rep('Perc', P).map((l, i) => (hasTimp && i === 0 ? 'Timp' : l)));
     }
     const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place, { c, R: maxR, yMax: c.y - 40 - (n.Pf ? 230 : 0) - (n.Hp ? 140 : 0), side: !n.Pf && !n.Hp, pts: items.slice() });
     items.push(...tp.items);
@@ -1054,8 +1070,8 @@ window.SS = window.SS || {};
     const P = n.Perc || 0;
     let perc = [];
     if (n.Timp || P) {
-      const stations = st.percInst ? PERC_STATIONS_ORCH.slice(0, Math.min(P, 7)) : [];
-      perc = percItems(n.Timp ? 4 : 0, stations, [...rep('Timp', n.Timp ? 1 : 0), ...rep('Perc', P)]);
+      const kl = st.percInst ? kitList(st) : { timp: n.Timp ? 1 : 0, stations: [] };
+      perc = percItems(kl.timp ? 4 : 0, kl.stations, [...rep('Timp', n.Timp ? 1 : 0), ...rep('Perc', P)]);
     }
     // 「ティンパニは最上段の中央」：いちばん高い段（金管の段）の真ん中、Hr と Tp のあいだの奥に置く。ほかの打楽器は下手
     const timpOnTop = st.percPlace === 'timpTop' && n.Timp && (hrN || brass.length) && H.steps > specs.length;

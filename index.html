@@ -79,6 +79,10 @@
       <details class="fold" id="percBox">
         <summary>打楽器 <span class="fold-now" id="percBoxNow"></span></summary>
       <label class="check"><input type="checkbox" id="ensPerc" checked> 打楽器の楽器も置く</label>
+      <div id="percKitWrap">
+        <p class="hint small" style="margin:6px 0 4px">楽器（台数）<button class="linkbtn" id="percKitAuto" type="button" hidden>人数に合わせて自動に戻す</button></p>
+        <div id="percKit" class="kit-steppers"></div>
+      </div>
       <label class="field" id="percPlaceWrap">打楽器の場所
         <select id="percPlace">
           <option value="back">舞台の奥（床）</option>

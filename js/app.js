@@ -3095,10 +3095,40 @@
     $('partSteppers').querySelectorAll('.keep').forEach(el => el.classList.remove('keep'));
     renderPartMore();
   };
+  // 打楽器の楽器を1つずつ増やす・減らす（決めていないときは、人数から自動）
+  function renderPercKit() {
+    const st = ens();
+    const show = st.type !== 'strings' && st.percInst !== false && ['band', 'orch'].includes(st.type);
+    $('percKitWrap').hidden = !show;
+    if (!show) return;
+    const kit = SS.auto.percKitOf(st);
+    $('percKitAuto').hidden = !st.percKit;
+    $('percKit').innerHTML = SS.auto.PERC_KIT.map(([k, name]) => `<div class="kit-row${kit[k] ? '' : ' zero'}" data-kit="${k}"><span>${SS.esc(name)}</span><button data-d="-1" aria-label="${SS.esc(name)}を減らす">−</button><b>${kit[k] || 0}</b><button data-d="1" aria-label="${SS.esc(name)}を増やす">＋</button></div>`).join('');
+    $('percKit').querySelectorAll('.kit-row button').forEach(b => {
+      b.onclick = () => {
+        const k = b.parentElement.getAttribute('data-kit'), d = +b.getAttribute('data-d');
+        const s2 = ens(), cur = SS.auto.percKitOf(s2);
+        const max = k === 'timp' ? 1 : 3;
+        const v = Math.max(0, Math.min(max, (cur[k] || 0) + d));
+        if (v === (cur[k] || 0)) return;
+        cur[k] = v;
+        s2.percKit = cur;
+        // 楽器の数（持ち場）に合わせて、打楽器の人数が足りなければ増やす
+        const stations = Object.keys(cur).reduce((a, q) => a + (cur[q] || 0), 0);
+        const players = (s2.counts.Perc || 0) + (s2.type === 'orch' ? (s2.counts.Timp || 0) : 0);
+        if (d > 0 && stations > players) { if (s2.type === 'orch' && k === 'timp' && !s2.counts.Timp) s2.counts.Timp = 1; else s2.counts.Perc = (s2.counts.Perc || 0) + 1; }
+        renderSteppers();
+        applyAuto();
+      };
+    });
+  }
+  $('percKitAuto').onclick = () => { delete ens().percKit; renderSteppers(); applyAuto(); };
+
   // 「打楽器」「ひな壇」の箱の見出しに、いまの設定を出す
   function renderEnsNow() {
     const st = ens(), H = st.hina, cur = SS.hinaTypeOf(H);
-    $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : '');
+    const kitN = st.percInst === false || !['band', 'orch'].includes(st.type) ? 0 : Object.values(SS.auto.percKitOf(st)).reduce((a, v) => a + (v || 0), 0);
+    $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : kitN ? `・楽器${kitN}${st.percKit ? '（手動）' : ''}` : '');
     const lay = SS.auto.BAND_LAYOUTS[st.layout || 'std'];
     const SPACE = { tight: '・間隔つめる', wide: '・間隔ゆったり' };
     $('layoutBoxNow').textContent = (st.type === 'band' ? (lay ? lay.name.split('（')[0] : '') : st.antiphonal ? '対向配置' : '通常配置') + (SPACE[st.space] || '');
@@ -3131,6 +3161,7 @@
     if (!$('bandLayout').options.length) $('bandLayout').innerHTML = Object.keys(SS.auto.BAND_LAYOUTS).map(k => `<option value="${k}">${SS.esc(SS.auto.BAND_LAYOUTS[k].name)}</option>`).join('');
     $('bandLayout').value = st.layout || 'std';
     $('percPlace').value = st.percPlace || 'back';
+    renderPercKit();
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
