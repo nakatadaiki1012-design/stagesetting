@@ -792,15 +792,16 @@ window.SS = window.SS || {};
       const act = secs.filter(q => q.left > 0);
       const total = act.reduce((a, q) => a + q.left, 0);
       const cap = Math.min(total, Math.max(act.length, Math.floor((rad(fan) * R - SEC_GAP * (act.length - 1)) / spS) + act.length));
-      // 比例で分ける → 偶数にそろえる → 合計を cap に合わせる
-      let alloc = act.map(q => Math.max(1, Math.min(q.left, Math.round((cap * q.left) / total))));
+      // もとの人数に比例して分ける（パートの境目の角度がリングごとに動かないように）→ 偶数にそろえる → 合計を cap に合わせる
+      const all = act.reduce((a2, q) => a2 + n[q.k], 0);
+      let alloc = act.map(q => Math.max(1, Math.min(q.left, Math.round((cap * n[q.k]) / all))));
       alloc = alloc.map((m, i) => (m > 1 && m % 2 && m < act[i].left ? m - 1 : m));
       const sum = () => alloc.reduce((a, v) => a + v, 0);
       while (sum() > cap) { const i = alloc.indexOf(Math.max(...alloc)); alloc[i]--; }
       for (let guard = 0; sum() < cap && guard < 40; guard++) {
         // 残りの多いパートに、2人ずつ（入らなければ1人）足す
         let bi = -1;
-        act.forEach((q, i) => { if (alloc[i] < q.left && (bi < 0 || q.left - alloc[i] > act[bi].left - alloc[bi])) bi = i; });
+        act.forEach((q, i) => { if (alloc[i] < q.left && (bi < 0 || (q.left - alloc[i]) / n[q.k] > (act[bi].left - alloc[bi]) / n[act[bi].k])) bi = i; });
         if (bi < 0) break;
         alloc[bi] += Math.min(cap - sum() >= 2 && act[bi].left - alloc[bi] >= 2 ? 2 : 1, act[bi].left - alloc[bi]);
       }
