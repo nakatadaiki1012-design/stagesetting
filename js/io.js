@@ -102,6 +102,51 @@ window.SS = window.SS || {};
     return Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5;
   };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
+  // 客席側でいちばん前（オーケストラピットのふた・花道まで含める）。寸法・「客席」の文字はこの前に置く
+  R.frontOuter = function (stage) {
+    const g = SS.fixtureGeom ? SS.fixtureGeom(stage) : {};
+    return Math.max(R.frontY(stage), g.pit ? g.pit.y1 : 0, g.hanamichi ? g.hanamichi.y1 : 0);
+  };
+
+  // ホールの設備（反射板・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道）。入力したものだけ描く
+  // k：文字の大きさの基準（marksSVG と同じ。画面でも図面でも、見た目の大きさを一定にする）
+  R.fixturesSVG = function (stage, k) {
+    if (!SS.fixtureGeom) return '';
+    const g = SS.fixtureGeom(stage);
+    const col = '#6d4c8f', fs = 12 / k, halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
+    const lab = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" dy="0.35em"${anchor ? ` text-anchor="${anchor}"` : ''} font-size="${fs}" font-weight="700" fill="${col}" ${halo}>${t}</text>`;
+    let s = '<g class="fixtures" pointer-events="none">';
+    if (g.pit) {
+      s += `<rect x="${g.pit.x0}" y="${g.pit.y0}" width="${g.pit.x1 - g.pit.x0}" height="${g.pit.y1 - g.pit.y0}" fill="#f1ecf6" stroke="${col}" stroke-width="3" stroke-dasharray="14 8"/>`;
+      s += lab((g.pit.x0 + g.pit.x1) / 2, (g.pit.y0 + g.pit.y1) / 2, 'オーケストラピット（ふた）', 'middle');
+    }
+    if (g.hanamichi) {
+      const h = g.hanamichi;
+      s += `<rect x="${h.x0}" y="${h.y0}" width="${h.x1 - h.x0}" height="${h.y1 - h.y0}" fill="#f1ecf6" stroke="${col}" stroke-width="3"/>`;
+      s += lab((h.x0 + h.x1) / 2, (h.y0 + h.y1) / 2, '花道', 'middle');
+    }
+    g.lifts.forEach((l, i) => {
+      s += `<rect x="${l.x0}" y="${l.y0}" width="${l.x1 - l.x0}" height="${l.y1 - l.y0}" fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="10 6"/>`;
+      s += `<path d="M${l.x0} ${l.y0}L${l.x1} ${l.y1}M${l.x1} ${l.y0}L${l.x0} ${l.y1}" stroke="${col}" stroke-width="1.2" stroke-opacity=".6"/>`;
+      s += lab(l.x0 + 4 / k, l.y0 + fs * 0.8, `迫り${l.name ? ' ' + SS.esc(l.name) : g.lifts.length > 1 ? i + 1 : ''}`);
+    });
+    if (g.curtain) {
+      const y = g.curtain.y, [xl, xr] = R.xRange(stage, y);
+      s += `<line x1="${xl - 30}" y1="${y}" x2="${xr + 30}" y2="${y}" stroke="#b03a2e" stroke-width="3" stroke-dasharray="24 8 4 8"/>`;
+      s += `<text x="${(xr - 6 / k).toFixed(1)}" y="${(y - fs * 0.75).toFixed(1)}" dy="0.35em" text-anchor="end" font-size="${fs}" font-weight="700" fill="#b03a2e" ${halo}>緞帳線</text>`;
+    }
+    if (g.proscenium) {
+      const p = g.proscenium;
+      s += `<path d="M${-80} ${p.y}H${p.x0}M${p.x1} ${p.y}H${stage.w + 80}" stroke="#39414d" stroke-width="16" stroke-linecap="butt"/>`;
+      s += lab(p.x0 + 4 / k, p.y + 8 + fs * 0.7, 'プロセニアム');
+    }
+    if (g.shell) {
+      const y = g.shell.y, [xl, xr] = R.xRange(stage, Math.max(0, y));
+      s += `<line x1="${xl}" y1="${y}" x2="${xr}" y2="${y}" stroke="#39414d" stroke-width="10"/>`;
+      s += lab(xl + 6 / k, y - 5 - fs * 0.6, '反射板');
+    }
+    return s + '</g>';
+  };
 
   // grid：方眼の間隔（cm）。0／false で表示しない（true は 50cm）
   // 舞台図の慣例どおり、線は「舞台の中心線」と「舞台の前のふち」から数える（1.82m＝1間＝平台の6尺）
@@ -141,7 +186,7 @@ window.SS = window.SS || {};
   R.marksSVG = function (doc, k, dimsOn, compact) {
     const st = doc.stage, fy = R.frontY(st), cx = st.w / 2;
     const col = '#5b6678', halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
-    let s = '<g class="marks" pointer-events="none">';
+    let s = R.fixturesSVG(st, k) + '<g class="marks" pointer-events="none">';
     // 舞台奥：「奥の幅」の寸法の文字の上。その右に「センター」、中心線はそこから客席側のふちまで
     const shaped = R.backWidth(st) < st.w - 1;
     const by = dimsOn && shaped ? -36 - (3 + 19 + 6) / k : -8 / k;
@@ -157,7 +202,7 @@ window.SS = window.SS || {};
     s += `<text x="${xr + 12 / k}" y="${y}" dy="0.35em" font-size="${fs}" font-weight="700" fill="${col}" ${halo}>上手</text>`;
     if (!compact) s += `<text x="${xr + 12 / k}" y="${y + fs * 1.2}" dy="0.35em" font-size="${9 / k}" fill="${col}" ${halo}>（客席から見て右）</text>`;
     // 客席：「前の幅」の寸法の文字の下
-    const cy = fy + (dimsOn ? 34 + (3 + 19 + 10) / k : 12 / k) + 16 / k;
+    const cy = R.frontOuter(st) + (dimsOn ? 34 + (3 + 19 + 10) / k : 12 / k) + 16 / k;
     s += `<text x="${cx}" y="${cy}" dy="0.35em" text-anchor="middle" font-size="${17 / k}" font-weight="700" fill="${col}" letter-spacing="${8 / k}" ${halo}>客　席</text>`;
     s += `<path d="M${cx - 60 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}M${cx + 48 / k} ${cy - 14 / k}l${6 / k} ${-8 / k}l${6 / k} ${8 / k}" fill="none" stroke="${col}" stroke-width="${1.5 / k}"/>`;
     return s + '</g>';
@@ -273,8 +318,7 @@ window.SS = window.SS || {};
     let s = '';
     const b = R.backWidth(st);
     const shaped = b < st.w - 1;
-    const fyD = R.frontY(st);
-    s += dimLine(0, fyD + 34, st.w, fyD + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
+    s += dimLine(0, R.frontOuter(st) + 34, st.w, R.frontOuter(st) + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
     if (shaped) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
@@ -348,8 +392,9 @@ window.SS = window.SS || {};
     const nums = opts.showNumbers ? R.seatNumbers(doc, conductor) : null;
     let bodies = '', texts = '';
     const labels = [];
+    const hno = SS.hinaNumbers && opts.hinaDetail !== false ? SS.hinaNumbers(doc.items) : null;
     R.sortedItems(doc.items).forEach(it => {
-      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true }));
+      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true, hinaNo: hno ? hno.get(it) : '' }));
       if (withIds) bodies += `<g class="item" data-id="${it.id}">${d.body}</g>`;
       else bodies += d.body;
       texts += d.text;
@@ -412,7 +457,7 @@ window.SS = window.SS || {};
   R.MONO_CSS = `.mono [fill]:not([fill="none"]):not([fill="transparent"]):not(text):not(image){fill:#fff !important}
 .mono [stroke]:not([stroke="none"]):not([stroke="transparent"]):not(text){stroke:#000 !important}
 .mono text{fill:#000 !important}.mono text[stroke]{stroke:#fff !important}
-.mono .grid path{stroke:#b0b0b0 !important}.mono .item-hina rect:first-child{fill:#fff !important}`;
+.mono .grid path{stroke:#b0b0b0 !important}.mono g.hina-legs.hina-legs[fill]:not([fill="none"]){fill:#000 !important}.mono .item-hina rect:first-child{fill:#fff !important}`;
 
   const MM_TEXT = 2.8; // 寸法などの文字の大きさ（紙の上の mm）
   // 紙の上で見た目の文字の大きさを一定にするための k（dimsSVG・marksSVG 用）。f = 1cm が紙の上で何 mm か
@@ -420,6 +465,16 @@ window.SS = window.SS || {};
 
   // 図の中身（舞台・部品・寸法・上手下手など）。単位は cm
   function drawingContent(doc, opts, conductor, ex, k) {
+    if (ex.content === 'assembly') {
+      // ひな壇の組み図：段・上がり段・平台・指揮台だけ（平台1枚ずつの番号と足の位置）
+      const keep = new Set(['hina', 'stairs', 'riser', 'riser46', 'podium']);
+      const d2 = Object.assign({}, doc, { items: doc.items.filter(it => keep.has(it.type)) });
+      let s = R.stageSVG(d2, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
+      s += R.itemsSVG(d2, Object.assign({}, opts, { assembly: true, hinaDetail: true }), conductor, false);
+      if (opts.dims) s += R.dimsSVG(d2, k, null);
+      s += R.marksSVG(d2, k, opts.dims);
+      return s;
+    }
     let s = R.stageSVG(doc, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
     if (ex.underlay && doc.underlay) s += R.underlaySVG(doc.underlay, { id: 'ex' });
     s += R.itemsSVG(doc, opts, conductor, false);
@@ -470,7 +525,9 @@ window.SS = window.SS || {};
     const M = 10; // 紙のふちの余白
     const info = doc.info || {};
     // 見出し（公演名・サブタイトル）
-    const headH = doc.title || doc.subtitle ? (doc.title ? 11 : 0) + (doc.subtitle ? 6 : 0) + 3 : 0;
+    const assembly = ex.content === 'assembly';
+    const subtitle = assembly ? [doc.subtitle, 'ひな壇の組み図'].filter(Boolean).join('　') : doc.subtitle;
+    const headH = doc.title || subtitle ? (doc.title ? 11 : 0) + (subtitle ? 6 : 0) + 3 : 0;
     // 情報欄（右下）と編成表（左下）
     const TBW = Math.min(128, PW - 2 * M), rowH = 5.4;
     const rows = [
@@ -482,15 +539,24 @@ window.SS = window.SS || {};
     ];
     const TBH = rows.length * rowH;
     let legendItems = [];
-    if (ex.legend) {
+    if (assembly) {
+      // 部材の表（番号は図の平台の番号と同じ）
+      const sm = SS.hinaSummary(doc.items);
+      legendItems = sm.rows.map(r => ({ text: `${r.label}　高さ${Math.round(r.hgt)}cm・${fmtM(r.w)}×${fmtM(r.h)}：${r.panelName} ${r.panels}枚［${r.first}〜${r.last}］${r.legs ? `／${r.legName} ${r.legs}個` : ''}` }));
+      legendItems.push({ text: '合計：' + Object.keys(sm.pan).map(k2 => `${k2} ${sm.pan[k2]}枚`).concat(Object.keys(sm.leg).map(k2 => `${k2} ${sm.leg[k2]}個`)).concat(sm.stairs ? [`上がり段 ${sm.stairs}台`] : []).join('／'), bold: true });
+      legendItems.title = 'ひな壇の部材（目安）';
+      legendItems.oneCol = true;
+    } else if (ex.legend) {
       const c = R.counts(doc);
       c.groups.forEach(x => x.parts.forEach(p => legendItems.push({ color: x.g.color, text: `${p.label} ×${p.n}` })));
       legendItems.total = c.total;
     }
     const cellW = 25, lfs = 3, lrow = 4.6;
     const sideW = PW - 2 * M - TBW - 4; // 情報欄の左の空き
-    const legendBeside = sideW >= 55;
-    const lCols = Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
+    const textLen = t => [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.58), 0);
+    // 部材の表は1行が長いので、字が小さくなりすぎるときは情報欄の上に出す
+    const legendBeside = sideW >= 55 && (!legendItems.oneCol || Math.max(...legendItems.map(c => textLen(c.text))) * 2.3 <= sideW);
+    const lCols = legendItems.oneCol ? 1 : Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
     const legendH = legendItems.length ? 5 + Math.ceil(legendItems.length / lCols) * lrow : 0;
     const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0);
     const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - 4 };
@@ -526,7 +592,7 @@ window.SS = window.SS || {};
     // 見出し
     let hy = M;
     if (doc.title) { out += `<text x="${PW / 2}" y="${hy + 7.5}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#111">${SS.esc(doc.title)}</text>`; hy += 11; }
-    if (doc.subtitle) out += `<text x="${PW / 2}" y="${hy + 4}" text-anchor="middle" font-size="4.2" fill="#333">${SS.esc(doc.subtitle)}</text>`;
+    if (subtitle) out += `<text x="${PW / 2}" y="${hy + 4}" text-anchor="middle" font-size="4.2" fill="#333">${SS.esc(subtitle)}</text>`;
     // 図（縮尺どおり。はみ出す分は図の枠で切る）
     out += `<clipPath id="drawClip"><rect x="${draw.x}" y="${draw.y}" width="${draw.w}" height="${draw.h}"/></clipPath>`;
     out += `<g clip-path="url(#drawClip)"><g${opts.mono ? ' class="mono"' : ''} transform="translate(${ox.toFixed(3)} ${oy.toFixed(3)}) scale(${f.toFixed(6)})">${drawingContent(doc, opts, conductor, ex, k)}</g></g>`;
@@ -558,7 +624,17 @@ window.SS = window.SS || {};
     // 編成表（情報欄の左、入らなければ上）
     if (legendItems.length) {
       const lx = M, ly = legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
-      out += `<g font-size="${lfs}" fill="#111"><text x="${lx}" y="${ly + 3}" font-weight="700" font-size="3.4">編成（計 ${legendItems.total} 人）</text>`;
+      out += `<g font-size="${lfs}" fill="#111"><text x="${lx}" y="${ly + 3}" font-weight="700" font-size="3.4">${legendItems.title ? SS.esc(legendItems.title) : `編成（計 ${legendItems.total} 人）`}</text>`;
+      if (legendItems.oneCol) {
+        // 1行に1段。入りきらない行は字を小さくする
+        const avail = legendBeside ? sideW : PW - 2 * M;
+        legendItems.forEach((c, i) => {
+          const y = ly + 5 + i * lrow + 2.6;
+          const fs = Math.max(1.7, Math.min(lfs, avail / textLen(c.text)));
+          out += `<text x="${lx}" y="${y}" font-size="${fs.toFixed(2)}"${c.bold ? ' font-weight="700"' : ''}>${SS.esc(c.text)}</text>`;
+        });
+        legendItems.length = 0;
+      }
       legendItems.forEach((c, i) => {
         const x = lx + (i % lCols) * cellW, y = ly + 5 + Math.floor(i / lCols) * lrow + 2.6;
         out += `<circle cx="${x + 1.4}" cy="${y - 1}" r="1.3" fill="${opts.colorBy && !opts.mono ? c.color : '#fff'}" stroke="#333" stroke-width="0.25"/>`;

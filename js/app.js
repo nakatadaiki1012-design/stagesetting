@@ -26,7 +26,7 @@
 
   // ------------------------------------------------------------ 文書
   function defaultOptions() {
-    return { showNames: true, showStands: true, standLegs: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true };
+    return { showNames: true, showStands: true, standLegs: true, showNumbers: false, grid: true, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true, hinaDetail: true };
   }
   function normalize(doc) {
     doc = doc || {};
@@ -95,7 +95,7 @@
   function renderOpts() {
     const o = opts();
     // 図面用（白黒・線だけ）：奏者は椅子○・譜面台×で描き、色は使わない
-    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims };
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false };
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
@@ -111,8 +111,53 @@
       if (onTop) layerItems.after(layerUnderlay); else layerItems.before(layerUnderlay);
     }
     layerItems.innerHTML = SS.render.itemsSVG(d, renderOpts(), conductor(), true);
+    S.warnings = SS.checks ? SS.checks(d) : [];
+    renderWarnList();
     renderOverlay();
     scheduleSave();
+  }
+
+  // ------------------------------------------------------------ 安全の確認（警告の一覧と、図の上の印）
+  function renderWarnList() {
+    const ws = S.warnings || [];
+    const chip = $('warnChip'), list = $('warnList');
+    chip.hidden = !ws.length;
+    chip.textContent = `⚠ 確認 ${ws.length}件`;
+    if (!ws.length) { list.hidden = true; return; }
+    if (list.hidden) return;
+    list.innerHTML = `<h4>確認してほしいところ（${ws.length}件）</h4><ol>${ws.map((w, i) => `<li data-warn="${i}"><span class="wn">${i + 1}</span><span>${SS.esc(w.msg)}</span></li>`).join('')}</ol><p class="small">押すと、その場所を図の上で示します（赤い点線の枠）。</p>`;
+    list.querySelectorAll('[data-warn]').forEach(li => { li.onclick = () => focusWarn(+li.getAttribute('data-warn')); });
+  }
+  $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; renderWarnList(); };
+  function warnMarksSVG(k) {
+    const ws = S.warnings || [];
+    let s = '';
+    ws.forEach((w, i) => {
+      const hot = S.warnFlash === i, pad = 8;
+      w.spots.forEach(b => {
+        s += `<rect x="${b.x0 - pad}" y="${b.y0 - pad}" width="${b.x1 - b.x0 + pad * 2}" height="${b.y1 - b.y0 + pad * 2}" rx="${6 / k}" fill="rgba(214,48,49,${hot ? 0.18 : 0.06})" stroke="#d63031" stroke-width="${(hot ? 4 : 2.2) / k}" stroke-dasharray="${7 / k} ${4 / k}"/>`;
+      });
+      const b = w.spots[0];
+      if (b) s += `<g transform="translate(${b.x0 - pad} ${b.y0 - pad})"><circle r="${11 / k}" fill="#d63031" stroke="#fff" stroke-width="${2 / k}"/><text dy="0.36em" text-anchor="middle" font-size="${12 / k}" font-weight="700" fill="#fff">${i + 1}</text></g>`;
+    });
+    return s;
+  }
+  function focusWarn(i) {
+    const w = (S.warnings || [])[i];
+    if (!w || !w.spots.length) return;
+    const b = w.spots.reduce((a, q) => ({ x0: Math.min(a.x0, q.x0), y0: Math.min(a.y0, q.y0), x1: Math.max(a.x1, q.x1), y1: Math.max(a.y1, q.y1) }), { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+    const r = svg.getBoundingClientRect(), m = 150;
+    let k = Math.min(r.width / (b.x1 - b.x0 + 2 * m), (r.height - 60) / (b.y1 - b.y0 + 2 * m));
+    k = Math.min(k, Math.max(S.view.k, 1));
+    S.view.k = k;
+    S.view.tx = r.width / 2 - ((b.x0 + b.x1) / 2) * k;
+    S.view.ty = (r.height - 60) / 2 - ((b.y0 + b.y1) / 2) * k;
+    if (isMobile()) { $('warnList').hidden = true; closePanels(); }
+    applyView();
+    S.warnFlash = i;
+    renderOverlay();
+    clearTimeout(focusWarn.t);
+    focusWarn.t = setTimeout(() => { S.warnFlash = -1; renderOverlay(); }, 2200);
   }
 
   // 舞台の大きさをドラッグで変えるつまみ（前の幅・奥の幅・奥行）
@@ -176,6 +221,7 @@
       s += `<rect x="${x}" y="${y}" width="${Math.abs(marquee.x1 - marquee.x0)}" height="${Math.abs(marquee.y1 - marquee.y0)}" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.5 / k}" stroke-dasharray="${5 / k}"/>`;
     }
     layerOverlay.innerHTML = s;
+    $('layerWarn').innerHTML = warnMarksSVG(k);
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
     $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true);
@@ -203,7 +249,7 @@
     const mx = opts().dims ? 110 : 80;
     // 左右は「下手」「上手」、上は「舞台奥」、下は「客席」の文字の分もあける（文字の大きさは画面上で一定）
     const kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
-    let x0 = -mx - 48 / kk, y0 = -95, x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontY(st) + 34 + 70 / kk;
+    let x0 = -mx - 48 / kk, y0 = -95, x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontOuter(st) + 34 + 70 / kk;
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
@@ -1138,17 +1184,14 @@
       x.parts.forEach(p => { h += `<tr><td data-part="${SS.esc(p.label)}" style="cursor:pointer" title="クリックで選択">　${SS.esc(p.label)}</td><td>${p.n}</td></tr>`; });
     });
     h += '</table><p class="hint small">パート名をクリックすると、そのパートの人をまとめて選べます。</p>';
-    const hinas = doc().items.filter(it => it.type === 'hina').sort((a, b) => (a.hgt || 0) - (b.hgt || 0));
-    if (hinas.length) {
-      const pan = {}, leg = {};
+    const sm = SS.hinaSummary(doc().items);
+    if (sm.rows.length) {
+      const { pan, leg } = sm;
       h += '<h3 style="margin-top:16px">ひな壇の部材（目安）</h3><ul class="mat-list">';
-      hinas.forEach(it => {
-        const m = SS.hinaMaterials(it);
-        pan[m.panelName] = (pan[m.panelName] || 0) + m.panels;
-        if (m.legs) leg[m.legName] = (leg[m.legName] || 0) + m.legs;
-        h += `<li>${it.step ? it.step + '段目 ' : ''}高さ${SS.heightName(it.hgt || 21.2)}：幅${(it.w / 100).toFixed(1)}m×奥行${(it.h / 100).toFixed(1)}m → 平台${m.panels}枚${m.legs ? '＋' + m.legName + m.legs + '個' : ''}</li>`;
+      sm.rows.forEach(r => {
+        h += `<li>${SS.esc(r.label)} 高さ${SS.heightName(r.hgt)}：幅${(r.w / 100).toFixed(1)}m×奥行${(r.h / 100).toFixed(1)}m → 平台${r.panels}枚<span class="small">（番号 ${SS.esc(r.first)}〜${SS.esc(r.last)}）</span>${r.legs ? '＋' + r.legName + r.legs + '個' : ''}</li>`;
       });
-      h += '</ul><p class="hint small"><b>合計</b>：' + Object.keys(pan).map(k => `平台${k} ${pan[k]}枚`).concat(Object.keys(leg).map(k => `${k} ${leg[k]}個`)).join('／') + '<br>※足の数は「平台の前後の辺に、つなぎ目ごとに置く」ときの目安です。ホールの備品数を確認してください。</p>';
+      h += '</ul><p class="hint small"><b>合計</b>：' + Object.keys(pan).map(k => `平台${k} ${pan[k]}枚`).concat(Object.keys(leg).map(k => `${k} ${leg[k]}個`)).concat(sm.stairs ? [`上がり段 ${sm.stairs}台`] : []).join('／') + '<br>※平台の番号は、図の平台に書いた番号と同じです（段の番号-前の列の下手から数えた番号）。<br>※足の数は「平台の前後の辺に、つなぎ目ごとに置く」ときの目安です。ホールの備品数を確認してください。<br>組み図だけを出すときは「🖼 画像」か「🖨 印刷」の「中身」で「ひな壇の組み図」をえらびます。</p>';
     }
     $('countTable').innerHTML = h;
     $('countTable').querySelectorAll('[data-part]').forEach(td => {
@@ -1185,6 +1228,9 @@
     $('optSeatSize').value = o.seatR;
     $('optDims').checked = o.dims;
     $('optGuides').checked = o.guides;
+    $('optHinaDetail').checked = o.hinaDetail !== false;
+    if (document.activeElement !== $('stageAisle')) $('stageAisle').value = SS.auto.aisleOf(d.stage);
+    renderFixtures();
     syncArcCurve();
   }
   function bindSetting(id, ev, fn) {
@@ -1218,6 +1264,76 @@
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
   bindSetting('optDims', 'change', el => { opts().dims = el.checked; });
   bindSetting('optGuides', 'change', el => { opts().guides = el.checked; });
+  bindSetting('optHinaDetail', 'change', el => { opts().hinaDetail = el.checked; });
+  // 舞台奥の通路：かんたん編成で並べた配置なら、この幅を空けて並べ直す
+  bindSetting('stageAisle', 'change', el => {
+    const v = Math.round(+el.value);
+    if (el.value === '' || !(v >= 0 && v <= 300)) { el.value = SS.auto.aisleOf(doc().stage); return; }
+    doc().stage.backAisle = v;
+    if (doc().items.some(it => it.auto)) applyAuto({ noHistory: true });
+  });
+
+  // ホールの設備（m で入力 → cm で記録。空欄のものは記録しない）
+  const FX_FIELDS = ['fxShell', 'fxCurtain', 'fxProY', 'fxProW', 'fxPitD', 'fxPitW', 'fxHanaX', 'fxHanaW', 'fxHanaL'];
+  const mToCm = v => (v === '' || v == null || !isFinite(+v) ? null : Math.round(+v * 100));
+  const cmToM = v => (v == null || v === '' ? '' : Math.round(+v) / 100);
+  function renderFixtures() {
+    const fx = doc().stage.fixtures || {};
+    const vals = { fxShell: fx.shell, fxCurtain: fx.curtain, fxProY: fx.proscenium && fx.proscenium.y, fxProW: fx.proscenium && fx.proscenium.w, fxPitD: fx.pit && fx.pit.depth, fxPitW: fx.pit && fx.pit.w, fxHanaX: fx.hanamichi && fx.hanamichi.x, fxHanaW: fx.hanamichi && fx.hanamichi.w, fxHanaL: fx.hanamichi && fx.hanamichi.len };
+    FX_FIELDS.forEach(id => { if (document.activeElement !== $(id)) $(id).value = cmToM(vals[id]); });
+    const box = $('fxLifts');
+    if (box.contains(document.activeElement)) return;
+    box.innerHTML = (fx.lifts || []).map((l, i) => `<div class="fx-lift" data-lift="${i}">${['x', 'y', 'w', 'h'].map(k => `<input type="number" step="0.1" min="0" data-k="${k}" value="${cmToM(l[k])}" aria-label="${{ x: '下手の端から', y: '奥のふちから', w: '幅', h: '奥行' }[k]}">`).join('')}<button type="button" data-del="${i}" title="この迫りを消す">✕</button></div>`).join('');
+    box.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('focus', () => pushHistory());
+      inp.addEventListener('change', () => { readFixtures(); render(); });
+    });
+    box.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { pushHistory(); const f = doc().stage.fixtures; f.lifts.splice(+b.getAttribute('data-del'), 1); readFixtures(); render(); renderFixtures(); }; });
+  }
+  // halls.js の設備（m）→ 図の設備（cm）
+  function fixturesFromHall(f) {
+    const c = v => (v == null || !isFinite(+v) ? null : Math.round(+v * 100));
+    const o = {};
+    if (c(f.shell) != null) o.shell = c(f.shell);
+    if (c(f.curtain) != null) o.curtain = c(f.curtain);
+    if (f.proscenium && c(f.proscenium.y) != null && c(f.proscenium.w) != null) o.proscenium = { y: c(f.proscenium.y), w: c(f.proscenium.w) };
+    if (f.pit && c(f.pit.depth) != null) o.pit = Object.assign({ depth: c(f.pit.depth) }, c(f.pit.w) != null ? { w: c(f.pit.w) } : {});
+    if (f.hanamichi && [f.hanamichi.x, f.hanamichi.w, f.hanamichi.len].every(v => c(v) != null)) o.hanamichi = { x: c(f.hanamichi.x), w: c(f.hanamichi.w), len: c(f.hanamichi.len) };
+    if (Array.isArray(f.lifts) && f.lifts.length) o.lifts = f.lifts.map(l => ({ x: c(l.x), y: c(l.y), w: c(l.w), h: c(l.h), name: l.name || '' }));
+    return o;
+  }
+  function readFixtures() {
+    const v = id => mToCm($(id).value);
+    const fx = {};
+    if (v('fxShell') != null) fx.shell = v('fxShell');
+    if (v('fxCurtain') != null) fx.curtain = v('fxCurtain');
+    if (v('fxProY') != null && v('fxProW') != null) fx.proscenium = { y: v('fxProY'), w: v('fxProW') };
+    if (v('fxPitD') != null) fx.pit = Object.assign({ depth: v('fxPitD') }, v('fxPitW') != null ? { w: v('fxPitW') } : {});
+    if (v('fxHanaX') != null && v('fxHanaW') != null && v('fxHanaL') != null) fx.hanamichi = { x: v('fxHanaX'), w: v('fxHanaW'), len: v('fxHanaL') };
+    const old = (doc().stage.fixtures || {}).lifts || [];
+    const lifts = [...$('fxLifts').querySelectorAll('.fx-lift')].map((row, i) => {
+      const o = old[i] && old[i].name ? { name: old[i].name } : {};
+      row.querySelectorAll('input').forEach(inp => { o[inp.getAttribute('data-k')] = mToCm(inp.value); });
+      return o;
+    });
+    if (lifts.length) fx.lifts = lifts;
+    if (Object.keys(fx).length) doc().stage.fixtures = fx; else delete doc().stage.fixtures;
+  }
+  FX_FIELDS.forEach(id => bindSetting(id, 'change', () => {
+    const shell0 = (doc().stage.fixtures || {}).shell;
+    readFixtures();
+    // 反射板の位置が変わったら、かんたん編成の配置は通路を空けて並べ直す
+    if ((doc().stage.fixtures || {}).shell !== shell0 && doc().items.some(it => it.auto)) applyAuto({ noHistory: true, quiet: true });
+  }));
+  $('fxLiftAdd').onclick = () => {
+    pushHistory();
+    readFixtures();
+    const st = doc().stage, f = st.fixtures = st.fixtures || {};
+    (f.lifts = f.lifts || []).push({ x: null, y: null, w: null, h: null });
+    renderFixtures();
+    const first = $('fxLifts').querySelector('.fx-lift:last-child input');
+    if (first) first.focus();
+  };
 
   // ------------------------------------------------------------ パネル・タブ
   document.querySelectorAll('.tabs').forEach(nav => {
@@ -1270,7 +1386,7 @@
   $('modeLasso').onclick = () => setMode(S.mode === 'lasso' ? 'select' : 'lasso');
   $('zoomIn').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2); };
   $('zoomOut').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2); };
-  $('zoomFit').onclick = fitView;
+  $('zoomFit').onclick = () => fitView();
   $('btnUndo').onclick = undo;
   $('btnRedo').onclick = redo;
 
@@ -1291,7 +1407,12 @@
     pushHistory();
     const made = t.make();
     const keep = doc();
-    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null });
+    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info });
+    // 舞台奥の通路の幅は、設定した値のまま（ひな形は60cmで作ってあるので、違えば並べ直す）
+    if (keep.stage.backAisle != null) {
+      S.doc.stage.backAisle = keep.stage.backAisle;
+      if (SS.auto.aisleOf(S.doc.stage) !== SS.auto.DEFAULT_AISLE && S.doc.ensemble) applyAuto({ noHistory: true, quiet: true });
+    }
     renderSteppers();
     S.sel.clear();
     closePanels();
@@ -2059,11 +2180,13 @@
         <label class="field">縮尺<select id="ppScale">${opt(0, '用紙に合わせる', p.scale)}${opt(50, '1/50', p.scale)}${opt(100, '1/100', p.scale)}${opt(200, '1/200', p.scale)}</select></label>
         <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '図面用（白黒・線だけ）', p.style)}</select></label>
       </div>
+      ${hasHina() ? `<label class="field">中身<select id="ppContent">${opt('plan', '配置図', p.content)}${opt('assembly', 'ひな壇の組み図（番号・足・部材表）', p.content)}</select></label>` : ''}
       <p id="ppWarn" class="pp-warn" hidden></p>
     </div>`;
   };
+  const hasHina = () => doc().items.some(it => it.type === 'hina');
   function readPaper() {
-    const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value };
+    const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value, content: $('ppContent') ? $('ppContent').value : 'plan' };
     opts().paper = p;
     scheduleSave();
     return p;
@@ -2076,7 +2199,7 @@
   }
   function buildSheet(extra) {
     const p = readPaper();
-    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true }, extra));
+    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true, content: p.content === 'assembly' && hasHina() ? 'assembly' : 'plan' }, extra));
   }
   // 縮尺どおりだと用紙に入らないとき、警告と入る縮尺の案内
   function paperCheck(extra) {
@@ -2096,7 +2219,7 @@
     if (p.scale && !r.info.fits) w.className = 'pp-warn';
     return r;
   }
-  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle'].forEach(id => $(id).addEventListener('change', () => paperCheck(extra())));
+  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
 
   $('btnExport').onclick = () => {
     openModal(`
@@ -2121,7 +2244,7 @@
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
     bindPaper(extra);
     paperCheck(extra());
-    const name = () => SS.render.safeName(doc().title || '配置図');
+    const name = () => SS.render.safeName(doc().title || '配置図') + (paperPref().content === 'assembly' && hasHina() ? '_ひな壇の組み図' : '');
     $('exPng').onclick = async () => {
       try {
         const r = buildSheet(Object.assign(extra(), { pxPerMm: +$('exScale').value }));
@@ -2238,6 +2361,11 @@
         <li><b>トレース</b>：いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
         <li><b>舞台図面として配る</b>：「🖼 画像」で <b>PNG・PDF・SVG</b>、「🖨 印刷」で紙に出せます。<b>用紙（A4・A3、縦・横）と縮尺（1/50・1/100・1/200・用紙に合わせる）</b>をえらぶと、紙の上の長さが実際の寸法どおりになります（1/100 なら 1m が 1cm）。図には<b>上手・下手・客席・センター</b>、スケールバー、右下に<b>情報欄</b>（公演名・会場・日付・版・作った人・縮尺・メモ）が入ります。情報欄の中身は「設定」で入れます。舞台が用紙に入らないときは、入る縮尺を教えてくれます。印刷は倍率「100%」で。</li>
         <li><b>図面用（白黒）</b>：「設定」の奏者の表し方、または画像・印刷の「表示」で <b>図面用（白黒・線だけ）</b> をえらぶと、コピーやFAXでも読める白黒の線の図になります。</li>
+        <li><b>⚠ 確認</b>：舞台奥の通路が狭い・高い段に上がり段がない・重い楽器を段に上げる通路（幅1.2m）がない・緞帳線や迫りの上に物がある、などを見つけると、舞台図の左上に <b>「⚠ 確認 ○件」</b> が出ます。押すと一覧が開き、1つ押すとその場所を<b>赤い点線の枠</b>で示します。</li>
+        <li><b>舞台奥の通路</b>：反射板とひな壇・楽器のあいだを空けます（はじめは60cm）。幅は「設定」の「舞台奥の通路」で変えられ、かんたん編成・ひな形はこの幅を空けて並べます。</li>
+        <li><b>ひな壇の組み図</b>：ひな壇には平台1枚ずつの<b>番号</b>（1-3 ＝ 1段目の、前の列の下手から3枚目）と<b>足（箱馬）の位置</b>が出ます。番号は「編成表」の部材の表と同じです。「🖼 画像」「🖨 印刷」の<b>「中身」で「ひな壇の組み図」</b>をえらぶと、組み図と部材の表だけを1枚にして出せます。</li>
+        <li><b>上がり段</b>：「部品」の「上がり段」を、段の横か前にくっつけて置きます（矢印の向きに上がる）。高さ40cm以上の段に人や楽器がいるのに上がる道がないと「⚠ 確認」に出ます。</li>
+        <li><b>ホールの設備</b>：「設定」の「ホールの設備」に、反射板の位置・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道を<b>分かるものだけ</b>入れると、図に描き、重なった物を「⚠ 確認」で知らせます。</li>
         <li><b>版</b>：「名前を付けて保存」のとき、<b>第何版かを1つ上げるか</b>聞きます。「設定」で手で直すこともできます。</li>
         <li><b>保存・共有</b>：上のボタンから画像保存・印刷・共有リンクが作れます。作業中の内容は自動で保存されます。</li>
       </ol>
@@ -2409,6 +2537,8 @@
       doc().stage.d = Math.round(h.d * 100);
       doc().stage.shape = h.shape || 'shell';
       if (h.sag != null) doc().stage.sag = Math.round(h.sag * 100); else delete doc().stage.sag;
+      // ホールの設備：データがあるホールだけ入れる（分からない値は作らない）。前のホールの設備は消す
+      if (h.fixtures) doc().stage.fixtures = fixturesFromHall(h.fixtures); else delete doc().stage.fixtures;
       doc().hall = h.name;
       updateHallNote();
       if (doc().items.some(it => it.auto)) applyAuto({ fit: true });

@@ -17,6 +17,16 @@ window.SS = window.SS || {};
     { v: 63.6, name: '2尺1寸（約64cm）', how: '箱馬を1尺7寸の向き（または中足）＋平台' },
     { v: 84.8, name: '2尺8寸（約85cm）', how: '高足（開き足）＋平台' },
   ];
+  // ひな壇の番号（組み図・部材の表で使う）。段（step）が重ならなければ段の数字、重なるときは前から A, B, C…
+  SS.hinaNumbers = function (items) {
+    const hs = items.filter(it => it.type === 'hina');
+    const steps = hs.map(h => h.step).filter(Boolean);
+    const map = new Map();
+    if (steps.length === hs.length && new Set(steps).size === steps.length) hs.forEach(h => map.set(h, String(h.step)));
+    else hs.slice().sort((a, b) => b.y - a.y || a.x - b.x).forEach((h, i) => map.set(h, i < 26 ? String.fromCharCode(65 + i) : 'Z' + (i - 25)));
+    return map;
+  };
+
   // よく使われる段の高さ（7寸ずつ上がる）
   const STD_STEPS = [21.2, 42.4, 63.6, 84.8];
   SS.PANELS = {
@@ -66,6 +76,18 @@ window.SS = window.SS || {};
       legName = v < 25 ? '3寸の足（角材）' : v < 35 ? '箱馬（6寸の向き）' : v < 50 ? '箱馬（1尺の向き）' : v < 70 ? '箱馬（1尺7寸の向き）' : '高足（開き足）';
     }
     return { panels, panelName: pn.name + (it.orient === 'v' && it.panel !== '66' ? '・縦置き' : ''), across, deep, legs, legName };
+  };
+
+  // ひな壇の部材の表（組み図・編成表で共通。平台の番号は組み図の番号と同じ）
+  SS.hinaSummary = function (items) {
+    const hno = SS.hinaNumbers(items);
+    const rows = items.filter(it => it.type === 'hina').map(it => {
+      const m = SS.hinaMaterials(it), no = hno.get(it);
+      return Object.assign({ it, no, hgt: it.hgt || 21.2, w: it.w, h: it.h, label: it.perc ? `打楽器の段（${no}）` : /^\d+$/.test(no) ? `${no}段目` : `ひな壇${no}`, first: `${no}-1`, last: `${no}-${m.panels}` }, m);
+    }).sort((a, b) => a.no.localeCompare(b.no, 'ja', { numeric: true }));
+    const pan = {}, leg = {};
+    rows.forEach(r => { pan[r.panelName] = (pan[r.panelName] || 0) + r.panels; if (r.legs) leg[r.legName] = (leg[r.legName] || 0) + r.legs; });
+    return { rows, pan, leg, stairs: items.filter(it => it.type === 'stairs').length };
   };
 
   // 編成の種類と、パートの初期人数

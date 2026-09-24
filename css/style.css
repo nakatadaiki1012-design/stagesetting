@@ -353,3 +353,22 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .pp-warn { font-size: 12.5px; line-height: 1.6; background: #fff4e5; border: 1px solid #f0c27a; border-radius: 8px; padding: 6px 8px; margin: 0 0 8px; }
 .pp-warn.ok { background: #eefaf0; border-color: #9fd7a8; }
 .pp-warn .btn { margin-left: 6px; font-size: 12px; padding: 3px 8px; }
+
+/* 安全の確認（警告の一覧） */
+.warn-chip { position: absolute; left: 12px; top: 12px; z-index: 22; border: 0; border-radius: 18px; padding: 7px 14px; font: inherit; font-size: 13.5px; font-weight: 700; background: #d63031; color: #fff; box-shadow: 0 4px 14px rgba(214,48,49,.35); cursor: pointer; }
+.warn-chip[hidden], .warn-list[hidden] { display: none; }
+.warn-list { position: absolute; left: 12px; top: 52px; z-index: 23; width: min(420px, calc(100% - 24px)); max-height: min(60vh, calc(100% - 70px)); overflow: auto; background: #fff; border: 1.5px solid #f0b4b4; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 8px; font-size: 13px; }
+.warn-list h4 { margin: 2px 4px 6px; font-size: 14px; }
+.warn-list ol { margin: 0; padding: 0; list-style: none; }
+.warn-list li { display: flex; gap: 8px; align-items: flex-start; padding: 7px 6px; border-radius: 8px; cursor: pointer; line-height: 1.45; }
+.warn-list li:hover { background: #fff1f1; }
+.warn-list .wn { flex: none; width: 20px; height: 20px; border-radius: 50%; background: #d63031; color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.warn-list .small { color: var(--muted); margin: 6px 4px 2px; }
+@media print { .warn-chip, .warn-list { display: none !important; } }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+details.fixtures { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin: 6px 0 10px; }
+details.fixtures summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+details.fixtures .field { font-size: 12.5px; }
+.fx-lift { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 4px; margin: 4px 0; align-items: center; }
+.fx-lift input { min-width: 0; }
+.fx-lift button { border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 4px; }
