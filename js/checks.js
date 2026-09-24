@@ -191,6 +191,20 @@ window.SS = window.SS || {};
     const ROUND = new Set(['timp', 'drumhead', 'cym', 'circle']);
     const circOf = t => { const c = SS.CATALOG[t.type] || {}; if (!ROUND.has(c.shape)) return null; const s = SS.itemSize(t, {}); return { x: t.x, y: t.y, r: Math.min(s.w, s.h) / 2 }; };
     const circBox = (c, b) => { const nx = Math.max(b.x0, Math.min(b.x1, c.x)), ny = Math.max(b.y0, Math.min(b.y1, c.y)); return c.r - Math.hypot(c.x - nx, c.y - ny); };
+    // 向きを変えた楽器（扇形の外側に指揮者の方を向けて置いたマリンバなど）は、外枠の四角ではなく、向きどおりの四角で見る
+    const rectOf = t => { const s = SS.itemSize(t, {}), a = ((t.rot || 0) * Math.PI) / 180; return { x: t.x, y: t.y, hw: s.w / 2, hh: s.h / 2, c: Math.cos(a), s: Math.sin(a) }; };
+    const turned = t => Math.abs((((t.rot || 0) % 90) + 90) % 90) > 1;
+    const circRect = (c, q) => { const dx = c.x - q.x, dy = c.y - q.y, lx = dx * q.c + dy * q.s, ly = -dx * q.s + dy * q.c; return c.r - Math.hypot(Math.max(0, Math.abs(lx) - q.hw), Math.max(0, Math.abs(ly) - q.hh)); };
+    const rectRect = (p, q) => {
+      // 分離軸で、いちばん浅い重なりの深さ
+      let d = Infinity;
+      [[p.c, p.s], [-p.s, p.c], [q.c, q.s], [-q.s, q.c]].forEach(([ax, ay]) => {
+        const proj = r => Math.abs(r.hw * (r.c * ax + r.s * ay)) + Math.abs(r.hh * (-r.s * ax + r.c * ay));
+        const dist = Math.abs((q.x - p.x) * ax + (q.y - p.y) * ay);
+        d = Math.min(d, proj(p) + proj(q) - dist);
+      });
+      return d;
+    };
     const hits = [], who = [];
     const owner = s => [s.it, s.it2].filter(Boolean);
     for (let i = 0; i < shapes.length; i++) for (let j = i + 1; j < shapes.length; j++) {
@@ -203,11 +217,16 @@ window.SS = window.SS || {};
       // 打楽器・鍵盤・ハープなどの奏者は、自分の楽器のすぐ後ろに立つので、奏者と楽器の重なりは見ない
       if (sh.kind === 'chair' && PLAYS_ITEM.has(SS.instrumentKind ? SS.instrumentKind(sh.it.label) : '')) return;
       const b = bx.get(t), tc = circOf(t);
-      if (tc ? sh.r + tc.r - Math.hypot(sh.x - tc.x, sh.y - tc.y) >= DEPTH : circBox(sh, b) >= DEPTH) { hits.push({ x0: Math.min(b.x0, sh.x - sh.r), x1: Math.max(b.x1, sh.x + sh.r), y0: Math.min(b.y0, sh.y - sh.r), y1: Math.max(b.y1, sh.y + sh.r) }); who.push(sh.it, t); }
+      if (tc ? sh.r + tc.r - Math.hypot(sh.x - tc.x, sh.y - tc.y) >= DEPTH : (turned(t) ? circRect(sh, rectOf(t)) : circBox(sh, b)) >= DEPTH) { hits.push({ x0: Math.min(b.x0, sh.x - sh.r), x1: Math.max(b.x1, sh.x + sh.r), y0: Math.min(b.y0, sh.y - sh.r), y1: Math.max(b.y1, sh.y + sh.r) }); who.push(sh.it, t); }
     }));
     for (let i = 0; i < things.length; i++) for (let j = i + 1; j < things.length; j++) {
       const a = bx.get(things[i]), c = bx.get(things[j]), ca = circOf(things[i]), cc = circOf(things[j]);
-      if (ca && cc ? ca.r + cc.r - Math.hypot(ca.x - cc.x, ca.y - cc.y) >= DEPTH : ca || cc ? circBox(ca || cc, ca ? c : a) >= DEPTH : Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0) >= DEPTH && Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0) >= DEPTH) { hits.push({ x0: Math.min(a.x0, c.x0), x1: Math.max(a.x1, c.x1), y0: Math.min(a.y0, c.y0), y1: Math.max(a.y1, c.y1) }); who.push(things[i], things[j]); }
+      const ti = turned(things[i]), tj = turned(things[j]);
+      const hit = ca && cc ? ca.r + cc.r - Math.hypot(ca.x - cc.x, ca.y - cc.y) >= DEPTH
+        : ca || cc ? ((ca ? tj : ti) ? circRect(ca || cc, rectOf(ca ? things[j] : things[i])) : circBox(ca || cc, ca ? c : a)) >= DEPTH
+        : ti || tj ? rectRect(rectOf(things[i]), rectOf(things[j])) >= DEPTH
+        : Math.min(a.x1, c.x1) - Math.max(a.x0, c.x0) >= DEPTH && Math.min(a.y1, c.y1) - Math.max(a.y0, c.y0) >= DEPTH;
+      if (hit) { hits.push({ x0: Math.min(a.x0, c.x0), x1: Math.max(a.x1, c.x1), y0: Math.min(a.y0, c.y0), y1: Math.max(a.y1, c.y1) }); who.push(things[i], things[j]); }
     }
     if (hits.length) out.push({ kind: 'overlap', msg: `人や物が重なっています（${hits.length}か所：${names(who, hno)}）。椅子・譜面台・楽器の間をあけてください`, spots: hits });
     // ひな壇の縁にかかっている椅子・譜面台（段の上と床にまたがっている）

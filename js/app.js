@@ -1133,8 +1133,8 @@
         if (!has) return toast('打楽器（楽器かPercの奏者）がありません');
         pushHistory();
         const place = (doc().ensemble && doc().ensemble.percPlace) || 'back';
-        SS.auto.arrangePercIn(doc().items, doc().stage, place);
-        toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
+        SS.auto.arrangePercIn(doc().items, doc().stage, place, { side: !['orch', 'strings'].includes((doc().ensemble || {}).type) });
+        toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側（扇形の外側、前から）に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
         break;
       }
       case 'alignHina': {

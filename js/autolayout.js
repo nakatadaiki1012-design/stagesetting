@@ -336,6 +336,101 @@ window.SS = window.SS || {};
     return total;
   };
 
+  /**
+   * 吹奏楽の「打楽器は下手」：床の扇形のすぐ外側・下手（客席から見て左）に、前（客席寄り）から弧に沿って並べ、
+   * 奏者も楽器も指揮者の方を向ける。前から 鍵盤 → 小物（小太鼓・シンバル） → 大太鼓 → ティンパニ の順（音の小さい鍵盤を前、大きい太鼓類・ティンパニを奥）。
+   * c：指揮者、Rin：扇形のいちばん外の半径＋すき間、allowed(it, hw, hh)：その場所に置けるか。置けたら true
+   */
+  // よける点：奏者はいす（半径23）と譜面台（約64cm前・半径25）、そのほかの物は外接円
+  const avoidOf = list => {
+    const out = [];
+    list.forEach(o => {
+      if (o.type === 'player') {
+        out.push({ x: o.x, y: o.y, r: 25 });
+        const a = ((o.rot || 0) * Math.PI) / 180;
+        out.push({ x: o.x - Math.sin(a) * 64, y: o.y + Math.cos(a) * 64, r: 25 });
+      } else if (o.type !== 'hina' && o.type !== 'riser' && o.type !== 'riser46') {
+        const C = SS.CATALOG[o.type] || {};
+        out.push({ x: o.x, y: o.y, r: Math.max(o.w || C.w || 40, o.h || C.h || 40) / 2 });
+      }
+    });
+    return out;
+  };
+  const SIDE_ORDER = ['glock', 'xylo', 'vib', 'marimba43', 'marimba', 'chimes', 'sd', 'cym', 'table', 'tam', 'bd', 'drums', 'timp'];
+  // avoid：よける点（床の奏者のいす・譜面台など）[{ x, y, r }]。楽器は向きを考えた四角で、そこから 25cm 以上はなす
+  A.arrangePercSide = function (items, stage, c, Rin, allowed, avoid) {
+    const C = SS.CATALOG;
+    const inst = items.filter(it => PERC_TYPES.has(it.type));
+    const pl = items.filter(it => it.type === 'player' && SS.partGroup(it.label).id === 'perc');
+    if (!inst.length && !pl.length) return true;
+    const timps = inst.filter(it => TIMP.includes(it.type)).sort((a, b) => (b.w || C[b.type].w) - (a.w || C[a.type].w));
+    const st = [];
+    if (timps.length) st.push({ kind: 'timp', items: timps });
+    inst.filter(it => !TIMP.includes(it.type)).forEach(it => st.push({ kind: it.type, items: [it] }));
+    const ord = k => { const i = SIDE_ORDER.indexOf(k); return i < 0 ? 40 : i; };
+    st.sort((a, b) => ord(a.kind) - ord(b.kind));
+    const free = pl.slice();
+    const ts = st.find(q => q.kind === 'timp');
+    if (ts) { const i = free.findIndex(p => /^tim/i.test(p.label || '')); if (i >= 0) ts.player = free.splice(i, 1)[0]; }
+    st.forEach(q => { if (!q.player && free.length) q.player = free.shift(); });
+    free.forEach(p => st.push({ kind: 'stand', items: [], player: p }));
+    // 持ち場ごとの形（奏者を原点、指揮者の方を +y とした向き）
+    const shape = q => {
+      if (q.kind === 'timp') return { w: (q.items.length > 1 ? 2 * 112 * Math.sin(66 * Math.PI / 180) : 0) + C[q.items[0].type].w + 20, front: 112 + 45, back: 35 };
+      if (q.kind === 'stand') return { w: 75, front: 75, back: 35 };
+      const it = q.items[0], w = it.w || C[it.type].w, h = it.h || C[it.type].h;
+      return { w: w + 26, front: 24 + h, back: 35 };
+    };
+    const place = (q, Rp, t) => {
+      const P = G().fromPolar(Rp, t, c), rot = G().faceAngle(P, c), a = (rot * Math.PI) / 180;
+      const W = (lx, ly) => ({ x: P.x + lx * Math.cos(a) - ly * Math.sin(a), y: P.y + lx * Math.sin(a) + ly * Math.cos(a) });
+      const out = [];
+      if (q.player) out.push([q.player, { x: P.x, y: P.y, rot }]);
+      if (q.kind === 'timp') timpPositions(0, 0, q.items.map(it => it.type)).forEach((p, i) => out.push([q.items[i], Object.assign(W(p.x, p.y), { rot })]));
+      else if (q.kind !== 'stand') { const it = q.items[0], h = it.h || C[it.type].h; out.push([it, Object.assign(W(0, 24 + h / 2), { rot })]); }
+      return out;
+    };
+    const fits = list => list.every(([it, p]) => {
+      const hw = it.type === 'player' ? 25 : (it.w || C[it.type].w) / 2, hh = it.type === 'player' ? 25 : (it.h || C[it.type].h) / 2;
+      const r = Math.max(hw, hh);
+      if (it.type === 'player') return R().insideStage(stage, Object.assign({}, it, p), 30) && allowed(p, r) && !(avoid && avoid.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 50));
+      // 楽器は、向きを変えた四隅がみな舞台の中に入るか
+      const a = ((p.rot || 0) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+      if (avoid && avoid.some(o => { const dx = o.x - p.x, dy = o.y - p.y, lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca; return Math.hypot(Math.max(0, Math.abs(lx) - hw), Math.max(0, Math.abs(ly) - hh)) < o.r + 25; })) return false;
+      const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => ({ x: p.x + x * ca - y * sa, y: p.y + x * sa + y * ca }));
+      return corners.every(q => R().insideStage(stage, q, 6)) && allowed(p, r);
+    });
+    const done = [];
+    const clash = list => list.some(([it, p]) => done.some(([o, q]) => {
+      const ra = it.type === 'player' ? 25 : Math.max(it.w || C[it.type].w, it.h || C[it.type].h) / 2;
+      const rb = o.type === 'player' ? 25 : Math.max(o.w || C[o.type].w, o.h || C[o.type].h) / 2;
+      return Math.hypot(p.x - q.x, p.y - q.y) < (ra + rb) * 0.82 + 8;
+    }));
+    const T0 = -110 * Math.PI / 180, T1 = -25 * Math.PI / 180;
+    // 鍵盤は前（T0）から奥へ、太鼓類・ティンパニは奥（T1）から前へ詰める（ティンパニがいちばん奥）。
+    // 1周（弧）に入りきらなければ、外側の弧へ
+    const KEYS = new Set(['glock', 'xylo', 'vib', 'marimba43', 'marimba', 'chimes']);
+    const groups = [{ list: st.filter(q => KEYS.has(q.kind)), dir: 1 }, { list: st.filter(q => !KEYS.has(q.kind)).reverse(), dir: -1 }];
+    for (const g of groups) {
+      let ring = Rin, ringDepth = 0, t = g.dir > 0 ? T0 : T1;
+      for (const q of g.list) {
+        const sh = shape(q);
+        let ok = null;
+        for (let guard = 0; guard < 600 && !ok; guard++) {
+          const Rp = ring + sh.front, Rm = ring + sh.front / 2;
+          const half = sh.w / 2 / Rm;
+          if (g.dir > 0 ? t + 2 * half > T1 : t - 2 * half < T0) { ring += Math.max(ringDepth, 150) + 30; ringDepth = 0; t = g.dir > 0 ? T0 : T1; if (ring > Rin + 700) return false; continue; }
+          const cand = place(q, Rp, t + g.dir * half);
+          if (fits(cand) && !clash(cand)) { ok = cand; t += g.dir * (2 * half + 18 / Rm); ringDepth = Math.max(ringDepth, sh.front + sh.back); } else t += g.dir * 4 / Rm;
+        }
+        if (!ok) return false;
+        done.push(...ok);
+      }
+    }
+    done.forEach(([it, p]) => Object.assign(it, p));
+    return true;
+  };
+
   // 人数から打楽器の楽器を用意する（奏者1人に1つの持ち場）
   const PERC_STATIONS_BAND = ['timp', 'sd', 'bd', 'marimba', 'glock', 'xylo', 'chimes', 'vib'];
   const PERC_STATIONS_ORCH = ['bd', 'sd', 'glock', 'xylo', 'chimes', 'marimba', 'cym'];
@@ -482,7 +577,26 @@ window.SS = window.SS || {};
     // 下手の打楽器（客席から見て左）
     // まず、ひな壇は真ん中のまま、その左と、床の扇形の左に並べてみる
     let beside = false;
-    if (parts.left.length && floor) {
+    // 吹奏楽：まず扇形のすぐ外側・下手に、前から弧に沿って指揮者の方を向けて並べる
+    if (parts.left.length && floor && floor.side) {
+      const W0 = upW(Math.max(364, ...rows.map(r => r.want), parts.top.length ? percWidth(parts.top) + 40 : 0));
+      const tierL = stage.w / 2 - W0 / 2 - 35;
+      const trial = cloneList(parts.left);
+      const ok = A.arrangePercSide(trial, stage, floor.c, floor.R + 75, (p, r) => p.x + r <= (p.y - r < yFront0 + 30 ? tierL : 1e4) && p.y - r > AISLE, avoidOf(floor.pts || []));
+      if (ok) {
+        trial.forEach((t2, i) => Object.assign(parts.left[i], { x: t2.x, y: t2.y, rot: t2.rot }));
+        const C0 = SS.CATALOG;
+        const bb = parts.left.reduce((b, it) => {
+          const r = it.type === 'player' ? 25 : Math.max(it.w || C0[it.type].w, it.h || C0[it.type].h) / 2;
+          return { x0: Math.min(b.x0, it.x - r), x1: Math.max(b.x1, it.x + r), y0: Math.min(b.y0, it.y - r), y1: Math.max(b.y1, it.y + r) };
+        }, { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 });
+        out.leftRect = { x0: bb.x0 - 10, x1: bb.x1 + 10, y0: bb.y0, y1: bb.y1 + 10, beside: true, side: true };
+        out.items.push(...parts.left);
+        out.leftItems = parts.left;
+        beside = true;
+      }
+    }
+    if (parts.left.length && floor && !beside) {
       const W0 = upW(Math.max(364, ...rows.map(r => r.want), parts.top.length ? percWidth(parts.top) + 40 : 0));
       const tierL = stage.w / 2 - W0 / 2 - 35;
       const arcL = y => { const Rr = floor.R + 55, dy = floor.c.y - y; return dy >= Rr ? floor.c.x + 1e4 : floor.c.x - Math.sqrt(Rr * Rr - dy * dy); };
@@ -672,7 +786,7 @@ window.SS = window.SS || {};
       const hasTimp = stations.includes('timp');
       perc = percItems(hasTimp ? 4 : 0, stations.filter(s => s !== 'timp'), rep('Perc', P).map((l, i) => (hasTimp && i === 0 ? 'Timp' : l)));
     }
-    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place, { c, R: maxR, yMax: c.y - 40 - (n.Pf ? 230 : 0) - (n.Hp ? 140 : 0) });
+    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place, { c, R: maxR, yMax: c.y - 40 - (n.Pf ? 230 : 0) - (n.Hp ? 140 : 0), side: !n.Pf && !n.Hp, pts: items.slice() });
     items.push(...tp.items);
     // 低音グループ：いちばん外側の床の弧の、さらに外側（上手側）に並べる
     if (lowLabels.length) {
@@ -731,7 +845,10 @@ window.SS = window.SS || {};
     if (tp.percCramped) return true;
     if (tp.backDepth && tp.yBack < AISLE + tp.backDepth + 10) return true;
     if (tp.yBack < AISLE - 1) return true;
-    if (tp.leftRect && tp.leftRect.beside) {
+    // 扇形の外側に指揮者の方を向けて並べたとき（side）は、向きを考えた重なりを ⚠ 確認と同じ見方で調べるので、ここでは見ない
+    if (tp.leftRect && tp.leftRect.side) {
+      // 何もしない
+    } else if (tp.leftRect && tp.leftRect.beside) {
       // 横に並べたときは、1つずつ他の奏者・ひな壇とぶつからないか確かめる
       const C = SS.CATALOG;
       const percSet = new Set(tp.leftItems);
@@ -934,11 +1051,27 @@ window.SS = window.SS || {};
   }
 
   // 今の配置図の打楽器を、指定の場所に並べ直す（「打楽器を整列」ボタン）
-  A.arrangePercIn = function (items, stage, place) {
+  // opt.side：吹奏楽の「下手」（扇形の外側に、前から指揮者の方を向けて）
+  A.arrangePercIn = function (items, stage, place, opt) {
     AISLE = backLimit(stage);
     const list = items.filter(it => PERC_TYPES.has(it.type) || (it.type === 'player' && SS.partGroup(it.label).id === 'perc'));
     if (!list.length) return false;
     const parts = splitPerc(list, place);
+    // 吹奏楽の「下手」：床の扇形のすぐ外側に、前から指揮者の方を向けて並べる（入らなければ、これまでどおり奥の角に）
+    const pod = items.find(it => it.type === 'podium');
+    if (parts.left.length && pod && opt && opt.side) {
+      const c = { x: pod.x, y: pod.y };
+      const tiers = items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46');
+      const onTier = p => tiers.some(h => (SS.hinaContains ? SS.hinaContains(h, p.x, p.y, 0) : Math.abs(p.x - h.x) < (h.w || 0) / 2 && Math.abs(p.y - h.y) < (h.h || 0) / 2));
+      const pset = new Set(parts.left);
+      const floorPl = items.filter(it => it.type === 'player' && !pset.has(it) && SS.partGroup(it.label).id !== 'perc' && !onTier(it) && it.x < c.x);
+      const Rf = floorPl.reduce((m, it) => Math.max(m, Math.hypot(it.x - c.x, it.y - c.y)), 200);
+      const others = items.filter(it => !pset.has(it) && !tiers.includes(it) && it.type !== 'podium');
+      const trial = cloneList(parts.left);
+      const ok = A.arrangePercSide(trial, stage, c, Rf + 75, (p, r) => p.y - r > AISLE &&
+        !tiers.some(h => Math.abs(p.x - h.x) < (h.w || 0) / 2 + r && Math.abs(p.y - h.y) < (h.h || 0) / 2 + r), avoidOf(others));
+      if (ok) { trial.forEach((t, i) => Object.assign(parts.left[i], { x: t.x, y: t.y, rot: t.rot })); parts.left = []; }
+    }
     if (parts.left.length) {
       const [xl] = R().xRange(stage, 30);
       const bw = Math.max(330, Math.min(400, stage.w * 0.2));
