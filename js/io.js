@@ -662,7 +662,9 @@ window.SS = window.SS || {};
       const [fx, fy] = fwd(it);
       const lw = SS.labelWidth(lab);
       let placed = null;
-      for (const fs of [24, 20]) {
+      // となりがとても近い（合唱など、72cm 以内）ときは、はじめから◯の中に
+      const dense = ps.some(q => q !== it && Math.hypot(q.x - it.x, q.y - it.y) < 72);
+      for (const fs of dense ? [] : [24, 20]) {
         const w = lw * fs + 4, h = fs * 1.05;
         // 後ろ（指揮者と反対）→ 横 → 後ろななめ
         const back = SEAT_R + 3 + (Math.abs(fx) * w + Math.abs(fy) * h) / 2;
