@@ -782,37 +782,34 @@ window.SS = window.SS || {};
     const secRange = {}, secR = {};
     const rad = d => (d * Math.PI) / 180;
     const spS = tune.spacing, gapR = Math.max(100, tune.gap * 0.9);
-    // 同心円の列（リング）ごとに、扇の左から パートの順（例：Vn1・Vn2・Va・Vc）に座る。
-    // 各リングの席は、残りの人数に比例して各パートに分け（2人で1本の譜面台なので、なるべく偶数）、
-    // パートとパートのあいだは1人分＋20cmあける。前のリングから順に埋めるので、パートは扇形のかたまりになる
+    // パートごとの扇形（角度の範囲）は、人数に比例して最初に決めて、どの列（リング）でも同じにする。
+    // 前のリングから順に、各パートの扇の中に「真ん中から」座る（2人で1本の譜面台なので、なるべく偶数）。
+    // こうすると、パートの境目が指揮者から放射状にまっすぐ通り、Vn1・Vn2・Va・Vc のかたまりがくずれない
     const secs = order.filter(k => (n[k] || 0) > 0).map(k => ({ k, left: n[k], desk: 0, a0: Infinity, a1: -Infinity }));
-    const SEC_GAP = spS + 20;
+    const sumS = secs.reduce((a2, q) => a2 + n[q.k], 0) || 1;
+    const GAPA = rad(gapDeg);
+    // 扇に入る人数（となりのパートの端の人とは、1人分の間隔をあける）。4人以上の列は偶数に（2人で1本）
+    const seatsIn = (w, R, left) => { let m = Math.min(left, Math.max(1, Math.floor(((w + GAPA) * R) / spS))); if (m > 3 && m % 2 && m < left) m--; return m; };
+    const fits = (w, K, cnt) => { let left = cnt; for (let r = 0; r < K && left > 0; r++) left -= seatsIn(w, tune.r0 + r * gapR, left); return left <= 0; };
+    // いちばん少ない列の数で全員が入るように、パートごとに要る角度を求め、余った角度は人数の割合で分ける
+    const FAN = rad(fan) - GAPA * (secs.length - 1);
+    let need = null;
+    for (let K = 1; K <= 14 && !need; K++) {
+      const ws = secs.map(q => { let lo = 0, hi = FAN; if (!fits(hi, K, n[q.k])) return Infinity; for (let it = 0; it < 30; it++) { const md = (lo + hi) / 2; if (fits(md, K, n[q.k])) hi = md; else lo = md; } return hi; });
+      if (ws.reduce((a2, v) => a2 + v, 0) <= FAN) need = ws;
+    }
+    if (!need) need = secs.map(q => (FAN * n[q.k]) / sumS);
+    const spare = Math.max(0, FAN - need.reduce((a2, v) => a2 + v, 0));
+    let w0 = -rad(fan) / 2;
+    secs.forEach((q, i) => { const w = need[i] + (spare * n[q.k]) / sumS; q.w0 = w0; q.w1 = w0 + w; w0 += w + GAPA; });
     for (let ring = 0; ring < 14 && secs.some(q => q.left > 0); ring++) {
-      const R = tune.r0 + (0) + ring * gapR;
-      const act = secs.filter(q => q.left > 0);
-      const total = act.reduce((a, q) => a + q.left, 0);
-      const cap = Math.min(total, Math.max(act.length, Math.floor((rad(fan) * R - SEC_GAP * (act.length - 1)) / spS) + act.length));
-      // もとの人数に比例して分ける（パートの境目の角度がリングごとに動かないように）→ 偶数にそろえる → 合計を cap に合わせる
-      const all = act.reduce((a2, q) => a2 + n[q.k], 0);
-      let alloc = act.map(q => Math.max(1, Math.min(q.left, Math.round((cap * n[q.k]) / all))));
-      alloc = alloc.map((m, i) => (m > 1 && m % 2 && m < act[i].left ? m - 1 : m));
-      const sum = () => alloc.reduce((a, v) => a + v, 0);
-      while (sum() > cap) { const i = alloc.indexOf(Math.max(...alloc)); alloc[i]--; }
-      for (let guard = 0; sum() < cap && guard < 40; guard++) {
-        // 残りの多いパートに、2人ずつ（入らなければ1人）足す
-        let bi = -1;
-        act.forEach((q, i) => { if (alloc[i] < q.left && (bi < 0 || (q.left - alloc[i]) / n[q.k] > (act[bi].left - alloc[bi]) / n[act[bi].k])) bi = i; });
-        if (bi < 0) break;
-        alloc[bi] += Math.min(cap - sum() >= 2 && act[bi].left - alloc[bi] >= 2 ? 2 : 1, act[bi].left - alloc[bi]);
-      }
-      const len = alloc.reduce((a, m) => a + (m - 1) * spS, 0) + SEC_GAP * (act.length - 1);
-      let s0 = -len / 2;
-      act.forEach((q, i) => {
-        const m = alloc[i];
-        if (!m) return;
-        const mid = s0 + ((m - 1) * spS) / 2;
+      const R = tune.r0 + ring * gapR;
+      secs.forEach(q => {
+        if (q.left <= 0) return;
+        const m = seatsIn(q.w1 - q.w0, R, q.left);
+        const mid = (q.w0 + q.w1) / 2;
         deskRow(m, spS).forEach(([off, dn]) => {
-          const a = (mid + off) / R;
+          const a = mid + off / R;
           const p = G().fromPolar(R, a, c);
           items.push({ type: 'player', label: q.k, x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `${q.k}-${q.desk + dn}` });
           q.a0 = Math.min(q.a0, (a * 180) / Math.PI); q.a1 = Math.max(q.a1, (a * 180) / Math.PI);
@@ -821,7 +818,6 @@ window.SS = window.SS || {};
         q.left -= m;
         secR[q.k] = R;
         maxR = Math.max(maxR, R);
-        s0 += (m - 1) * spS + SEC_GAP;
       });
     }
     secs.forEach(q => { secRange[q.k] = [q.a0, q.a1]; });
@@ -836,10 +832,15 @@ window.SS = window.SS || {};
       // コントラバスの譜面台は約78cm前にあるので、前の列（チェロ）から25cm多めに離す
       let left = n.Cb, R = (behind || maxR) + gapR + 25, cbDesk = 0;
       while (left > 0) {
-        const cap = Math.max(1, Math.floor((rad(vr[1] - vr[0] + 10) * R) / 95) + 1);
+        // なるべく1列に（列が増えると、管楽器のひな壇が奥へ下がる）。チェロの後ろから、扇の端までの範囲で並べる
+        const maxW = Math.max(vr[1] - vr[0] + 10, 70);
+        const cap = Math.max(1, Math.floor((rad(maxW) * R) / 95) + 1);
         const m = Math.min(left, cap);
+        const half = ((m - 1) * 95) / 2 / R, edge = rad(fan / 2 + 4);
+        // チェロが下手側（対向配置）のときは、下手の外側へ寄せる（真ん中の奥に来ると、ひな壇が奥へ下がる）
+        const mid = midD >= 0 ? Math.min(rad(midD), edge - half) : -edge + half;
         deskRow(m, 95, 84).forEach(([off, dn]) => {
-          const p = G().fromPolar(R, rad(midD) + off / R, c);
+          const p = G().fromPolar(R, mid + off / R, c);
           items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `Cb-${cbDesk + dn}` });
         });
         cbDesk += Math.ceil(m / 2);
@@ -916,7 +917,10 @@ window.SS = window.SS || {};
         },
       });
     }
-    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR });
+    // ひな壇の前のふちは、弦のいちばん奥の人（いすの後ろ 約25cm）から clear だけ離す
+    // （上手の横にいるコントラバスは、奥までは来ないので数えない）
+    const yStr = items.length ? Math.min(...items.map(it => it.y)) - 25 : c.y - maxR;
+    const tp = tiersAndPerc(stage, yStr - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR });
     items.push(...tp.items);
     rep('Hp', n.Hp).forEach((l, i) => {
       // 奏者は指揮者の方を向き、ハープはその前（響板の上が奏者側）
