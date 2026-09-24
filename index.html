@@ -53,6 +53,55 @@
       </label>
       <p class="hint small" style="margin:-4px 0 4px">◎＝反射板・コンサート形式の寸法が公開されていたホール　△＝舞台寸法からの推定（要確認）</p>
       <p class="hint small" id="hallNote"></p>
+      <details class="fold" id="stageBox">
+        <summary>ステージの大きさ・形 <span class="fold-now" id="stageBoxNow"></span></summary>
+        <div class="row2">
+          <label class="field">幅(m)<input id="stageW" type="number" step="0.5" min="4" max="40"></label>
+          <label class="field">奥行(m)<input id="stageD" type="number" step="0.5" min="3" max="30"></label>
+        </div>
+        <label class="field">ステージの形
+          <select id="stageShape">
+            <option value="rect">四角</option>
+            <option value="apron">前が丸い（張り出し）</option>
+            <option value="trapezoid">台形（奥がせまい）</option>
+            <option value="shell">音響反射板（奥の幅を指定）</option>
+            <option value="arc">前が弧（サントリー・ミューザ・みなとみらい型）</option>
+            <option value="round">円形・楕円形</option>
+          </select>
+        </label>
+        <label class="field" id="stageBWWrap">奥の幅（正面反射板の幅, m）<input id="stageBW" type="number" step="0.5" min="3" max="40"></label>
+        <label class="field" id="stageSagWrap">弧のふくらみ（角から中央までの前へのでっぱり, m）<input id="stageSag" type="number" step="0.1" min="0" max="10"></label>
+      </details>
+      <details class="fold" id="safetyBox">
+        <summary>安全・ホールの設備 <span class="fold-now" id="safetyBoxNow"></span></summary>
+        <label class="field">舞台奥の通路（反射板とのあいだ, cm）<input id="stageAisle" type="number" step="10" min="0" max="300"></label>
+        <p class="hint small">かんたん編成・ひな形はこの幅を空けて並べます。これより狭い所は「⚠ 確認」に出ます。</p>
+        <label class="field">指揮台の前から舞台の縁まで（cm）<input id="stagePodiumGap" type="number" step="10" min="0" max="500"></label>
+        <p class="hint small">かんたん編成・ひな形は、指揮台の前をこの幅だけ空けて並べます（はじめは1m）。空けられないときは「⚠ 確認」に出ます。</p>
+        <details class="fixtures" id="fxBox">
+          <summary>ホールの設備（分かるものだけ入力）</summary>
+          <p class="hint small">空欄のものは描きません。ホールの舞台図面などで確かめた値だけを入れてください。奏者や物が重なると「⚠ 確認」に出ます。</p>
+          <label class="field">反射板の位置（舞台の奥のふちから前へ, m）<input id="fxShell" type="number" step="0.1" min="0" max="30" placeholder="空欄＝奥のふち"></label>
+          <label class="field">緞帳線（舞台の前のふちから奥へ, m）<input id="fxCurtain" type="number" step="0.1" min="0" max="30"></label>
+          <div class="row2">
+            <label class="field">プロセニアム（前のふちから奥へ, m）<input id="fxProY" type="number" step="0.1" min="0" max="30"></label>
+            <label class="field">プロセニアムの間口（m）<input id="fxProW" type="number" step="0.1" min="1" max="60"></label>
+          </div>
+          <div class="row2">
+            <label class="field">ピットのふた（前へ出る長さ, m）<input id="fxPitD" type="number" step="0.1" min="0" max="20"></label>
+            <label class="field">ピットのふたの幅（m）<input id="fxPitW" type="number" step="0.1" min="1" max="60" placeholder="空欄＝舞台の幅"></label>
+          </div>
+          <div class="row3">
+            <label class="field">花道の中心（下手の端から, m）<input id="fxHanaX" type="number" step="0.1" min="0" max="60"></label>
+            <label class="field">花道の幅（m）<input id="fxHanaW" type="number" step="0.1" min="0.5" max="10"></label>
+            <label class="field">花道の長さ（m）<input id="fxHanaL" type="number" step="0.1" min="0.5" max="40"></label>
+          </div>
+          <div class="field">迫り（下手の端から・奥のふちから・幅・奥行, m）
+            <div id="fxLifts"></div>
+            <button class="btn" id="fxLiftAdd" type="button">＋ 迫りを追加</button>
+          </div>
+        </details>
+      </details>
       <div class="seg" id="ensType">
         <button data-ens="band">吹奏楽</button><button data-ens="orch">オーケストラ</button><button data-ens="strings">弦楽</button>
       </div>
@@ -320,65 +369,6 @@
     </section>
 
     <section class="tabpane" id="setTab">
-      <h3>タイトル</h3>
-      <label class="field">タイトル<input id="docTitle" placeholder="例: 第30回 定期演奏会"></label>
-      <label class="field">サブタイトル<input id="docSubtitle" placeholder="例: 第1部 / ○○ホール"></label>
-      <h3>図面の情報欄（画像・印刷・PDFの右下に出ます）</h3>
-      <div class="row2">
-        <label class="field">会場<input id="infoVenue" placeholder="空ならホール名"></label>
-        <label class="field">日付<input id="infoDate" type="date"></label>
-      </div>
-      <div class="row2">
-        <label class="field">第何版<input id="infoVersion" type="number" min="1" step="1"></label>
-        <label class="field">作った人<input id="infoAuthor" placeholder="例: 舞台監督 山田"></label>
-      </div>
-      <label class="field">メモ<input id="infoMemo" placeholder="例: 反射板設置・ひな壇2段"></label>
-      <label class="field">変更の内容（情報欄の「変更」に出ます）<input id="infoChange" placeholder="例: 第2版：Tpを1名追加"></label>
-      <h3>ステージの大きさ</h3>
-      <div class="row2">
-        <label class="field">幅(m)<input id="stageW" type="number" step="0.5" min="4" max="40"></label>
-        <label class="field">奥行(m)<input id="stageD" type="number" step="0.5" min="3" max="30"></label>
-      </div>
-      <label class="field">ステージの形
-        <select id="stageShape">
-          <option value="rect">四角</option>
-          <option value="apron">前が丸い（張り出し）</option>
-          <option value="trapezoid">台形（奥がせまい）</option>
-          <option value="shell">音響反射板（奥の幅を指定）</option>
-          <option value="arc">前が弧（サントリー・ミューザ・みなとみらい型）</option>
-          <option value="round">円形・楕円形</option>
-        </select>
-      </label>
-      <label class="field" id="stageBWWrap">奥の幅（正面反射板の幅, m）<input id="stageBW" type="number" step="0.5" min="3" max="40"></label>
-      <label class="field" id="stageSagWrap">弧のふくらみ（角から中央までの前へのでっぱり, m）<input id="stageSag" type="number" step="0.1" min="0" max="10"></label>
-      <h3>安全・ホールの設備</h3>
-      <label class="field">舞台奥の通路（反射板とのあいだ, cm）<input id="stageAisle" type="number" step="10" min="0" max="300"></label>
-      <p class="hint small">かんたん編成・ひな形はこの幅を空けて並べます。これより狭い所は「⚠ 確認」に出ます。</p>
-      <label class="field">指揮台の前から舞台の縁まで（cm）<input id="stagePodiumGap" type="number" step="10" min="0" max="500"></label>
-      <p class="hint small">かんたん編成・ひな形は、指揮台の前をこの幅だけ空けて並べます（はじめは1m）。空けられないときは「⚠ 確認」に出ます。</p>
-      <details class="fixtures" id="fxBox">
-        <summary>ホールの設備（分かるものだけ入力）</summary>
-        <p class="hint small">空欄のものは描きません。ホールの舞台図面などで確かめた値だけを入れてください。奏者や物が重なると「⚠ 確認」に出ます。</p>
-        <label class="field">反射板の位置（舞台の奥のふちから前へ, m）<input id="fxShell" type="number" step="0.1" min="0" max="30" placeholder="空欄＝奥のふち"></label>
-        <label class="field">緞帳線（舞台の前のふちから奥へ, m）<input id="fxCurtain" type="number" step="0.1" min="0" max="30"></label>
-        <div class="row2">
-          <label class="field">プロセニアム（前のふちから奥へ, m）<input id="fxProY" type="number" step="0.1" min="0" max="30"></label>
-          <label class="field">プロセニアムの間口（m）<input id="fxProW" type="number" step="0.1" min="1" max="60"></label>
-        </div>
-        <div class="row2">
-          <label class="field">ピットのふた（前へ出る長さ, m）<input id="fxPitD" type="number" step="0.1" min="0" max="20"></label>
-          <label class="field">ピットのふたの幅（m）<input id="fxPitW" type="number" step="0.1" min="1" max="60" placeholder="空欄＝舞台の幅"></label>
-        </div>
-        <div class="row3">
-          <label class="field">花道の中心（下手の端から, m）<input id="fxHanaX" type="number" step="0.1" min="0" max="60"></label>
-          <label class="field">花道の幅（m）<input id="fxHanaW" type="number" step="0.1" min="0.5" max="10"></label>
-          <label class="field">花道の長さ（m）<input id="fxHanaL" type="number" step="0.1" min="0.5" max="40"></label>
-        </div>
-        <div class="field">迫り（下手の端から・奥のふちから・幅・奥行, m）
-          <div id="fxLifts"></div>
-          <button class="btn" id="fxLiftAdd" type="button">＋ 迫りを追加</button>
-        </div>
-      </details>
       <h3>表示</h3>
       <label class="field">奏者の表し方
         <select id="optStyle">

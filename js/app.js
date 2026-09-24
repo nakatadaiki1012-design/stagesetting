@@ -117,6 +117,7 @@
     S.warnings = SS.checks ? SS.checks(d) : [];
     renderWarnList();
     renderCompareBar();
+    renderFoldSummaries();
     renderOverlay();
     scheduleSave();
   }
@@ -1452,9 +1453,9 @@
   // ------------------------------------------------------------ 設定
   function renderSettings() {
     const d = doc(), o = d.options;
-    if (document.activeElement !== $('docTitle')) $('docTitle').value = d.title;
-    if (document.activeElement !== $('docSubtitle')) $('docSubtitle').value = d.subtitle;
-    [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']].forEach(([id, key]) => { if (document.activeElement !== $(id)) $(id).value = d.info[key] == null ? '' : d.info[key]; });
+    // 図面の情報欄は「画像・PDFとして保存」の画面にある（開いているときだけ）
+    INFO_FIELDS.forEach(([id, key]) => { if ($(id) && document.activeElement !== $(id)) $(id).value = d.info[key] == null ? '' : d.info[key]; });
+    renderFoldSummaries();
     if (document.activeElement !== $('stageW')) $('stageW').value = d.stage.w / 100;
     if (document.activeElement !== $('stageD')) $('stageD').value = d.stage.d / 100;
     $('stageShape').value = d.stage.shape || 'rect';
@@ -1484,10 +1485,40 @@
     el.addEventListener('focus', () => pushHistory());
     el.addEventListener(ev, () => { if (ev === 'change' && el.type === 'checkbox') pushHistory(); fn(el); render(); renderCounts(); });
   }
-  bindSetting('docTitle', 'input', el => { doc().title = el.value; });
-  bindSetting('docSubtitle', 'input', el => { doc().subtitle = el.value; });
-  [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']].forEach(([id, key]) => bindSetting(id, 'input', el => { doc().info[key] = el.value; }));
-  bindSetting('infoVersion', 'input', el => { const v = Math.round(+el.value); if (v >= 1) doc().info.version = v; });
+  // 図面の情報欄（会場・日付・版・作った人・メモ・変更の内容）の入力欄。「画像・PDFとして保存」の画面に出す
+  const INFO_FIELDS = [['infoVenue', 'venue'], ['infoDate', 'date'], ['infoVersion', 'version'], ['infoAuthor', 'author'], ['infoMemo', 'memo'], ['infoChange', 'changeNote']];
+  const infoFieldsHTML = () => {
+    const f = doc().info, v = k => SS.esc(f[k] == null ? '' : f[k]);
+    return `<details class="fold info-fold"${[f.venue, f.date, f.author, f.memo, f.changeNote].some(Boolean) ? '' : ' open'}>
+      <summary>図面の情報欄（右下に出ます）<span class="fold-now">第${f.version || 1}版${f.venue ? '・' + v('venue') : ''}</span></summary>
+      <div class="row2"><label class="field">会場<input id="infoVenue" value="${v('venue')}" placeholder="空ならホール名"></label><label class="field">日付<input id="infoDate" type="date" value="${v('date')}"></label></div>
+      <div class="row2"><label class="field">第何版<input id="infoVersion" type="number" min="1" step="1" value="${v('version')}"></label><label class="field">作った人<input id="infoAuthor" value="${v('author')}" placeholder="例: 舞台監督 山田"></label></div>
+      <label class="field">メモ<input id="infoMemo" value="${v('memo')}" placeholder="例: 反射板設置・ひな壇2段"></label>
+      <label class="field">変更の内容（情報欄の「変更」に出ます）<input id="infoChange" value="${v('changeNote')}" placeholder="例: 第2版：Tpを1名追加"></label>
+    </details>`;
+  };
+  function bindInfoFields(onChange) {
+    let pushed = false;
+    INFO_FIELDS.forEach(([id, key]) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('input', () => {
+        if (!pushed) { pushHistory(); pushed = true; }
+        if (key === 'version') { const v = Math.round(+el.value); if (v >= 1) doc().info.version = v; } else doc().info[key] = el.value;
+        scheduleSave();
+        if (onChange) onChange();
+      });
+    });
+  }
+  // 開け閉めできる箱の見出しに、いまの設定を出す
+  function renderFoldSummaries() {
+    const st = doc().stage, R = SS.render;
+    const shapeName = { rect: '四角', apron: '前が丸い', trapezoid: '台形', shell: '反射板', arc: '前が弧', round: '円形' }[st.shape || 'rect'] || '';
+    if ($('stageBoxNow')) $('stageBoxNow').textContent = `${st.w / 100}×${st.d / 100}m・${shapeName}`;
+    const fx = st.fixtures || {}, nFx = ['shell', 'curtain', 'proscenium', 'pit', 'hanamichi'].filter(k => fx[k] != null).length + (fx.lifts || []).length;
+    if ($('safetyBoxNow')) $('safetyBoxNow').textContent = `通路${SS.auto.aisleOf(st)}cm・指揮台の前${SS.auto.podiumGapOf(st)}cm${nFx ? `・設備${nFx}` : ''}`;
+    void R;
+  }
   bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageShape', 'change', el => {
@@ -2502,6 +2533,7 @@
     openModal(`
       <h2>画像・PDFとして保存</h2>
       ${titleFieldsHTML()}
+      ${infoFieldsHTML()}
       ${paperFieldsHTML()}
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
@@ -2519,6 +2551,7 @@
     `);
     const extra = () => ({ legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
+    bindInfoFields(() => { $('exResult').innerHTML = ''; });
     bindPaper(extra);
     paperCheck(extra());
     const name = () => SS.render.safeName(doc().title || '配置図') + (paperPref().content === 'assembly' && hasHina() ? '_ひな壇の組み図' : '');
@@ -2553,12 +2586,14 @@
     openModal(`
       <h2>印刷</h2>
       ${titleFieldsHTML()}
+      ${infoFieldsHTML()}
       ${paperFieldsHTML()}
       <p class="hint small">編成表（人数）と情報欄も入ります。縮尺どおりに印刷するには、印刷の画面で <b>倍率を「100%」（実際のサイズ）</b> にしてください。PDFにしたいときは、印刷の画面で <b>「PDFに保存」</b> をえらびます。</p>
       <div class="btn-row"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
     `);
     const extra = () => ({ legend: true, grid: false, underlay: false });
     bindTitleFields();
+    bindInfoFields();
     bindPaper(extra);
     paperCheck(extra());
     $('prNo').onclick = closeModal;
