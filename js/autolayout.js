@@ -465,7 +465,8 @@ window.SS = window.SS || {};
     // 2) 弧に沿って並べる（dir 1：前から奥へ、-1：奥から前へ）。keysTilt：客席の方へ少しひらく角度（度）
     const T0 = -110 * Math.PI / 180, T1 = -25 * Math.PI / 180;
     const faceOf = (P, tilt) => G().faceAngle(P, c) + tilt;
-    const lay = (list, ring0, dir, tilt) => {
+    const lay = (list, ring0, dir, tilt0) => {
+      const tiltOf = q => (typeof tilt0 === 'function' ? tilt0(q) : tilt0);
       let ring = ring0, ringDepth = 0, t = dir > 0 ? T0 : T1, maxDepth = 0;
       for (const q of list) {
         const sh = shape(q);
@@ -474,7 +475,7 @@ window.SS = window.SS || {};
           const Rp = ring + sh.front, Rm = ring + sh.front / 2, half = sh.w / 2 / Rm;
           if (dir > 0 ? t + 2 * half > T1 : t - 2 * half < T0) { ring += Math.max(ringDepth, 150) + 30; ringDepth = 0; t = dir > 0 ? T0 : T1; if (ring > Rin + 800) return -1; continue; }
           const P = G().fromPolar(Rp, t + dir * half, c);
-          const cand = placeAt(q, P, faceOf(P, tilt));
+          const cand = placeAt(q, P, faceOf(P, tiltOf(q)));
           if (fits(cand) && !clash(cand)) { ok = cand; t += dir * (2 * half + 18 / Rm); ringDepth = Math.max(ringDepth, sh.front + sh.back); maxDepth = Math.max(maxDepth, ring - ring0 + sh.front + sh.back); } else t += dir * 4 / Rm;
         }
         if (!ok) return -1;
@@ -483,6 +484,18 @@ window.SS = window.SS || {};
       return maxDepth;
     };
     const ord = (q, list) => { const i = list.indexOf(q.kind); return i < 0 ? 99 : i; };
+    if (opt.mode === 'orch') {
+      // オーケストラ：舞台の奥（ティンパニ・金管の近く）から、大太鼓 → 小太鼓 → シンバル → 小物 → 鍵盤 の順に、
+      // 弦の扇形の外側を下手の前の方へまわりこむように並べる（鍵盤は客席へ少しひらく）
+      const seq = st.filter(q => !(q === timp && timpDone)).sort((a, b) => {
+        const r = q => (q.kind === 'timp' ? -1 : DRUM_ORDER.includes(q.kind) ? DRUM_ORDER.indexOf(q.kind) : KEYS_ORDER.includes(q.kind) ? 10 + KEYS_ORDER.indexOf(q.kind) : 30);
+        return r(a) - r(b);
+      });
+      if (lay(seq, Rin, -1, q => (KEYS_ORDER.includes(q.kind) ? 12 : 0)) < 0) return false;
+      done.forEach(([it, p]) => Object.assign(it, p));
+      A.groupStations(items);
+      return true;
+    }
     const keys = st.filter(q => KEYS_ORDER.includes(q.kind)).sort((a, b) => ord(a, KEYS_ORDER) - ord(b, KEYS_ORDER));
     const drums = st.filter(q => !KEYS_ORDER.includes(q.kind) && !(q === timp && timpDone)).sort((a, b) => (a.kind === 'timp' ? -1 : b.kind === 'timp' ? 1 : ord(a, DRUM_ORDER) - ord(b, DRUM_ORDER)));
     // 鍵盤：前の列（指揮者の方から、客席の方へ 12° ひらく。下手にいるので向きの角度を 0°＝客席 へ近づける）
@@ -666,7 +679,9 @@ window.SS = window.SS || {};
       // ティンパニは、ひな壇の1段目の横（下手側）に正面向きで
       const t1 = rows[0];
       const timpAt = t1 && t1.hgt ? { x: tierL - 170, y: yFront0 - (t1.need ? t1.need(W0) : t1.depth) / 2 } : null;
-      const ok = A.arrangePercSide(trial, stage, floor.c, floor.R + 75, (p, r) => p.x + r <= (p.y - r < yFront0 + 30 ? tierL : 1e4) && p.y - r > AISLE, avoidOf(floor.pts || []), { timpAt });
+      // オーケストラで、ティンパニを最上段に上げるときは、段の横に運び上げる通路（1.3m）を空けておく
+      const lane = floor.timpTier ? 140 : 0;
+      const ok = A.arrangePercSide(trial, stage, floor.c, floor.R + 75, (p, r) => p.x + r <= (p.y - r < yFront0 + 30 ? tierL - lane : 1e4) && p.y - r > AISLE, avoidOf(floor.pts || []), { timpAt: floor.mode === 'orch' ? null : timpAt, mode: floor.mode });
       if (ok) {
         trial.forEach((t2, i) => Object.assign(parts.left[i], { x: t2.x, y: t2.y, rot: t2.rot }));
         const C0 = SS.CATALOG;
@@ -738,6 +753,8 @@ window.SS = window.SS || {};
       const yBack = yFront0 - total;
       let [xl, xr] = R().xRange(stage, Math.max(0, yBack, AISLE));
       if (out.leftRect && !out.leftRect.beside && yBack < out.leftRect.y1) xl = Math.max(xl, out.leftRect.x1 + 10);
+      // ティンパニを最上段に上げるときは、段の下手の横に運び上げる通路を残す
+      if (floor && floor.timpTier) xl += 140;
       const Wmax = Math.max(pn.w * 2, Math.floor((xr - xl - 20) / pn.w) * pn.w);
       cx = Math.max(xl + 10 + Math.min(W, Wmax) / 2, Math.min(stage.w / 2, xr - 10 - Math.min(W, Wmax) / 2));
       if (W <= Wmax) break;
@@ -1121,7 +1138,7 @@ window.SS = window.SS || {};
     // ひな壇の前のふちは、弦のいちばん奥の人（いすの後ろ 約25cm）から clear だけ離す
     // （上手の横にいるコントラバスは、奥までは来ないので数えない）
     const yStr = items.length ? Math.min(...items.map(it => it.y)) - 25 : c.y - maxR;
-    const tp = tiersAndPerc(stage, yStr - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR });
+    const tp = tiersAndPerc(stage, yStr - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR, side: !n.Hp && !n.Pf, mode: 'orch', pts: items.slice(), timpTier: !!(timpOnTop && timpSet.length) });
     items.push(...tp.items);
     rep('Hp', n.Hp).forEach((l, i) => {
       // 奏者は指揮者の方を向き、ハープはその前（響板の上が奏者側）
