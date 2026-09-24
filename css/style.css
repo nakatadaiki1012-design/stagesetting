@@ -437,9 +437,10 @@ body.modal-open .tidy-bar, body.modal-open .warn-chip, body.modal-open .cmp-bar 
 /* 保存の案内 */
 .safe-note { background: #fff7e0; border: 1.5px solid #f0c75e; border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; font-size: 13.5px; line-height: 1.6; }
 .safe-note .btn { margin-top: 6px; }
-.file-nudge { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 120; width: min(440px, calc(100% - 24px)); background: #fff; border: 1.5px solid #9fbef0; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
+.file-nudge { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 120; width: min(440px, calc(100% - 24px)); background: #fff; border: 1.5px solid #9fbef0; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
 .file-nudge p { margin: 0 0 8px; }
 .file-nudge .btn-row { flex-wrap: wrap; }
 /* ホールの寸法の注意 */
 .hall-warn { margin: -2px 0 6px; padding: 6px 9px; border-radius: 8px; background: #fff8e6; border: 1px solid #f0d58a; font-size: 12.5px; line-height: 1.5; color: #5a4300; }
 .hall-warn.est { background: #fff0e0; border: 2px solid #e08a1e; color: #7a3d00; font-size: 13px; }
+.file-nudge.inline { position: static; transform: none; width: auto; margin: 10px 0 0; box-shadow: none; }

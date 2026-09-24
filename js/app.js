@@ -2415,7 +2415,9 @@
     el.id = 'fileNudge';
     el.innerHTML = `<p><b>💾 ファイルにも保存しておきますか？</b><br>配置図はこのブラウザの中にだけ保存されています。ファイルにしておくと、ブラウザのデータを消したり機種を変えたりしても、あとで開いて直せます。</p>
       <div class="btn-row"><button class="btn primary" id="fnSave">⬇ ファイルに保存</button><button class="btn" id="fnLater">今はしない</button><button class="btn" id="fnNever">今後表示しない</button></div>`;
-    document.body.appendChild(el);
+    // 書き出す画面を開いているときは、その画面の中（作った結果の下）に出す（ボタンの上に重ねない）
+    const box = !$('modal').classList.contains('hidden') && ($('ctResult') || $('exResult'));
+    if (box) { el.classList.add('inline'); box.after(el); el.scrollIntoView({ block: 'nearest' }); } else document.body.appendChild(el);
     const close = () => el.remove();
     $('fnSave').onclick = () => { saveToFile(); close(); toast('ファイルに保存しました。「💾 保存/開く」の「⬆ ファイルを開く」で開けます', true); };
     $('fnLater').onclick = close;
