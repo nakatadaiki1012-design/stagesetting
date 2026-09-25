@@ -445,6 +445,8 @@ window.SS = window.SS || {};
     const boxes = [];
     const box = (lb, p) => ({ x0: p.x - lb.w / 2, x1: p.x + lb.w / 2, y0: p.y - lb.h / 2, y1: p.y + lb.h / 2 });
     const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    // となりのパート名とは、くっつかないよう少し（6cm）すき間を空ける
+    const hitL = (a, b) => a.x0 - 6 < b.x1 && b.x0 - 6 < a.x1 && a.y0 - 3 < b.y1 && b.y0 - 3 < a.y1;
     // 人の頭（体の中心）と譜面台（体の前 約64cm・幅50cm）はふさがないようにする
     const ps = doc.items.filter(it => it.type === 'player');
     const heads = ps.map(it => ({ it, x0: it.x - 11, x1: it.x + 11, y0: it.y - 11, y1: it.y + 11 }));
@@ -456,15 +458,31 @@ window.SS = window.SS || {};
     // 数の多い列から先に置くより、前（客席側）の人から順に置くほうが自然
     const order = labels.slice().sort((a, b) => b.it.y - a.it.y);
     let out = '';
-    order.forEach(lb => {
-      let best = null, bestScore = Infinity;
-      lb.cands.forEach((p, i) => {
-        const bx = box(lb, p);
-        const score = boxes.filter(b => hit(bx, b)).length * 10 + heads.filter(h => h.it !== lb.it && hit(bx, h)).length * 3 + i * 0.5;
-        if (score < bestScore) { bestScore = score; best = p; }
-      });
-      boxes.push(box(lb, best));
-      out += SS.labelText(lb, best);
+    order.forEach(lb0 => {
+      // どの人の名前か分かるよう、なるべく自分の人のそば（はじめの候補）に置く。ほかのパート名とくっつくときは、
+      // まず字を少し小さくし（84%・70%）、それでもだめなら次の候補（左右に少しずらした所・横・後ろ）へ
+      const cands = lb0.cands.slice(0, 1).concat(lb0.cands.slice(0, 1).flatMap(p => [{ x: +(p.x - lb0.w * 0.3).toFixed(1), y: p.y }, { x: +(p.x + lb0.w * 0.3).toFixed(1), y: p.y }]), lb0.cands.slice(1));
+      const scaled = k => Object.assign({}, lb0, { fs: lb0.fs * k, w: lb0.w * k, h: lb0.h * k });
+      const labelHits = (lb, p) => boxes.filter(b => hitL(box(lb, p), b)).length;
+      const headHits = (lb, p) => heads.filter(h => h.it !== lb.it && hit(box(lb, p), h)).length;
+      let pick = null;
+      for (const strictHeads of [true, false]) {
+        for (const p of cands) {
+          for (const k of [1, 0.84, 0.7]) {
+            const lb = scaled(k);
+            if (!labelHits(lb, p) && (!strictHeads || !headHits(lb, p))) { pick = { lb, p }; break; }
+          }
+          if (pick) break;
+        }
+        if (pick) break;
+      }
+      if (!pick) {
+        // どこでもくっつくときは、いちばんましな所に小さく
+        let bestScore = Infinity;
+        cands.forEach((p, i) => { const lb = scaled(0.7); const sc = labelHits(lb, p) * 10 + headHits(lb, p) * 3 + i * 0.5; if (sc < bestScore) { bestScore = sc; pick = { lb, p }; } });
+      }
+      boxes.push(box(pick.lb, pick.p));
+      out += SS.labelText(pick.lb, pick.p);
     });
     return out;
   };
