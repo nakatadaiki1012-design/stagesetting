@@ -638,6 +638,13 @@ window.SS = window.SS || {};
           });
         } else makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100);
         break;
+      case 'runway': {
+        // 花道：舞台と同じ高さ（客席の床から1m）の板張りの床
+        const tex = planksTexture('#c08d55', 48, true); tex.repeat.set(w / 2.2, d / 2.2);
+        const m = new T.Mesh(new T.BoxGeometry(w, 1.0, d), [mat('#141414'), mat('#141414'), new T.MeshPhysicalMaterial({ map: tex, roughness: 0.4, clearcoat: 0.4 }), mat('#141414'), mat('#141414'), mat('#141414')]);
+        m.position.set(0, -0.5 + 0.003, 0); m.receiveShadow = true; g.add(m);
+        break;
+      }
       case 'cable': case 'outlet': case 'tap': break; // 床の線・コンセントは3Dでは描かない
       case 'micTall': // 録音用マイク：3本脚の高いスタンド
         for (let i = 0; i < 3; i++) { const a = (i * 2 * Math.PI) / 3; tube(g, [0, 0.5, 0], [Math.sin(a) * w / 2, 0.01, Math.cos(a) * w / 2], 0.012, '#333', METAL); }
@@ -907,7 +914,7 @@ window.SS = window.SS || {};
     scene.add(floor);
     const seatPos = [];
     const fg2 = SS.fixtureGeom ? SS.fixtureGeom(st) : {};
-    const seatFree = [fg2.pit, fg2.hanamichi].filter(Boolean);
+    const seatFree = [fg2.pit, fg2.hanamichi].filter(Boolean).concat(doc.items.filter(it => it.type === 'runway').map(it => SS.itemAABB(it, {})));
     for (let row = 0; row < 20; row++) {
       const z = D + 2.8 + row * 0.95;
       const y = -1.0 + row * 0.14;
@@ -992,7 +999,7 @@ window.SS = window.SS || {};
         scene.add(p.g);
         playerGroups.set(it.id, { g: p.g, head: p.head, it, base });
       } else {
-        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina';
+        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina' || it.type === 'runway';
         const g = makeItem(it, color, rh.get(it) || 0.2);
         if (!g) return;
         if (!isRiser && it.type !== 'podium') {

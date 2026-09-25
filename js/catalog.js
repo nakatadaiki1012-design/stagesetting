@@ -66,6 +66,7 @@ window.SS = window.SS || {};
     riser46: { name: '平台 4×6尺', cat: '基本', w: 182, h: 121, shape: 'riser', fill: '#efe3cc', label: '', note: 'ヨンロク 1212×1820mm' },
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
     stairs:  { name: '上がり段', cat: '基本', w: 91, h: 60, shape: 'stairs', fill: '#efe3cc', label: '', note: 'ひな壇に上がる階段。段の横か前にくっつけて置く（矢印の向きに上がる）' },
+    runway:  { name: '花道（張り出し）', cat: '基本', w: 180, h: 540, shape: 'runway', fill: '#f1e2c6', label: '花道', note: '舞台と同じ高さの張り出し（花道・張り出し舞台）。客席の方や舞台の横へ出して置けます。長さ・幅・向きは自由に。上に置いた人や物は舞台の外でもそのまま' },
     text:    { name: '文字', cat: '基本', w: 200, h: 50, shape: 'text', label: 'テキスト', fontSize: 36 },
     box:     { name: '四角', cat: '基本', w: 120, h: 70, shape: 'rect', fill: '#f2f2f2', label: '' },
     circle:  { name: '丸', cat: '基本', w: 80, h: 80, shape: 'circle', fill: '#f2f2f2', label: '' },
@@ -405,6 +406,14 @@ window.SS = window.SS || {};
           }
           break;
         }
+        case 'runway': {
+          // 舞台と同じ板張りの床。縦の板目と、ふちの線
+          body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#8a6d3b" stroke-width="3"/>`;
+          let p = '';
+          for (let xx = -w / 2 + 30; xx < w / 2 - 5; xx += 30) p += `M${xx.toFixed(1)} ${-h / 2 + 3}V${h / 2 - 3}`;
+          body += `<path d="${p}" stroke="rgba(138,109,59,.25)" stroke-width="1.5"/>`;
+          break;
+        }
         case 'riser':
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#b89b6a" stroke-width="2.5"/>`;
           break;
@@ -490,7 +499,7 @@ window.SS = window.SS || {};
         text += `<text x="${x}" y="${(y + Math.max(w, h) / 2 + 14).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(lab)}</text>`;
       } else if (lab && shape !== 'cable') {
         const fs = fitFont(lab, Math.max(w, h) * 0.9, Math.min(34, Math.max(12, Math.min(w, h) * 0.38)));
-        const tc = shape === 'riser' ? '#8a6d3b' : textColorFor(fill);
+        const tc = shape === 'riser' || shape === 'runway' ? '#8a6d3b' : textColorFor(fill);
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${tc}">${esc(lab)}</text>`;
       }
     }

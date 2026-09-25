@@ -5,7 +5,7 @@ window.SS = window.SS || {};
 (function (SS) {
   const R = () => SS.render;
   // 形のない書き込み（文字・四角・丸）は、物ではないので確かめない
-  const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap']); // 床のケーブル・コンセントも通れるので除く
+  const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap', 'runway']); // 床のケーブル・コンセントも通れるので除く（花道は床の続き）
   const HEAVY = new Set(['marimba', 'marimba43', 'timp32', 'timp29', 'timp26', 'timp23', 'timp', 'piano', 'pianoFull', 'vib', 'chimes', 'xylo', 'tam']);
   const PLATFORM = new Set(['hina', 'riser', 'riser46']);
   const STEP_OK = 25; // 1回で上り下りできる高さの差（cm）。平台1段（21.2cm）まで
@@ -78,6 +78,16 @@ window.SS = window.SS || {};
       g.hanamichi = { x0: hx - hw / 2, x1: hx + hw / 2, y0: R().frontAt(stage, hx), y1: R().frontAt(stage, hx) + +fx.hanamichi.len };
     }
     return g;
+  };
+
+  // 花道（部品）の上か（向きを変えた花道も）
+  SS.onRunway = function (items, p) {
+    return (items || []).some(r => {
+      if (r.type !== 'runway') return false;
+      const s = SS.itemSize(r, {}), a = ((r.rot || 0) * Math.PI) / 180, dx = p.x - r.x, dy = p.y - r.y;
+      const lx = dx * Math.cos(a) + dy * Math.sin(a), ly = -dx * Math.sin(a) + dy * Math.cos(a);
+      return Math.abs(lx) <= s.w / 2 && Math.abs(ly) <= s.h / 2;
+    });
   };
 
   SS.checks = function (doc) {

@@ -1084,10 +1084,10 @@
     return n;
   }
 
-  // 花道・オーケストラピットのふたの上（舞台の外でも、そのままにしてよい所）
+  // 花道（設備・部品）・オーケストラピットのふたの上（舞台の外でも、そのままにしてよい所）。花道の部品そのものも舞台の外に置いてよい
   function onExtension(p) {
     const g = SS.fixtureGeom ? SS.fixtureGeom(doc().stage) : {};
-    return [g.pit, g.hanamichi].some(r => r && p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1);
+    return [g.pit, g.hanamichi].some(r => r && p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1) || p.type === 'runway' || (SS.onRunway && SS.onRunway(doc().items, p));
   }
 
   /**

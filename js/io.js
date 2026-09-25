@@ -103,9 +103,13 @@ window.SS = window.SS || {};
   };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
   // 客席側でいちばん前（オーケストラピットのふた・花道まで含める）。寸法・「客席」の文字はこの前に置く
-  R.frontOuter = function (stage) {
+  // 花道の部品（runway）も、客席の方へ出ていればそこまで
+  R.frontOuter = function (stage, items) {
     const g = SS.fixtureGeom ? SS.fixtureGeom(stage) : {};
-    return Math.max(R.frontY(stage), g.pit ? g.pit.y1 : 0, g.hanamichi ? g.hanamichi.y1 : 0);
+    const d = SS.app && SS.app.doc ? SS.app.doc() : null;
+    const list = items || (d && d.stage === stage ? d.items : []);
+    const rw = list.filter(it => it.type === 'runway').map(it => SS.itemAABB(it, {}).y1);
+    return Math.max(R.frontY(stage), g.pit ? g.pit.y1 : 0, g.hanamichi ? g.hanamichi.y1 : 0, ...rw);
   };
 
   // ホールの設備（反射板・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道）。入力したものだけ描く
@@ -396,7 +400,7 @@ window.SS = window.SS || {};
     return s;
   };
 
-  const LAYER = { riser: 0, riser46: 0, hina: 0, stairs: 0, text: 3, player: 2 };
+  const LAYER = { runway: -1, riser: 0, riser46: 0, hina: 0, stairs: 0, text: 3, player: 2 };
   R.sortedItems = items => items.map((it, i) => ({ it, i })).sort((a, b) => ((LAYER[a.it.type] ?? 1) - (LAYER[b.it.type] ?? 1)) || a.i - b.i).map(o => o.it);
 
   R.seatNumbers = function (doc, conductor) {
