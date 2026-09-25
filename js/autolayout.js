@@ -1333,7 +1333,17 @@ window.SS = window.SS || {};
       timpSet = perc.filter(it => TIMP.includes(it.type) || (it.type === 'player' && /^tim/i.test(it.label || '')));
       perc = perc.filter(it => !timpSet.includes(it));
     }
-    const TW = timpOnTop ? 330 : 0;
+    // 小さい打楽器（大太鼓・小太鼓・シンバル・小物台・タムタム・グロッケン）は、ティンパニのとなり（最上段）にまとめる。
+    // 弦のすぐ横の床には置かない。大きい鍵盤（マリンバなど）だけ、段の下手の横へ
+    let topPerc = [];
+    if (timpOnTop) {
+      const SMALL = new Set(['bd', 'sd', 'cym', 'table', 'tam', 'glock']);
+      const small = perc.filter(it => SMALL.has(it.type));
+      const pls = perc.filter(it => it.type === 'player').slice(0, small.length);
+      topPerc = small.concat(pls);
+      perc = perc.filter(it => !topPerc.includes(it));
+    }
+    const TW = timpOnTop ? 330 + topPerc.filter(it => it.type !== 'player').reduce((a2, it) => a2 + (it.w || SS.CATALOG[it.type].w) + 48, 0) : 0;
     if (hrN || brass.length) {
       const i = specs.length;
       const box = st.hornBox && hrN >= 3;
@@ -1364,8 +1374,8 @@ window.SS = window.SS || {};
           brass.forEach((l, k) => out.push({ type: 'player', label: l, x: x0 + wh2 + mid + sp2 / 2 + k * sp2, y: yRow, rot: 0 }));
           if (timpOnTop) {
             const zc = x0 + wh2 + TW / 2;
-            A.arrangePerc(timpSet, stage, { yTop: yFront - d + 12, x0: zc - TW / 2, x1: zc + TW / 2 });
-            out.push(...timpSet);
+            A.arrangePerc(timpSet.concat(topPerc), stage, { yTop: yFront - d + 12, x0: zc - TW / 2, x1: zc + TW / 2 });
+            out.push(...timpSet, ...topPerc);
           }
           return out;
         },
