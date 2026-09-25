@@ -27,7 +27,7 @@
   // ------------------------------------------------------------ 文書
   // はじめて使う人の表示：パート名・舞台の寸法・センター・上手下手客席は出し、方眼・譜面台の3本脚・平台の番号と足は出さない
   function defaultOptions() {
-    return { showNames: true, showStands: true, standLegs: false, showNumbers: false, grid: false, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true, hinaDetail: false };
+    return { showNames: true, showStands: true, standLegs: false, showNumbers: false, grid: false, gridSize: 50, snap: false, colorBy: true, seatR: 24, figure: true, contest: false, guides: true, dims: true, hinaDetail: false, showLeads: true };
   }
   // 前からある保存データ・共有リンクには、項目がないときの前の標準を使う（その人が見ていた表示を変えない）
   const LEGACY_OPTIONS = { grid: true, standLegs: true, hinaDetail: true };
@@ -106,7 +106,7 @@
   function renderOpts() {
     const o = opts();
     // 白黒◯×：奏者は椅子○・譜面台×で描き、色は使わない
-    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false };
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false };
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
@@ -961,6 +961,7 @@
 
   // ------------------------------------------------------------ 選んだものの近くに出る操作バー
   const ctxBar = $('ctxBar');
+  const isVn1 = l => /^(vn|vl|vln|violin|バイオリン|ヴァイオリン)\s*(1|i)$|^1st\s*v/i.test(String(l || '').trim());
   function positionCtxBar() {
     const sel = selected();
     const tb = document.querySelector('.tidy-bar');
@@ -972,6 +973,9 @@
     $('ctxCount').textContent = sel.length > 1 ? sel.length + '個' : (one.type === 'player' ? (one.label || '奏者') : (SS.CATALOG[one.type] || {}).name || '');
     $('ctxRow').hidden = !(one && one.type === 'player');
     $('ctx3d').hidden = !(one && one.type === 'player');
+    $('ctxLead').hidden = !sel.every(it => it.type === 'player');
+    $('ctxLead').classList.toggle('on', sel.every(it => it.lead));
+    $('ctxLead').querySelector('small').textContent = one && one.lead === 'cm' ? 'コンマス' : '首席';
     const ed = $('ctxEdit');
     if (!ed.hidden) {
       const allP = sel.every(it => it.type === 'player');
@@ -989,6 +993,14 @@
       if (a === 'edit') { $('ctxEdit').hidden = !$('ctxEdit').hidden; positionCtxBar(); if (!$('ctxEdit').hidden) $('ctxLabel').focus(); return; }
       if (a === 'row') { selectRowOf(sel[0].id); renderOverlay(); renderProps(); return; }
       if (a === 'view3d') { SS.view3d.open(sel[0].id); return; }
+      if (a === 'lead') {
+        // 首席の★：1人なら なし → ★首席 → ★コンマス（ヴァイオリン1のとき）→ なし。何人かなら まとめて付ける／外す
+        pushHistory();
+        if (sel.length === 1) { const it = sel[0]; it.lead = !it.lead ? 'p' : it.lead === 'p' && isVn1(it.label) ? 'cm' : undefined; if (!it.lead) delete it.lead; }
+        else { const on = !sel.every(it => it.lead); sel.forEach(it => { if (on) it.lead = it.lead || 'p'; else delete it.lead; }); }
+        toast(sel.length === 1 ? (sel[0].lead === 'cm' ? '★CM（コンサートマスター）の印を付けました' : sel[0].lead ? '★（首席）の印を付けました' : '首席の印を外しました') : (sel[0].lead ? `${sel.length}人に★（首席）の印を付けました` : `${sel.length}人の首席の印を外しました`), true);
+        render(); renderProps(); positionCtxBar(); return;
+      }
       if (a === 'rotL' || a === 'rotR') {
         pushHistory();
         sel.forEach(it => { it.rot = normAngle((it.rot || 0) + (a === 'rotL' ? -15 : 15)); });
@@ -1540,6 +1552,7 @@
     }
     if (one && one.type === 'player') {
       h += `<label class="field">名前<input id="propName" value="${esc(one.name || '')}" placeholder="例: 山田"></label>`;
+      h += `<label class="field">首席の印<select id="propLead"><option value="">なし</option><option value="p"${one.lead === 'p' ? ' selected' : ''}>★ 首席（1番）</option><option value="cm"${one.lead === 'cm' ? ' selected' : ''}>★CM コンサートマスター</option></select></label>`;
     }
     if (allPlayers) {
       const lit = sel.filter(it => it.light).length;
@@ -1615,6 +1628,7 @@
     };
     bind('propLabel', 'input', el => sel.forEach(it => { it.label = el.value; }));
     bind('propName', 'input', el => { one.name = el.value; });
+    bind('propLead', 'change', el => { if (el.value) one.lead = el.value; else delete one.lead; });
     bind('propFont', 'input', el => { one.fontSize = +el.value; });
     bind('propW', 'input', el => { if (+el.value >= 10) one.w = +el.value; });
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
@@ -1776,6 +1790,7 @@
     if (document.activeElement !== $('stageSag')) $('stageSag').value = Math.round(SS.render.arcSag(d.stage)) / 100;
     if (document.activeElement !== $('stageBW')) $('stageBW').value = Math.round(SS.render.backWidth(d.stage)) / 100;
     $('optNames').checked = o.showNames;
+    $('optLeads').checked = o.showLeads !== false;
     $('optStands').checked = o.showStands;
     $('optStandLegs').checked = o.standLegs !== false;
     $('optNumbers').checked = o.showNumbers;
@@ -1844,6 +1859,7 @@
   bindSetting('stageSag', 'change', el => { const v = +el.value; if (v >= 0) { const st = doc().stage, yc = st.d - SS.render.arcSag(st); st.sag = Math.round(v * 100); st.d = Math.round(yc + st.sag); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageBW', 'change', el => { const v = +el.value; if (v >= 2) { doc().stage.bw = Math.min(doc().stage.w, Math.round(v * 100)); doc().hall = ''; updateHallNote(); } });
   bindSetting('optNames', 'change', el => { opts().showNames = el.checked; });
+  bindSetting('optLeads', 'change', el => { opts().showLeads = el.checked; });
   bindSetting('optStands', 'change', el => { opts().showStands = el.checked; });
   bindSetting('optStandLegs', 'change', el => { opts().standLegs = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
@@ -2946,23 +2962,24 @@
         <label class="field">用紙の向き（A4）<select id="ctOrient">${sel('landscape', '横')}${sel('portrait', '縦')}</select></label>
         <label class="check" style="align-self:end"><input type="checkbox" id="ctLegend"${c.legend ? ' checked' : ''}> 編成表（人数）を入れる</label>
       </div>
-      <p class="hint small">椅子は○、譜面台は×、パート名つきの白黒の図です。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
+      <label class="check"><input type="checkbox" id="ctKey"${c.key !== false ? ' checked' : ''}> 記号の見方（◯＝いす・×＝譜面台 など）を図の下に入れる</label>
+      <p class="hint small">椅子は○、譜面台は×、パート名は◯の中、首席は★の白黒の図です。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
       <div id="ctResult"></div>
     `);
     let pushed = false;
     const save = () => {
       if (!pushed) { pushHistory(); pushed = true; }
-      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked });
+      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked, key: $('ctKey').checked });
       scheduleSave();
       $('ctResult').innerHTML = '';
     };
     ['ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
-    ['ctOrient', 'ctLegend'].forEach(id => $(id).addEventListener('change', save));
+    ['ctOrient', 'ctLegend', 'ctKey'].forEach(id => $(id).addEventListener('change', save));
     const sheet = pxPerMm => {
       save();
       const cc = doc().contest;
       const o = Object.assign(renderOpts(), { mono: true, contest: true, figure: false, colorBy: false });
-      return SS.render.sheet(doc(), o, conductor(), { content: 'contest', org: cc.org, memo: cc.memo, legend: cc.legend, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
+      return SS.render.sheet(doc(), o, conductor(), { content: 'contest', org: cc.org, memo: cc.memo, legend: cc.legend, keyLegend: cc.key !== false, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
     };
     const name = () => SS.render.safeName((doc().contest.org || doc().title || '配置図') + '_コンクール提出用');
     $('ctPdf').onclick = async () => {
@@ -3129,7 +3146,8 @@
         <li><b>選び方</b>：右上の <b>⬚</b> で四角く囲んで、<b>➰</b> で自由に囲んで、まとめて選べます。<b>ひな壇（平台）は選ばれません</b>（平台だけを囲んだときは平台を選びます）。</li>
         <li><b>弧のカーブ</b>：「整える」のスライダーで、床の扇形を<b>ゆるい弧〜まっすぐ</b>に変えられます。右端に戻すと元の扇形です。</li>
         <li><b>舞台図を重ねる</b>：左のタブの「もっと…」→「トレース」で、ホールの<b>舞台図（PDF・画像）</b>を読み込むと配置図に重なります。「⤢ 舞台の前の角に合わせる」で図の前の左右の角をタップすると、<b>大きさ・向き・位置が一度に</b>合います。PDFなら縮尺（1/100など）で実寸にもできます。図が大きくはみ出しても大丈夫。「✂ 使う範囲を切り取る」「🔭 図の全体を表示」で調整できます。</li>
-        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。用紙の向き（横・縦）と編成表を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
+        <li><b>★ 首席の印</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席に自動で付きます。「設定」の「首席の★印を表示」で消せます。</li>
+        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
         <li><b>低音を上手の外側に・ホルンのボックス</b>：左のタブの「もっと…」→「一括作成」の「配置のくふう」のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。ホルンを2人ずつ前後に並べるボックス型もここで選べます。</li>

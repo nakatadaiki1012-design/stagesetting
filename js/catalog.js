@@ -163,6 +163,13 @@ window.SS = window.SS || {};
   };
 
   // 1つの部品をSVG文字列にする
+  // 首席の印：★（首席・1番）／★CM（コンサートマスター）。◯の右上に小さく
+  SS.leadMark = it => (it.lead === 'cm' ? '★CM' : it.lead ? '★' : '');
+  function leadText(it, x, y, opts, dx, dy) {
+    if (!it.lead || opts.showLeads === false) return '';
+    const mono = opts.mono || opts.contest;
+    return `<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" dy="0.35em" text-anchor="start" font-size="17" font-weight="700" fill="${mono ? '#111' : '#d99a00'}" stroke="#fff" stroke-width="3.5" paint-order="stroke">${SS.leadMark(it)}</text>`;
+  }
   SS.drawItem = function (it, opts) {
     opts = opts || {};
     const x = +it.x.toFixed(1), y = +it.y.toFixed(1), rot = +(it.rot || 0).toFixed(1);
@@ -193,6 +200,7 @@ window.SS = window.SS || {};
       if (opts.showNumbers && opts.number) {
         text += `<text x="${x + 20}" y="${y - 18}" text-anchor="middle" font-size="13" fill="#b03030" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${opts.number}</text>`;
       }
+      text += leadText(it, x, y, opts, 14, -22);
     } else if (it.type === 'player' && opts.figure !== false && SS.drawFigure) {
       const fig = SS.drawFigure(it, fill, opts);
       body += fig.body;
@@ -214,6 +222,7 @@ window.SS = window.SS || {};
       if (opts.showNumbers && opts.number) {
         text += `<text x="${x + 22}" y="${y - 18}" text-anchor="middle" font-size="13" fill="#b03030" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${opts.number}</text>`;
       }
+      text += leadText(it, x, y, opts, 16, -26);
     } else if (it.type === 'player') {
       const r = opts.seatR || SS.PLAYER_R;
       if (opts.showStands !== false && !opts.sharedStand) {
@@ -236,6 +245,7 @@ window.SS = window.SS || {};
       if (opts.showNumbers && opts.number) {
         text += `<text x="${x + r * 0.8}" y="${y - r * 0.8}" text-anchor="middle" font-size="${(r * 0.45).toFixed(1)}" fill="#b03030" font-weight="700" stroke="#fff" stroke-width="2.5" paint-order="stroke">${opts.number}</text>`;
       }
+      text += leadText(it, x, y, opts, r * 0.55, -r * 0.95);
     } else {
       const c = SS.CATALOG[it.type] || SS.CATALOG.box;
       const w = it.w || c.w || 80, h = it.h || c.h || 60;

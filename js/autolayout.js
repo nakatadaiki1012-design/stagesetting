@@ -1476,6 +1476,27 @@ window.SS = window.SS || {};
     return fallback;
   }
 
+  // 首席の印（★）：2人以上いるパートで、指揮者にいちばん近い席。オーケストラの Vn1 は 1プルトの表（客席側）をコンサートマスター（★CM）に
+  function markLeads(items, c, type) {
+    const ps = items.filter(it => it.type === 'player' && it.label);
+    ps.forEach(it => { delete it.lead; });
+    const by = {};
+    ps.forEach(it => { (by[it.label] = by[it.label] || []).push(it); });
+    Object.keys(by).forEach(l => {
+      const list = by[l];
+      if (list.length < 2 || /^perc$/i.test(l)) return;
+      const d = it => Math.hypot(it.x - c.x, it.y - c.y);
+      const sorted = list.slice().sort((a, b) => d(a) - d(b));
+      if ((type === 'orch' || type === 'strings') && /^vn\s*1$/i.test(l)) {
+        // 1プルト（指揮者にいちばん近い2人）のうち、客席に近い方（表）
+        const desk = sorted.slice(0, 2).sort((a, b) => b.y - a.y);
+        desk[0].lead = 'cm';
+        return;
+      }
+      sorted[0].lead = 'p';
+    });
+  }
+
   function clashCount(items, stage, c, aisle) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
@@ -1527,6 +1548,7 @@ window.SS = window.SS || {};
     }
     const r = best;
     if (st.hina && st.hina.curve && !r.bent) { r.curveFallback = bendTiers(r.items, r.c, stage); r.bent = true; }
+    markLeads(r.items, r.c, st.type);
     // 指揮台（ビッグバンドは指揮者なし、合唱は自分で置く）
     if (st.type !== 'bigband' && st.type !== 'choir') r.items.push({ type: 'podium', x: r.c.x, y: r.c.y, rot: 0 });
     // それでもはみ出したものはステージの内側に寄せる

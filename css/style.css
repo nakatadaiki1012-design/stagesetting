@@ -177,6 +177,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 }
 .ctx-bar button small { font-size: 9.5px; opacity: .8; }
 .ctx-bar button:hover, .ctx-bar button:focus-visible { background: rgba(255,255,255,.14); outline: none; }
+.ctx-bar button.on { color: #ffd24a; }
 .ctx-bar button.danger { color: #ff9a9a; }
 .ctx-edit { display: flex; gap: 6px; padding: 6px 4px 4px; flex-wrap: wrap; }
 .ctx-edit label { display: flex; flex-direction: column; font-size: 11px; gap: 2px; flex: 1; min-width: 110px; }
