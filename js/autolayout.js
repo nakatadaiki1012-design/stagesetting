@@ -1183,10 +1183,30 @@ window.SS = window.SS || {};
     if (n.Bass) { const a = behind(bs.x, bs.y, -30, 75); items.push(...station(null, 'Bass', bs.x, bs.y, -30, 0), { type: 'amp', x: a.x, y: a.y, rot: -30 }); }
     const gt = { x: hornL - 35, y: ySax + 50 };
     if (n.Gt) items.push(...station(null, 'Gt', gt.x, gt.y, -35, 0), { type: 'amp', x: gt.x - 80, y: gt.y + 20, rot: -35 });
-    if (n.Pf) { const [pl] = xRangeD(stage, ySax + 60); const px = Math.max(pl + 180, Math.min(x0 + 190, gt.x - 250)); items.push(...pianoAt(px, ySax + 60)); }
+    if (n.Pf) { const [pl] = xRangeD(stage, ySax + 40); const px = Math.max(pl + 180, Math.min(x0 + 190, gt.x - 250)); items.push(...pianoAt(px, ySax + 40)); } // 舞台の前の縁から1m以上
     rep('Vib', n.Vib).forEach((l, i) => items.push({ type: 'vib', x: cx + Ww / 2 + 100, y: yTb + 20 + i * 140, rot: 90 }, { type: 'player', label: l, x: cx + Ww / 2 + 170, y: yTb + 20 + i * 140, rot: 90 }));
+    // バンド全体（リズム隊＋管）が客席の真ん中から見てかたよらないよう、全体の左右のまん中を舞台の中央へ（舞台からはみ出さない範囲で）
+    {
+      const all = tiers.concat(items), bs = all.map(it => SS.itemAABB(it, {}));
+      const gx0 = Math.min(...bs.map(b => b.x0)) - 20, gx1 = Math.max(...bs.map(b => b.x1)) + 20;
+      const gy0 = Math.min(...bs.map(b => b.y0)), gy1 = Math.max(...bs.map(b => b.y1));
+      const rs = [gy0, (gy0 + gy1) / 2, gy1].map(y => xRangeD(stage, y));
+      const lim0 = Math.max(...rs.map(r => r[0])) + 30, lim1 = Math.min(...rs.map(r => r[1])) - 30;
+      let dx = stage.w / 2 - (gx0 + gx1) / 2;
+      dx = Math.max(lim0 - gx0, Math.min(lim1 - gx1, dx));
+      if (Math.abs(dx) > 1 && lim1 - lim0 >= gx1 - gx0) all.forEach(it => { it.x += dx; });
+    }
+    // 前のふちが弧の舞台では、下手のピアノが縁に近くなる：ピアノ・ベース（とアンプ）を、縁から1m以上になるまで奥へ
+    {
+      const pf = items.find(it => it.type === 'piano');
+      if (pf) {
+        const b = SS.itemAABB(pf, {});
+        const need = EDGE_CLEAR + 4 - (Math.min(R().frontAt(stage, b.x0), R().frontAt(stage, b.x1)) - b.y1);
+        if (need > 0) items.filter(it => it === pf || it.label === 'Pf' || it.label === 'Bass' || (it.type === 'amp' && Math.abs(it.x - pf.x) < 300 && it.y < pf.y)).forEach(it => { it.y -= need; });
+      }
+    }
     const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1) || items.some(it => it.y < AISLE);
-    return { items: tiers.concat(items), c: { x: cx, y: front + 200 }, overlap: over };
+    return { items: tiers.concat(items), c: { x: stage.w / 2, y: front + 200 }, overlap: over };
   }
 
   // ---------------------------------------------------------------- 合唱
@@ -1305,7 +1325,9 @@ window.SS = window.SS || {};
         const qi = secs.indexOf(q), from = qi === 0 && secs.length > 1 ? -1 : qi === secs.length - 1 && secs.length > 1 ? 1 : 0;
         const row = deskRow(m, spS);
         const span = row.length > 1 ? row[row.length - 1][0] - row[0][0] : 0;
-        const shift = from < 0 ? q.w0 + (span / 2 + spS / 2) / R - mid : from > 0 ? q.w1 - (span / 2 + spS / 2) / R - mid : 0;
+        // はしは 84° まで（扇を 180° より広げたときも、舞台の前の縁に近づきすぎない）
+        const e0 = Math.max(q.w0, -rad(84)), e1 = Math.min(q.w1, rad(84));
+        const shift = from < 0 ? e0 + (span / 2 + spS / 2) / R - mid : from > 0 ? e1 - (span / 2 + spS / 2) / R - mid : 0;
         (from > 0 ? row.map(([o, d2]) => [-o, d2]) : row).forEach(([off, dn]) => {
           const a = mid + shift + off / R;
           const p = G().fromPolar(R, a, c);
@@ -1334,7 +1356,7 @@ window.SS = window.SS || {};
         const maxW = Math.max(vr[1] - vr[0] + 10, 70);
         const cap = Math.max(1, Math.floor((rad(maxW) * R) / 95) + 1);
         const m = Math.min(left, cap);
-        const half = ((m - 1) * 95) / 2 / R, edge = rad(fan / 2 + 4);
+        const half = ((m - 1) * 95) / 2 / R, edge = rad(Math.min(fan / 2 + 4, 88)); // 88°まで（舞台の前の縁から1m以上はなす）
         // チェロが下手側（対向配置）のときは、下手の外側へ寄せる（真ん中の奥に来ると、ひな壇が奥へ下がる）
         const mid = midD >= 0 ? Math.min(rad(midD), edge - half) : -edge + half;
         deskRow(m, 95, 84).forEach(([off, dn]) => {
@@ -1560,10 +1582,25 @@ window.SS = window.SS || {};
     });
   }
 
+  // 舞台の前の縁から1m以内に来た人・楽器（とそのまとまり）を、足りない分だけ奥へ（指揮台・マイク・モニターはそのまま）
+  function keepFromEdge(items, stage) {
+    const skip = new Set(['podium', 'hina', 'riser', 'riser46', 'stairs', 'mic', 'micTall', 'monitor', 'text']);
+    items.forEach(it => {
+      if (skip.has(it.type)) return;
+      const b = SS.itemAABB(it, {});
+      const fr = Math.min(R().frontAt(stage, b.x0), R().frontAt(stage, b.x1), R().frontAt(stage, (b.x0 + b.x1) / 2));
+      const need = EDGE_CLEAR + 2 - (fr - b.y1);
+      if (need > 0) {
+        const mates = it.grp ? items.filter(o => o !== it && o.grp === it.grp) : it.type === 'piano' || it.type === 'pianoFull' ? items.filter(o => o.type === 'player' && o.label === 'Pf' && Math.hypot(o.x - it.x, o.y - it.y) < 200) : [];
+        [it, ...mates].forEach(o => { o.y -= need; });
+      }
+    });
+  }
+
   function clashCount(items, stage, c, aisle) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
-    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' ? 1 : w.spots.length), 0);
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || w.kind === 'rail' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
   }
 
   A.build = function (st, stage) {
@@ -1585,6 +1622,7 @@ window.SS = window.SS || {};
         s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, { panel: '46', orient: 'h', deep: 1 }) });
       }
       const r = f(s3, stage, tune);
+      keepFromEdge(r.items, stage);
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
       const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < AISLE - 1).length;
       // 椅子・譜面台・楽器の重なり、ひな壇の縁にかかる人（⚠ 確認と同じ見方）

@@ -181,6 +181,35 @@ window.SS = window.SS || {};
       if (gap < need - 1) out.push({ kind: 'podium', msg: `指揮台から舞台の縁まで${(Math.max(0, gap) / 100).toFixed(2)}mしかありません（${(need / 100).toFixed(1)}m以上あけてください）。指揮台を奥へ動かすか、舞台の奥行を確かめてください`, spots: [pb] });
     }
 
+    // ---- 舞台の前の縁に近すぎる（1m以内。指揮台・花道の上・ピットのふたの上と、マイク・モニターは除く）
+    {
+      const EDGE = 100, AUDIO = new Set(['mic', 'micTall', 'monitor', 'podium', 'stairs']);
+      const onExt = it => (fg.pit && inBox(it, fg.pit)) || (fg.hanamichi && inBox(it, fg.hanamichi)) || (SS.onRunway && SS.onRunway(doc.items, it));
+      const bad = items.filter(it => {
+        if (AUDIO.has(it.type) || PLATFORM.has(it.type) || onExt(it)) return false;
+        const b = bx.get(it);
+        const fr = Math.min(R().frontAt(st, b.x0), R().frontAt(st, b.x1), R().frontAt(st, (b.x0 + b.x1) / 2));
+        return fr - b.y1 < EDGE - 1 && b.y1 < fr + 400; // 舞台の外（客席）に置いた物はここでは数えない
+      });
+      if (bad.length) out.push({ kind: 'edge', msg: `舞台の前の縁から1m以内にあります（客席に落ちないよう、人や楽器は縁から1m以上はなしてください）：${names(bad, hno)}`, spots: bad.map(it => bx.get(it)) });
+    }
+
+    // ---- 立って歌う人・演奏する人が、高い段のいちばん後ろにいる（後ろに柵や壁がない）
+    {
+      const STAND = new Set(['voice', 'perc', 'bass', 'mc']);
+      const backY = (fg.shell ? fg.shell.y : 0) + 45; // 反射板・舞台奥の壁のすぐ前なら、後ろは壁
+      const bad = [];
+      items.filter(it => it.type === 'player' && STAND.has(SS.instrumentKind ? SS.instrumentKind(it.label) : '')).forEach(p => {
+        const pl = platformUnder(p, plats);
+        if (!pl || pl.h < HIGH) return;
+        const q = { x: p.x, y: p.y - 55 }; // 55cm 後ろ
+        if (q.y < backY) return;
+        const behind = plats.some(o => o.h >= pl.h - 5 && (o.it.type === 'hina' ? SS.hinaContains(o.it, q.x, q.y) : inBox(q, o.b)));
+        if (!behind) bad.push(p);
+      });
+      if (bad.length) out.push({ kind: 'rail', msg: `高さ40cm以上の段のいちばん後ろに立つ人がいます。後ろに柵や壁がありません（落ちないよう、柵を付けるか、1列前へ）：${names(bad, hno)}`, spots: bad.map(it => bx.get(it)) });
+    }
+
     // ---- 人や物どうしの重なり（椅子・譜面台・楽器）
     overlaps(doc, items, bx, hno, out);
 

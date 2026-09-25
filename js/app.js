@@ -280,6 +280,17 @@
           if (b.y0 < back) it.y += back - b.y0 + 2;
         });
       });
+      // 舞台の前の縁に近すぎる人・楽器：楽器と奏者のまとまりごと、足りない分だけ奥へ
+      if (has('edge')) attempt(() => {
+        const moved = new Set();
+        d.items.forEach(it => {
+          if (moved.has(it) || ['podium', 'mic', 'micTall', 'monitor', 'text', 'stairs'].includes(it.type) || PLAT.has(it.type) || onExtension(it)) return;
+          const b = SS.itemAABB(it, {});
+          const need = SS.auto.EDGE_CLEAR + 3 - (Math.min(R.frontAt(st, b.x0), R.frontAt(st, b.x1), R.frontAt(st, (b.x0 + b.x1) / 2)) - b.y1);
+          if (need <= 0) return;
+          unitOf(it).forEach(o => { if (!moved.has(o)) { o.y -= need; moved.add(o); } });
+        });
+      });
       // ひな壇の縁・舞台からのはみ出し・段が通路にかかる：✨きれいに整えると同じ
       if (has('tieredge') || has('aisle') || has('shell')) attempt(() => tidyAuto(undefined, true));
       // 重なり：奏者を少しずつ離す。打楽器の楽器が重なるときは、打楽器を並べ直す
