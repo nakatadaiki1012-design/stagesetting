@@ -1416,6 +1416,7 @@ window.SS = window.SS || {};
       topPerc = small.concat(pls);
       perc = perc.filter(it => !topPerc.includes(it));
     }
+    const TIMP_SAFE = st._noSafe ? 0 : 91;
     const TW = timpOnTop ? 330 + topPerc.filter(it => it.type !== 'player').reduce((a2, it) => a2 + (it.w || SS.CATALOG[it.type].w) + 48, 0) : 0;
     if (hrN || brass.length) {
       const i = specs.length;
@@ -1424,7 +1425,8 @@ window.SS = window.SS || {};
       const wh = hrSlots * sp, wb = brass.length * sp, mid = timpOnTop ? TW : 90;
       specs.push({
         // ティンパニの段は 3×6尺を横2列（奥行182cm）：ティンパニ4台と奏者が入る
-        depth: timpOnTop ? Math.max(tierD, 182) : box ? Math.max(tierD, ROW_FRONT + 80 + 45) : tierD,
+        // ティンパニの段：ティンパニ4台と奏者（182cm）＋うしろのゆとり（平台1列。段のいちばん後ろに立たない）
+        depth: timpOnTop ? Math.max(tierD, 182) + TIMP_SAFE : box ? Math.max(tierD, ROW_FRONT + 80 + 45) : tierD,
         panel: timpOnTop && tierD < 182 ? '36' : undefined, orient: timpOnTop && tierD < 182 ? 'h' : undefined,
         want: wh + mid + wb + 60,
         hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[Math.min(i, 3)]) : 0,
@@ -1447,7 +1449,7 @@ window.SS = window.SS || {};
           brass.forEach((l, k) => out.push({ type: 'player', label: l, x: x0 + wh2 + mid + sp2 / 2 + k * sp2, y: yRow, rot: 0 }));
           if (timpOnTop) {
             const zc = x0 + wh2 + TW / 2;
-            A.arrangePerc(timpSet.concat(topPerc), stage, { yTop: yFront - d + 12, x0: zc - TW / 2, x1: zc + TW / 2 });
+            A.arrangePerc(timpSet.concat(topPerc), stage, { yTop: yFront - d + 12 + (d >= 182 + TIMP_SAFE ? TIMP_SAFE : 0), x0: zc - TW / 2, x1: zc + TW / 2 });
             out.push(...timpSet, ...topPerc);
           }
           return out;
@@ -1604,10 +1606,10 @@ window.SS = window.SS || {};
     });
   }
 
-  function clashCount(items, stage, c, aisle) {
+  function clashCount(items, stage, c, aisle, noRail) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
-    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || w.kind === 'rail' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || (w.kind === 'rail' && !noRail) || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
   }
 
   A.build = function (st, stage) {
@@ -1633,7 +1635,7 @@ window.SS = window.SS || {};
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
       const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < AISLE - 1).length;
       // 椅子・譜面台・楽器の重なり、ひな壇の縁にかかる人（⚠ 確認と同じ見方）
-      const clash = clashCount(r.items, stage, r.c, st.type === 'brass'); // ブラスバンド（コの字）は奥の通路もみる
+      const clash = clashCount(r.items, stage, r.c, st.type === 'brass', !!st._noSafe); // ブラスバンド（コの字）は奥の通路もみる
       const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + clash * 2 + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
       r.tune = tune;
@@ -1641,6 +1643,12 @@ window.SS = window.SS || {};
       // ゆったり：同じ点数なら、間隔の広いほうを
       if (!best || score < best.score || (st.space === 'wide' && score === best.score && tune.spacing > best.tune.spacing)) best = Object.assign(r, { score, outside });
       if (score === 0) break;
+    }
+    // オーケストラの「ティンパニは最上段の中央」：ティンパニのうしろのゆとりまで入らない舞台では、ゆとりなしで最上段に置く
+    // （打楽器を弦のすぐ横の床へ移すより、段の後ろの柵の ⚠ を残すほうがよい）
+    if (best.score > 1 && st.type === 'orch' && st.percPlace === 'timpTop' && !st._noSafe && !st._retry) {
+      const r2 = A.build(Object.assign({}, st, { _noSafe: true }), stage);
+      if (r2.score <= 1) return r2;
     }
     // それでも入らないときは、打楽器の場所を変えて試す（最上段 → 最上段＋下手 → 下手）
     if (best.score > 1 && ['band', 'orch', 'brass'].includes(st.type) && !st._retry) {
