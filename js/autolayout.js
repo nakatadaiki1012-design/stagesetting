@@ -1060,8 +1060,11 @@ window.SS = window.SS || {};
     if (onT2) { tiers.push({ type: 'hina', x: cx, y: fe2 - D / 2, w: W, h: D, hgt: (H.heights && H.heights[1]) || std[1], panel: '36', orient: 'h', deep: 2, step: 2, rot: 0 }); yTp = fe2 - Math.max(rowFront(tp), D / 2 - 12); } else yTp = (onT1 ? fe2 : yTb) - 110 * f;
     const line = (labels, y, spc) => labels.map((l, i) => ({ type: 'player', label: l, x: cx + (i - (labels.length - 1) / 2) * spc, y, rot: 0 }));
     items.push(...line(sax, ySax, sp.sax), ...line(tb, yTb, sp.tb), ...line(tp, yTp, sp.tp));
-    // リズム隊（下手にまとめる）：ピアノは前（ピアニストは下手側に座り、バンドの方を向く）、ギターはピアノの後ろ、
-    // ベースはドラムのとなり（おたがいの手と顔が見える）、ドラムはいちばん奥
+    // リズム隊（下手にまとめる）。管のすぐ下手どなりに：
+    // ・ドラム：トロンボーンの台の下手どなり。奏者はセットの後ろに座り、客席と管の方を向く（リードTp・Tbが見え、ベースが右手側に）
+    // ・ベース：ドラムの右手側（下手）の少し前。ドラマーの右手（ライド）とたがいに見える
+    // ・ギター：サックスの列の下手どなりの少し前（アンプは下手どなり）
+    // ・ピアノ：いちばん前の下手。ピアニストは下手側に座り、バンドの方を向く
     // 楽器と、その後ろ（向きの反対側）に奏者。rot：奏者の向き（0＝客席）
     const station = (type, label, x, y, rot, back) => {
       const a = (rot * Math.PI) / 180;
@@ -1069,11 +1072,15 @@ window.SS = window.SS || {};
       out.push({ type: 'player', label, x: x + Math.sin(a) * back, y: y - Math.cos(a) * back, rot });
       return out;
     };
-    const yD = Math.min(yTb, ySax - 200);
-    if (n.Pf) items.push({ type: 'piano', x: x0 + 300, y: ySax, rot: -90 }, { type: 'player', label: 'Pf', x: x0 + 300 - 118, y: ySax + 10, rot: -90 });
-    if (n.Gt) items.push(...station(null, 'Gt', x0 + 380, ySax - 185, -40, 0), { type: 'amp', x: x0 + 440, y: ySax - 250, rot: -40 });
-    if (n.Bass) items.push(...station(null, 'Bass', x0 + 250, yD - 70, -70, 0), { type: 'amp', x: x0 + 250, y: yD - 150, rot: -70 });
-    if (n.Drs) items.push(...station('drums', 'Drs', x0 + 110, yD - 20, -55, 85));
+    const behind = (x, y, rot, d) => { const a = (rot * Math.PI) / 180; return { x: x + Math.sin(a) * d, y: y - Math.cos(a) * d }; };
+    const hornL = Math.min(cx - W / 2, cx - Ww / 2 + 40); // 管（台）の下手のはし
+    const kit = { x: hornL - 125, y: onT1 ? fe1 - 70 : ySax - 150 };
+    if (n.Drs) items.push(...station('drums', 'Drs', kit.x, kit.y, -20, 85));
+    const bs = { x: kit.x - 175, y: kit.y + 20 };
+    if (n.Bass) { const a = behind(bs.x, bs.y, -30, 75); items.push(...station(null, 'Bass', bs.x, bs.y, -30, 0), { type: 'amp', x: a.x, y: a.y, rot: -30 }); }
+    const gt = { x: hornL - 35, y: ySax + 50 };
+    if (n.Gt) items.push(...station(null, 'Gt', gt.x, gt.y, -35, 0), { type: 'amp', x: gt.x - 80, y: gt.y + 20, rot: -35 });
+    if (n.Pf) { const px = Math.min(x0 + 190, gt.x - 250); items.push({ type: 'piano', x: px, y: ySax + 60, rot: -90 }, { type: 'player', label: 'Pf', x: px - 118, y: ySax + 70, rot: -90 }); }
     rep('Vib', n.Vib).forEach((l, i) => items.push({ type: 'vib', x: cx + Ww / 2 + 100, y: yTb + 20 + i * 140, rot: 90 }, { type: 'player', label: l, x: cx + Ww / 2 + 170, y: yTb + 20 + i * 140, rot: 90 }));
     const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1) || items.some(it => it.y < AISLE);
     return { items: tiers.concat(items), c: { x: cx, y: front + 200 }, overlap: over };

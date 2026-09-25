@@ -413,14 +413,20 @@ window.SS = window.SS || {};
           body += `<ellipse cx="${-w / 2 + 6}" rx="6" ry="${h / 2 - 2}" fill="#fff" stroke="${stroke}" stroke-width="1.5"/>`;
           break;
         case 'drums': {
-          const s = Math.min(w, h) / 140;
+          // 上から見たドラムセット（奏者は -y の側＝楽器の後ろに座り、+y の方＝客席の方を向く）
+          // 奏者から見て：右手側（-x）にフロアタムとライド、左手側（+x）にハイハットとクラッシュ、
+          // ひざのあいだにスネア、前にバスドラム（ヘッドは前後）、その上にタム2つ
+          const sx = w / 180, sy = h / 150, s = Math.min(sx, sy);
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="12" fill="none" stroke="#9aa3ae" stroke-dasharray="5 5"/>`;
-          body += `<circle cx="0" cy="${-15 * s}" r="${30 * s}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
-          body += `<circle cx="${-45 * s}" cy="${20 * s}" r="${18 * s}" fill="#fff" stroke="${stroke}" stroke-width="2"/>`;
-          body += `<circle cx="${45 * s}" cy="${20 * s}" r="${22 * s}" fill="#fff" stroke="${stroke}" stroke-width="2"/>`;
-          body += `<circle cx="${-55 * s}" cy="${-35 * s}" r="${20 * s}" fill="#f3e4a2" stroke="${stroke}" stroke-width="1.5"/>`;
-          body += `<circle cx="${55 * s}" cy="${-35 * s}" r="${22 * s}" fill="#f3e4a2" stroke="${stroke}" stroke-width="1.5"/>`;
-          body += `<circle cx="0" cy="${48 * s}" r="${15 * s}" fill="#fff" stroke="${stroke}" stroke-width="1.5"/>`;
+          body += `<rect x="${-28 * sx}" y="${-14 * sy}" width="${56 * sx}" height="${46 * sy}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+          body += `<rect x="${-28 * sx}" y="${-14 * sy}" width="${56 * sx}" height="4" fill="#8a6d3b"/><rect x="${-28 * sx}" y="${32 * sy - 4}" width="${56 * sx}" height="4" fill="#8a6d3b"/>`;
+          body += `<circle cx="${-16 * sx}" cy="${-6 * sy}" r="${14 * s}" fill="#fff" stroke="${stroke}" stroke-width="1.5"/>`;
+          body += `<circle cx="${16 * sx}" cy="${-6 * sy}" r="${13 * s}" fill="#fff" stroke="${stroke}" stroke-width="1.5"/>`;
+          body += `<circle cx="${-52 * sx}" cy="${-26 * sy}" r="${21 * s}" fill="#fff" stroke="${stroke}" stroke-width="2"/>`;
+          body += `<circle cx="${6 * sx}" cy="${-44 * sy}" r="${17 * s}" fill="#fff" stroke="${stroke}" stroke-width="2"/>`;
+          body += `<circle cx="${48 * sx}" cy="${-34 * sy}" r="${18 * s}" fill="#f3e4a2" stroke="${stroke}" stroke-width="1.5"/>`;
+          body += `<circle cx="${52 * sx}" cy="${38 * sy}" r="${22 * s}" fill="#f3e4a2" stroke="${stroke}" stroke-width="1.5"/>`;
+          body += `<circle cx="${-56 * sx}" cy="${32 * sy}" r="${25 * s}" fill="#f3e4a2" stroke="${stroke}" stroke-width="1.5"/>`;
           break;
         }
         case 'keys': {

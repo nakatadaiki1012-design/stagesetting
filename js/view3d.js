@@ -695,11 +695,43 @@ window.SS = window.SS || {};
         box(g, w, 0.04, d, '#444', 0, 0.05, 0);
         break;
       }
-      case 'bd': { const m = cyl(g, 0.46, 0.46, 0.41, '#efeae0', 0, 0.78, 0, { roughness: 0.6 }, 36); m.rotation.z = Math.PI / 2; [-0.2, 0.2].forEach(x => { const r = cyl(g, 0.47, 0.47, 0.04, '#6b3a1c', x, 0.78, 0, undefined, 36); r.rotation.z = Math.PI / 2; }); box(g, 0.5, 0.06, 0.5, '#444', 0, 0.2, 0); tube(g, [0, 0.2, 0], [0, 0.4, 0], 0.03, '#444'); break; }
-      case 'sd': cyl(g, 0.18, 0.18, 0.14, '#ddd', 0, 0.7, 0, METAL, 28); cyl(g, 0.175, 0.175, 0.005, '#f8f8f5', 0, 0.775, 0); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.6, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
-      case 'cym': cyl(g, 0.23, 0.02, 0.03, '#e2c35a', 0, 1.02, 0, METAL, 32); cyl(g, 0.012, 0.012, 1.0, '#555', 0, 0.5, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.2, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
-      case 'tam': { const m = cyl(g, 0.45, 0.45, 0.02, '#b08a3a', 0, 1.1, 0, METAL, 36); m.rotation.x = Math.PI / 2; box(g, w, 0.05, 0.05, '#333', 0, 1.62, 0); [-1, 1].forEach(s => box(g, 0.05, 1.62, 0.05, '#333', s * w / 2, 0.81, 0)); break; }
-      case 'drums': { const b = cyl(g, 0.28, 0.28, 0.4, '#8c1d24', 0, 0.3, 0.25, { roughness: 0.3 }); b.rotation.x = Math.PI / 2; cyl(g, 0.18, 0.18, 0.2, '#8c1d24', -0.3, 0.7, 0.1, { roughness: 0.3 }); cyl(g, 0.2, 0.2, 0.22, '#8c1d24', 0.35, 0.5, 0, { roughness: 0.3 }); cyl(g, 0.2, 0.02, 0.02, '#e2c35a', -0.5, 1.05, -0.2, METAL); cyl(g, 0.23, 0.02, 0.02, '#e2c35a', 0.55, 1.1, -0.2, METAL); break; }
+      case 'bd': {
+        // 2D と同じ向き：胴の直径は横（x）、ヘッドは前後（奏者の方と、その反対）
+        const R = Math.min(w * 0.455, 0.46), L = Math.min(d * 0.68, 0.45), cy = R + 0.25;
+        const m = cyl(g, R, R, L, '#efeae0', 0, cy, 0, { roughness: 0.6 }, 36); m.rotation.x = Math.PI / 2;
+        [-1, 1].forEach(sz => { const r = cyl(g, R + 0.01, R + 0.01, 0.04, '#6b3a1c', 0, cy, sz * (L / 2 - 0.02), undefined, 36); r.rotation.x = Math.PI / 2; const hd = cyl(g, R - 0.02, R - 0.02, 0.005, '#f6f1e4', 0, cy, sz * (L / 2 + 0.001), { roughness: 0.8 }, 36); hd.rotation.x = Math.PI / 2; });
+        // 台（ゆりかご）と脚
+        tube(g, [-R * 0.7, 0.02, 0], [-R * 0.5, cy - R * 0.8, 0], 0.025, '#444', METAL); tube(g, [R * 0.7, 0.02, 0], [R * 0.5, cy - R * 0.8, 0], 0.025, '#444', METAL);
+        box(g, R * 1.6, 0.04, 0.05, '#444', 0, 0.02, -d * 0.35); box(g, R * 1.6, 0.04, 0.05, '#444', 0, 0.02, d * 0.35);
+        [-1, 1].forEach(sx => box(g, 0.05, 0.04, d * 0.7, '#444', sx * R * 0.75, 0.02, 0));
+        break;
+      }
+      case 'sd': cyl(g, w / 2, w / 2, 0.14, '#ddd', 0, 0.7, 0, METAL, 28); cyl(g, w / 2 - 0.005, w / 2 - 0.005, 0.005, '#f8f8f5', 0, 0.775, 0); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.6, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
+      case 'cym': cyl(g, w / 2, 0.02, 0.03, '#e2c35a', 0, 1.02, 0, METAL, 32); cyl(g, 0.012, 0.012, 1.0, '#555', 0, 0.5, 0, METAL); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.2, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;
+      case 'tam': { const m = cyl(g, Math.min(w * 0.45, 0.6), Math.min(w * 0.45, 0.6), 0.02, '#b08a3a', 0, 1.1, 0, METAL, 36); m.rotation.x = Math.PI / 2; box(g, w, 0.05, 0.05, '#333', 0, 1.62, 0); [-1, 1].forEach(s => box(g, 0.05, 1.62, 0.05, '#333', s * w / 2, 0.81, 0)); break; }
+      case 'drums': {
+        // 2D の絵と同じ配置（奏者は -z の側に座り、+z＝前を向く）。x・z は 2D の cm を w・d に合わせて縮める
+        const kx = w / 1.8, kz = d / 1.5, k = Math.min(kx, kz), P = (x, z) => [x * kx / 100, z * kz / 100];
+        const shell = { roughness: 0.3 };
+        // バスドラム（ヘッドは前後）
+        const [bx, bz] = P(0, 9), bR = 0.28 * k, bL = 0.44 * kz;
+        const b = cyl(g, bR, bR, bL, '#8c1d24', bx, bR + 0.02, bz, shell, 28); b.rotation.x = Math.PI / 2;
+        [-1, 1].forEach(sz => { const hd = cyl(g, bR - 0.01, bR - 0.01, 0.005, '#f2efe8', bx, bR + 0.02, bz + sz * (bL / 2 + 0.002), { roughness: 0.8 }, 28); hd.rotation.x = Math.PI / 2; });
+        // タム2つ（バスドラムの上、奏者の方へ少し傾ける）
+        [[-16, -6, 0.14], [16, -6, 0.13]].forEach(([x, z, r]) => { const [px, pz] = P(x, z); const t = cyl(g, r * k, r * k, 0.2, '#8c1d24', px, 0.78, pz, shell, 20); t.rotation.x = -0.35; });
+        // フロアタム（奏者の右手側）
+        { const [px, pz] = P(-52, -26); cyl(g, 0.21 * k, 0.21 * k, 0.4, '#8c1d24', px, 0.42, pz, shell, 20); cyl(g, 0.2 * k, 0.2 * k, 0.005, '#f2efe8', px, 0.623, pz); [0, 2.1, 4.2].forEach(a => tube(g, [px + Math.sin(a) * 0.2 * k, 0.3, pz + Math.cos(a) * 0.2 * k], [px + Math.sin(a) * 0.24 * k, 0, pz + Math.cos(a) * 0.24 * k], 0.008, '#666', METAL)); }
+        // スネア（ひざのあいだ）
+        { const [px, pz] = P(6, -44); cyl(g, 0.17 * k, 0.17 * k, 0.14, '#ddd', px, 0.62, pz, METAL, 24); cyl(g, 0.165 * k, 0.165 * k, 0.005, '#f8f8f5', px, 0.693, pz); [0, 2.1, 4.2].forEach(a => tube(g, [px, 0.55, pz], [px + Math.sin(a) * 0.22, 0, pz + Math.cos(a) * 0.22], 0.008, '#666', METAL)); }
+        // シンバル：ハイハット（左手側・2枚）、クラッシュ（左の前）、ライド（右の前）
+        [[48, -34, 0.18, 0.88, 2], [52, 38, 0.22, 1.35, 1], [-56, 32, 0.25, 1.15, 1]].forEach(([x, z, r, h, n]) => {
+          const [px, pz] = P(x, z);
+          cyl(g, 0.012, 0.012, h, '#555', px, h / 2, pz, METAL, 8);
+          for (let i = 0; i < n; i++) cyl(g, r * k, 0.02, 0.025, '#e2c35a', px, h + i * 0.03, pz, METAL, 28);
+          [0, 2.1, 4.2].forEach(a => tube(g, [px, 0.25, pz], [px + Math.sin(a) * 0.25, 0, pz + Math.cos(a) * 0.25], 0.008, '#666', METAL));
+        });
+        break;
+      }
       case 'piano': case 'pianoFull': makeGrandPiano(g, w, d); break;
       case 'upright': box(g, w, 1.25, d, '#0c0c0e', 0, 0.62, 0, { roughness: 0.15 }); box(g, w * 0.9, 0.02, 0.15, '#f7f7f2', 0, 0.75, d / 2 + 0.07); break;
       case 'harp': makeHarp(g, w, d); break;
