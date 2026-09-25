@@ -199,7 +199,8 @@ window.SS = window.SS || {};
       const STAND = new Set(['voice', 'perc', 'bass', 'mc']);
       const backY = (fg.shell ? fg.shell.y : 0) + 45; // 反射板・舞台奥の壁のすぐ前なら、後ろは壁
       const bad = [];
-      items.filter(it => it.type === 'player' && STAND.has(SS.instrumentKind ? SS.instrumentKind(it.label) : '')).forEach(p => {
+      // ティンパニ奏者はふつう高いいすに座るので数えない
+      items.filter(it => it.type === 'player' && !/^tim/i.test(it.label || '') && STAND.has(SS.instrumentKind ? SS.instrumentKind(it.label) : '')).forEach(p => {
         const pl = platformUnder(p, plats);
         if (!pl || pl.h < HIGH) return;
         const q = { x: p.x, y: p.y - 55 }; // 55cm 後ろ
