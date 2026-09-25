@@ -808,6 +808,17 @@
     if (drag.kind === 'pan' && drag.tapClear && !drag.didMove) {
       S.sel.clear();
     }
+    // 動かしたあと、段の縁にかかった人を自動で段の上か床へ（Alt を押しながらだと、そのまま）
+    if (!e.altKey && ((drag.kind === 'move' && drag.moved) || (drag.it && drag.it.type === 'hina'))) {
+      const movedIds = drag.orig ? [...drag.orig.keys()] : [drag.it.id];
+      const movedItems = movedIds.map(byId).filter(Boolean);
+      const tiersMoved = movedItems.filter(it => it.type === 'hina');
+      const near = players().filter(p => movedItems.includes(p) || tiersMoved.some(t => SS.hinaContains(t, p.x, p.y, 30)));
+      // 段を動かしたとき：動かす前に段の上にいなかった人（床の人）は、段から降ろすほうを先に
+      const wasFloor = p => !movedItems.includes(p) && !tiersMoved.some(t => { const o = drag.orig ? drag.orig.get(t.id) : null; return SS.hinaContains(o ? Object.assign({}, t, { x: o.x, y: o.y }) : t, p.x, p.y, 0); });
+      const n = settleOnTiers(near, wasFloor);
+      if (n) { render(); toast(`段の縁にかかっていた${n}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true); }
+    }
     if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
       // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ
       const now = Date.now();
@@ -1209,6 +1220,53 @@
       if (Math.abs(q.x - it.x) > 0.5 || Math.abs(q.y - it.y) > 0.5) { it.x = q.x; it.y = q.y; n++; }
     });
     return n;
+  }
+
+  /**
+   * 段の縁にかかった人を、そっと整える（ドラッグを離したとき自動で）
+   * - いすの真ん中が段の上なら、いすと譜面台が段にきちんと乗るまで段の内側へ（譜面台が前の段に落ちていれば少し後ろへ）
+   * - いすの真ん中が段の外なら、段から降ろす（いちばん近い前・横のふちの外へ）
+   * 打楽器と奏者のまとまりは、いっしょに動かす。動かした人の数を返す
+   */
+  // floorFirst(p)：その人は床にいた（段が動いてきた）ので、段から降ろすほうを先に試す
+  function settleOnTiers(list, floorFirst) {
+    const tiers = doc().items.filter(it => it.type === 'hina');
+    if (!tiers.length) return 0;
+    const fig = { figure: true };
+    const NO_STAND = ['perc', 'drs', 'pf', 'hp', 'voice'];
+    const top = (x, y, m) => tiers.filter(t => SS.hinaContains(t, x, y, m)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
+    const straddle = (x, y, r) => tiers.some(t => SS.hinaContains(t, x, y, r) && !SS.hinaContains(t, x, y, -r));
+    const ok = p => {
+      if (straddle(p.x, p.y, 18)) return false;
+      if (NO_STAND.includes(SS.instrumentKind(p.label))) return true;
+      const sp = SS.standPoint(p, fig), t = top(p.x, p.y, 0);
+      if (straddle(sp.x, sp.y, 8)) return false;
+      return !t || top(sp.x, sp.y, 0) === t;
+    };
+    let moved = 0;
+    const done = new Set();
+    list.filter(it => it.type === 'player' && !onExtension(it)).forEach(p => {
+      if (done.has(p) || ok(p)) return;
+      const t = top(p.x, p.y, 18);
+      if (!t) return;
+      const cands = [];
+      const onto = () => {
+        const q = { x: p.x, y: p.y, rot: p.rot, label: p.label };
+        G.clampOnTier(q, t, 26);
+        // 譜面台が段から落ちるときは、向きの反対（後ろ）へ少しずつ
+        const a = ((p.rot || 0) * Math.PI) / 180;
+        for (let k = 0; k < 16 && !ok(q) && SS.hinaContains(t, q.x, q.y, -26); k++) { q.x += Math.sin(a) * 6; q.y -= Math.cos(a) * 6; }
+        return q;
+      };
+      const off = () => { const q = { x: p.x, y: p.y, rot: p.rot, label: p.label }; G.pushOffTier(q, t, 30); return q; };
+      if (SS.hinaContains(t, p.x, p.y, 0) && !(floorFirst && floorFirst(p))) cands.push(onto(), off()); else cands.push(off(), onto());
+      const best = cands.find(q => ok(q) && SS.render.insideStage(doc().stage, q, 20));
+      if (!best) return;
+      const dx = best.x - p.x, dy = best.y - p.y;
+      [p, ...matesOf(p)].forEach(o => { o.x += dx; o.y += dy; done.add(o); });
+      moved++;
+    });
+    return moved;
   }
 
   // 花道（設備・部品）・オーケストラピットのふたの上（舞台の外でも、そのままにしてよい所）。花道の部品そのものも舞台の外に置いてよい
@@ -3177,6 +3235,7 @@
         <li><b>安全の確認</b>：人や楽器が <b>舞台の前の縁から1m以内</b> にあるとき、高さ40cm以上の段の <b>いちばん後ろに立つ人</b> がいるとき（後ろに柵や壁がない）も「⚠ 確認」に出ます。縁に近いものは「🔧 自動で直す」で奥へ動かせます。</li>
         <li><b>上級機能</b>：花道・出入り口（扉）・司会（マイクスタンド）は「部品」の <b>「舞台の設備・その他」</b>、3D の「💡 照明」は 3D の下の <b>「⋯ くわしく」</b> の中です。</li>
         <li><b>オーケストラ</b>：弦はプルト（2人で1本）ごとに指揮者を中心とした弧に沿って同じ間隔・同じ向きで並べ、Vn1・Vn2・Va・Vc の境目に少しすき間を空けます。ティンパニは最上段の真ん中、大太鼓・小太鼓などはそのとなりにまとめ、弦のすぐ横の床には置きません。</li>
+        <li><b>段の縁の自動の手直し</b>：人や段をドラッグして離すと、ひな壇の縁にかかった人を、段の上か床に自動できちんと置き直します（打楽器は楽器ごと）。そのままにしたいときは Alt を押しながら動かします。</li>
         <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF にも「用意する物の表を入れる」で入れられます。</li>
         <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
         <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
