@@ -658,7 +658,7 @@ window.SS = window.SS || {};
         cyl(g, r, r, 0.012, '#f3ead7', 0, 0.75, 0, { roughness: 0.85 }, 32);
         for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; tube(g, [Math.sin(a) * r * 1.02, 0.74, Math.cos(a) * r * 1.02], [Math.sin(a) * r * 0.9, 0.5, Math.cos(a) * r * 0.9], 0.008, '#b0b3b8', METAL); }
         [0, 2.1, 4.2].forEach(a => tube(g, [Math.sin(a) * r * 0.5, 0.35, Math.cos(a) * r * 0.5], [Math.sin(a) * r * 0.85, 0.02, Math.cos(a) * r * 0.85], 0.02, '#555', METAL));
-        box(g, 0.12, 0.05, 0.25, '#333', 0, 0.03, r * 0.9);
+        box(g, 0.12, 0.05, 0.25, '#333', 0, 0.03, -r * 0.9); // ペダルは奏者の側
         break;
       }
       case 'marimba': case 'marimba43': case 'xylo': case 'vib': case 'glock': {

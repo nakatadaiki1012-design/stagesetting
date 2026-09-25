@@ -254,7 +254,7 @@ window.SS = window.SS || {};
           const r = Math.min(w, h) / 2;
           body += `<circle r="${r}" fill="#c7a36b" stroke="#7a5a2a" stroke-width="2"/>`;
           body += `<circle r="${r * 0.86}" fill="#f6ecd9" stroke="#b69868" stroke-width="1.5"/>`;
-          body += `<rect x="-9" y="${r - 2}" width="18" height="12" rx="3" fill="#6b6f76"/>`;
+          body += `<rect x="-9" y="${-r - 10}" width="18" height="12" rx="3" fill="#6b6f76"/>`; // ペダル（奏者の側）
           break;
         }
         case 'marimba': {
