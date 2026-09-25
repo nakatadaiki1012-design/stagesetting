@@ -907,10 +907,14 @@ window.SS = window.SS || {};
         const bl = Math.max(...rs.map(r => r[0])), br = Math.min(...rs.map(r => r[1]));
         const Wmax = Math.floor((br - bl) / P.w) * P.w, zx0 = (bl + br) / 2 - Wmax / 2 + 20, zx1 = (bl + br) / 2 + Wmax / 2 - 20;
         const dep = A.arrangePerc(cloneList(parts.back), stage, { yTop: 0, x0: zx0, x1: zx1 });
-        let D = Math.ceil((dep + 20) / P.d) * P.d;
+        // 立って演奏する人のうしろに、段の上で 55cm のゆとりを残す（段のいちばん後ろに立たない）。奥行が足りなければ、ゆとりなし
+        const SAFE = 55;
+        let D = Math.ceil((dep + 20 + SAFE) / P.d) * P.d;
+        let safe = SAFE;
+        if (D > yFront - AISLE) { D = Math.ceil((dep + 20) / P.d) * P.d; safe = 0; }
         const room = yFront - AISLE;
         if (D > room) { out.percCramped = true; D = Math.max(P.d, Math.floor(room / P.d) * P.d); }
-        out.backDepth = A.arrangePerc(parts.back, stage, { yTop: yFront - D + 10, x0: zx0, x1: zx1 });
+        out.backDepth = A.arrangePerc(parts.back, stage, { yTop: yFront - D + 10 + safe, x0: zx0, x1: zx1 });
         const top = Math.max(...out.tiers.map(t => t.hgt || 0));
         const next = [21.2, 42.4, 63.6, 84.8].find(v => v > top + 1) || top; // 最上段より1段高く
         out.tiers.push(percPlatform(parts.back, stage, H, next, yFront, out.tiers.length + 1, D));
@@ -1249,7 +1253,10 @@ window.SS = window.SS || {};
       let yr = yFront;
       if (ri > 0) {
         const fe = yFront - 60 - (ri - 1) * D, yc = fe - D / 2;
-        tiers.push({ type: 'hina', x: c.x, y: yc, w: W, h: D, hgt: (H.heights && H.heights[ri - 1]) || std[Math.min(ri - 1, 3)], panel: H.panel || '36', orient: H.orient || 'h', step: ri, rot: 0 });
+        const hgt = (H.heights && H.heights[ri - 1]) || std[Math.min(ri - 1, 3)];
+        // いちばん後ろの高い段（40cm以上）は、平台を1列足して、立つ人のうしろに段を残す（後ろに落ちないように。奥行が足りればだけ）
+        const extra = ri === rowsN - 1 && hgt >= 40 && fe - D - pn.d >= AISLE + 5 ? pn.d : 0;
+        tiers.push({ type: 'hina', x: c.x, y: fe - (D + extra) / 2, w: W, h: D + extra, hgt, panel: H.panel || '36', orient: H.orient || 'h', step: ri, rot: 0 });
         yr = yc;
       }
       const off = ri % 2 ? sp / 2 : 0;
