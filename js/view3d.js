@@ -638,6 +638,13 @@ window.SS = window.SS || {};
           });
         } else makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100);
         break;
+      case 'door': {
+        // 出入り口：壁の側（-z）に両開きの扉と枠
+        const z = -d / 2 + 0.05;
+        box(g, w + 0.16, 2.5, 0.12, '#2a1a10', 0, 1.25, z, { roughness: 0.5 });
+        [-1, 1].forEach(sx => { box(g, w / 2 - 0.02, 2.36, 0.14, '#6a4a30', sx * w / 4, 1.18, z, { roughness: 0.45 }); box(g, 0.03, 0.3, 0.16, '#d8d0c0', sx * 0.06, 1.1, z, METAL); });
+        break;
+      }
       case 'runway': {
         // 花道：舞台と同じ高さ（客席の床から1m）の板張りの床
         const tex = planksTexture('#c08d55', 48, true); tex.repeat.set(w / 2.2, d / 2.2);
@@ -1012,7 +1019,7 @@ window.SS = window.SS || {};
         scene.add(p.g);
         playerGroups.set(it.id, { g: p.g, head: p.head, it, base });
       } else {
-        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina' || it.type === 'runway';
+        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina' || it.type === 'runway' || it.type === 'door';
         const g = makeItem(it, color, rh.get(it) || 0.2);
         if (!g) return;
         if (!isRiser && it.type !== 'podium') {

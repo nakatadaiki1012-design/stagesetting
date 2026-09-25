@@ -67,6 +67,7 @@ window.SS = window.SS || {};
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
     stairs:  { name: '上がり段', cat: '基本', w: 91, h: 60, shape: 'stairs', fill: '#efe3cc', label: '', note: 'ひな壇に上がる階段。段の横か前にくっつけて置く（矢印の向きに上がる）' },
     runway:  { name: '花道（張り出し）', cat: '基本', w: 180, h: 540, shape: 'runway', fill: '#f1e2c6', label: '花道', note: '舞台と同じ高さの張り出し（花道・張り出し舞台）。客席の方や舞台の横へ出して置けます。長さ・幅・向きは自由に。上に置いた人や物は舞台の外でもそのまま' },
+    door:    { name: '出入り口（扉）', cat: '基本', w: 180, h: 134, shape: 'door', fill: '#2f9e57', label: '出入口', note: '舞台の横か奥の壁の近くに置くと、壁にくっついて内側を向きます。緑の太線が扉、点線の所（扉の前1.2m）に人や物があると「⚠ 確認」に出ます' },
     text:    { name: '文字', cat: '基本', w: 200, h: 50, shape: 'text', label: 'テキスト', fontSize: 36 },
     box:     { name: '四角', cat: '基本', w: 120, h: 70, shape: 'rect', fill: '#f2f2f2', label: '' },
     circle:  { name: '丸', cat: '基本', w: 80, h: 80, shape: 'circle', fill: '#f2f2f2', label: '' },
@@ -406,6 +407,15 @@ window.SS = window.SS || {};
           }
           break;
         }
+        case 'door': {
+          // 出入り口：-y の側（壁）に扉（緑の太線）、+y の側（舞台の内側）に空けておく所（点線）と、扉の開く向き
+          const top = -h / 2, bar = 14;
+          body += `<rect x="${-w / 2}" y="${top + bar}" width="${w}" height="${h - bar}" fill="#e8f6ec" fill-opacity=".55" stroke="#2f9e57" stroke-width="2" stroke-dasharray="8 6"/>`;
+          const r2 = Math.min(w / 2, h - bar);
+          body += `<path d="M${-w / 2} ${top + bar}v${r2}A${r2} ${r2} 0 0 0 0 ${top + bar}M${w / 2} ${top + bar}v${r2}A${r2} ${r2} 0 0 1 0 ${top + bar}" fill="none" stroke="#2f9e57" stroke-width="1.5" stroke-opacity=".7"/>`;
+          body += `<rect x="${-w / 2}" y="${top}" width="${w}" height="${bar}" fill="#2f9e57"/>`;
+          break;
+        }
         case 'runway': {
           // 舞台と同じ板張りの床。縦の板目と、ふちの線
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="${fill}" stroke="#8a6d3b" stroke-width="3"/>`;
@@ -497,6 +507,10 @@ window.SS = window.SS || {};
       } else if (lab && ['micTall', 'monitor', 'outlet', 'tap'].includes(shape)) {
         // 小さい機材の名前（例：L・R・1番）は、形の下に黒い字で
         text += `<text x="${x}" y="${(y + Math.max(w, h) / 2 + 14).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(lab)}</text>`;
+      } else if (lab && shape === 'door') {
+        // 名前は空けておく所の真ん中に、いつも横書きで
+        const a = (rot * Math.PI) / 180, oy = 14 / 2 + 8;
+        text += `<text x="${(x - Math.sin(a) * oy).toFixed(1)}" y="${(y + Math.cos(a) * oy).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="22" font-weight="700" fill="#1f7a42" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(lab)}</text>`;
       } else if (lab && shape !== 'cable') {
         const fs = fitFont(lab, Math.max(w, h) * 0.9, Math.min(34, Math.max(12, Math.min(w, h) * 0.38)));
         const tc = shape === 'riser' || shape === 'runway' ? '#8a6d3b' : textColorFor(fill);

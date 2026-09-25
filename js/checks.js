@@ -5,7 +5,7 @@ window.SS = window.SS || {};
 (function (SS) {
   const R = () => SS.render;
   // 形のない書き込み（文字・四角・丸）は、物ではないので確かめない
-  const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap', 'runway']); // 床のケーブル・コンセントも通れるので除く（花道は床の続き）
+  const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap', 'runway', 'door']); // 床のケーブル・コンセントも通れるので除く（花道は床の続き）
   const HEAVY = new Set(['marimba', 'marimba43', 'timp32', 'timp29', 'timp26', 'timp23', 'timp', 'piano', 'pianoFull', 'vib', 'chimes', 'xylo', 'tam']);
   const PLATFORM = new Set(['hina', 'riser', 'riser46']);
   const STEP_OK = 25; // 1回で上り下りできる高さの差（cm）。平台1段（21.2cm）まで
@@ -85,6 +85,37 @@ window.SS = window.SS || {};
     return g;
   };
   const DOOR_CLEAR = 120;
+
+  // 出入り口（部品）の前の、空けておく所（扉の太線をのぞいた四角）。向きを変えた出入り口も
+  const DOOR_BAR = 14;
+  // 出入り口の前の所（向きどおりの四角の4つの角）
+  function doorZonePts(d) {
+    const sz = SS.itemSize(d, {}), a = ((d.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const y0 = -sz.h / 2 + DOOR_BAR, y1 = sz.h / 2, hw = sz.w / 2;
+    return [[-hw, y0], [hw, y0], [hw, y1], [-hw, y1]].map(([x, y]) => [d.x + x * c - y * s, d.y + x * s + y * c]);
+  }
+  // 2つの四角（角の点の並び）が重なるか（分離軸。m cm 以上食い込んだら重なり）
+  function polysHit(A, B, m) {
+    const axes = [];
+    [A, B].forEach(P => P.forEach((p, i) => { const q = P[(i + 1) % P.length]; axes.push([q[1] - p[1], p[0] - q[0]]); }));
+    return axes.every(([ax, ay]) => {
+      const L = Math.hypot(ax, ay) || 1, pr = P => P.map(p => (p[0] * ax + p[1] * ay) / L);
+      const a = pr(A), b = pr(B);
+      return Math.min(Math.max(...a), Math.max(...b)) - Math.max(Math.min(...a), Math.min(...b)) > m;
+    });
+  }
+  SS.doorBlocked = function (d, b) {
+    return polysHit(doorZonePts(d), [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]], 2);
+  };
+  // かんたん編成・自動で直す用：出入り口の前の所（図の座標の外枠）と、どちら側か（L 下手・R 上手・B 奥）
+  SS.doorZones = function (stage, items) {
+    const out = (SS.fixtureGeom(stage).doors || []).map(d => ({ side: d.side, zone: d.zone }));
+    (items || []).filter(it => it.type === 'door').forEach(d => {
+      const b = SS.itemAABB(d, {}), s = Math.sin(((d.rot || 0) * Math.PI) / 180);
+      out.push({ side: Math.abs(s) < 0.7 ? 'B' : (b.x0 + b.x1) / 2 < stage.w / 2 ? 'L' : 'R', zone: b, it: d });
+    });
+    return out;
+  };
 
   // 花道（部品）の上か（向きを変えた花道も）
   SS.onRunway = function (items, p) {
@@ -179,6 +210,10 @@ window.SS = window.SS || {};
     fg.doors.forEach(d => {
       const bad = hitList(b => overlap(b, d.zone, 1));
       if (bad.length) out.push({ kind: 'door', msg: `${d.side === 'L' ? '下手' : '上手'}の出入り口の前（${cm(DOOR_CLEAR)}）がふさがっています（出入りや楽器の運び込みができません）：${names(bad, hno)}`, spots: [d.zone].concat(bad.map(it => bx.get(it))) });
+    });
+    doc.items.filter(it => it.type === 'door').forEach(d => {
+      const bad = items.filter(it => SS.doorBlocked(d, bx.get(it)));
+      if (bad.length) out.push({ kind: 'door', msg: `${d.label && d.label !== '出入口' ? '「' + d.label + '」の' : ''}出入り口の前（1.2m）がふさがっています（出入りや楽器の運び込みができません）：${names(bad, hno)}`, spots: [SS.itemAABB(d, {})].concat(bad.map(it => bx.get(it))) });
     });
     if (fg.hanamichi) {
       const bad = hitList(b => overlap(b, fg.hanamichi, 1));

@@ -198,7 +198,7 @@
       d.items = JSON.parse(snap);
       if (bi >= 0) fns[bi]();
     };
-    const FIXED = new Set(['text', 'cable', 'outlet', 'tap', 'runway', 'podium', 'stairs']);
+    const FIXED = new Set(['text', 'cable', 'outlet', 'tap', 'runway', 'podium', 'stairs', 'door']);
     const PLAT = new Set(['hina', 'riser', 'riser46']);
     const hit = (a, b) => a.x0 < b.x1 - 1 && a.x1 > b.x0 + 1 && a.y0 < b.y1 - 1 && a.y1 > b.y0 + 1;
     const unitOf = it => {
@@ -233,7 +233,7 @@
           }
           // 段が出入り口の前にかかるとき：出入り口の側の平台を1列ずつ外して段をせまくする（外した所の人・物は内側へ）
           if (!ok && PLAT.has(it.type) && !(it.rot % 180)) {
-            const doors = (SS.fixtureGeom(st).doors || []).filter(dr => hit(SS.itemAABB(it, {}), dr.zone));
+            const doors = SS.doorZones(st, d.items).filter(dr => dr.side !== 'B' && hit(SS.itemAABB(it, {}), dr.zone));
             for (const dr of doors) {
               const pw = (SS.panelSize ? SS.panelSize(it).w : 182) || 182, b = SS.itemAABB(it, {});
               const over = dr.side === 'L' ? dr.zone.x1 - b.x0 : b.x1 - dr.zone.x0;
@@ -697,6 +697,7 @@
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
         }
         drag.orig.forEach((o, oid) => { const it = byId(oid); if (it) { it.x = o.x + dx; it.y = o.y + dy; } });
+        if (primIt && primIt.type === 'door' && drag.orig.size === 1 && !e.altKey) snapDoor(primIt);
         render();
         break;
       }
@@ -1059,6 +1060,22 @@
   document.addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; svg.classList.toggle('panning', S.mode === 'pan'); } });
 
   // ------------------------------------------------------------ 追加・複製
+  // 出入り口の部品：いちばん近い壁（下手・上手・奥）にくっつけ、舞台の内側を向ける（壁から2.5m以上はなれていれば、そのまま）
+  function snapDoor(it) {
+    const st = doc().stage, R = SS.render, h = SS.itemSize(it, {}).h;
+    const [xl, xr] = R.xRange(st, it.y);
+    const cand = [{ k: 'L', d: Math.abs(it.x - xl) }, { k: 'R', d: Math.abs(it.x - xr) }, { k: 'B', d: Math.abs(it.y) }].sort((a, b) => a.d - b.d)[0];
+    if (cand.d > 250 + h / 2) return;
+    if (cand.k === 'B') { const [bl, br] = R.xRange(st, 1); it.y = h / 2; it.x = Math.max(bl + SS.itemSize(it, {}).w / 2, Math.min(br - SS.itemSize(it, {}).w / 2, it.x)); it.rot = 0; return; }
+    const y = Math.max(20, Math.min(R.frontAt(st, it.x) - 20, it.y));
+    const [a0, a1] = R.xRange(st, y - 20), [b0, b1] = R.xRange(st, y + 20);
+    const tx = cand.k === 'L' ? b0 - a0 : b1 - a1, L = Math.hypot(tx, 40), t = { x: tx / L, y: 40 / L };
+    const n = cand.k === 'L' ? { x: t.y, y: -t.x } : { x: -t.y, y: t.x };
+    const wx = cand.k === 'L' ? R.xRange(st, y)[0] : R.xRange(st, y)[1];
+    it.x = Math.round(wx + n.x * h / 2); it.y = Math.round(y + n.y * h / 2);
+    it.rot = Math.round((Math.atan2(-n.x, n.y) * 180) / Math.PI);
+  }
+
   function addItem(type, extra, at) {
     const c = SS.CATALOG[type];
     const r = svg.getBoundingClientRect();
@@ -1076,6 +1093,7 @@
       if (type === 'text') it.fontSize = c.fontSize;
       if (type === 'hina') { it.hgt = 21.2; it.panel = '36'; it.orient = 'h'; }
     }
+    if (type === 'door') snapDoor(it);
     pushHistory();
     doc().items.push(it);
     S.sel = new Set([it.id]);
@@ -3171,11 +3189,13 @@
     const lights = {};
     d.items.filter(it => it.type === 'player' && it.light).forEach(it => { lights[it.label] = (lights[it.label] || 0) + 1; });
     const hadAuto = d.items.some(it => it.auto);
-    const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp', 'micTall', 'monitor', 'cable', 'outlet', 'tap', 'stairs']);
+    const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp', 'micTall', 'monitor', 'cable', 'outlet', 'tap', 'stairs', 'door', 'runway', 'mc']);
     d.items = d.items.filter(it => (hadAuto ? !it.auto : keepTypes.has(it.type)));
     // ビッグバンドは指揮者なし（指揮台は置かない）
     if (st.type === 'bigband') d.items = d.items.filter(it => it.type !== 'podium');
+    SS.auto.ctxItems = d.items; // 出入り口の部品を避けて並べる
     const r = SS.auto.build(st, d.stage);
+    SS.auto.ctxItems = null;
     opts().arcCurve = 1; opts().arcBase = null; syncArcCurve();
     r.items.forEach(it => {
       it.id = newId();

@@ -5,12 +5,13 @@ window.SS = window.SS || {};
   const A = {};
   const G = () => SS.geo;
   const R = () => SS.render;
-  // 舞台の左右のはし。上手・下手の出入り口（扉）の前 1.2m は使わない（扉の高さ ±1m の所は、そのぶん内側に）
+  // 舞台の左右のはし。上手・下手の出入り口（ホールの設備・部品）の前 1.2m は使わない（扉の高さ ±1m の所は、そのぶん内側に）
+  // A.ctxItems：いまの配置図の物（部品の出入り口を見るため。かんたん編成で並べるときに app.js が入れる）
   const xRangeD = (stage, y) => {
     const [l, r] = R().xRange(stage, y);
-    const ds = SS.fixtureGeom ? SS.fixtureGeom(stage).doors || [] : [];
+    const ds = SS.doorZones ? SS.doorZones(stage, A.ctxItems).filter(d => d.side !== 'B') : [];
     let a = l, b = r;
-    ds.forEach(d => { if (y + 100 > d.y0 && y - 100 < d.y1) { if (d.side === 'L') a = Math.max(a, d.zone.x1 + 5); else b = Math.min(b, d.zone.x0 - 5); } });
+    ds.forEach(d => { if (y + 100 > d.zone.y0 && y - 100 < d.zone.y1) { if (d.side === 'L') a = Math.max(a, d.zone.x1 + 5); else b = Math.min(b, d.zone.x0 - 5); } });
     return [a, b];
   };
   const rep = (label, n) => Array.from({ length: Math.max(0, n | 0) }, () => label);
@@ -703,7 +704,9 @@ window.SS = window.SS || {};
       x0 = Math.min(x0, it.x - w / 2); x1 = Math.max(x1, it.x + w / 2);
     });
     const cx = (x0 + x1) / 2;
-    const [bl, br] = xRangeD(stage, Math.max(0, AISLE));
+    // 段の奥から前までのどこでも舞台（と出入り口の前）からはみ出さない幅
+    const rs = [Math.max(0, AISLE), yLimit - D, yLimit - D / 2, yLimit].map(y => xRangeD(stage, y));
+    const bl = Math.max(...rs.map(r => r[0])), br = Math.min(...rs.map(r => r[1]));
     let W = Math.ceil((x1 - x0 + 40) / P.w) * P.w;
     W = Math.min(W, Math.floor((br - bl) / P.w) * P.w);
     const x = Math.max(bl + W / 2, Math.min(br - W / 2, cx));
