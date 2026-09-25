@@ -1566,7 +1566,7 @@
     }
     if (one && one.type === 'player') {
       h += `<label class="field">名前<input id="propName" value="${esc(one.name || '')}" placeholder="例: 山田"></label>`;
-      h += `<label class="field">首席の印<select id="propLead"><option value="">なし</option><option value="p"${one.lead === 'p' ? ' selected' : ''}>★ 首席（1番）</option><option value="cm"${one.lead === 'cm' ? ' selected' : ''}>★CM コンサートマスター</option></select></label>`;
+      h += `<label class="field">首席の印<select id="propLead"><option value="">なし</option><option value="p"${one.lead === 'p' ? ' selected' : ''}>★ パートのトップ（首席）</option><option value="cm"${one.lead === 'cm' ? ' selected' : ''}>★CM コンサートマスター</option></select></label>`;
     }
     if (allPlayers) {
       const lit = sel.filter(it => it.light).length;
@@ -2980,22 +2980,24 @@
         <label class="check" style="align-self:end"><input type="checkbox" id="ctLegend"${c.legend ? ' checked' : ''}> 編成表（人数）を入れる</label>
       </div>
       <label class="check"><input type="checkbox" id="ctKey"${c.key !== false ? ' checked' : ''}> 記号の見方（◯＝いす・×＝譜面台 など）を図の下に入れる</label>
-      <p class="hint small">椅子は○、譜面台は×、パート名は◯の中、首席は★の白黒の図です。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
+      <label class="check"><input type="checkbox" id="ctLeads"${c.leads ? ' checked' : ''}> ★（パートのトップ・首席）を入れる</label>
+      <p class="hint small">椅子は○、譜面台は×、パート名は◯の中の白黒の図です（★ パートのトップは、選んだときだけ入ります）。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
       <div id="ctResult"></div>
     `);
     let pushed = false;
     const save = () => {
       if (!pushed) { pushHistory(); pushed = true; }
-      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked, key: $('ctKey').checked });
+      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked, key: $('ctKey').checked, leads: $('ctLeads').checked });
       scheduleSave();
       $('ctResult').innerHTML = '';
     };
     ['ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
-    ['ctOrient', 'ctLegend', 'ctKey'].forEach(id => $(id).addEventListener('change', save));
+    ['ctOrient', 'ctLegend', 'ctKey', 'ctLeads'].forEach(id => $(id).addEventListener('change', save));
     const sheet = pxPerMm => {
       save();
       const cc = doc().contest;
-      const o = Object.assign(renderOpts(), { mono: true, contest: true, figure: false, colorBy: false });
+      // ★（パートのトップ）は、選んだときだけ入れる（はじめは入れない）
+      const o = Object.assign(renderOpts(), { mono: true, contest: true, figure: false, colorBy: false, showLeads: !!cc.leads });
       return SS.render.sheet(doc(), o, conductor(), { content: 'contest', org: cc.org, memo: cc.memo, legend: cc.legend, keyLegend: cc.key !== false, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
     };
     const name = () => SS.render.safeName((doc().contest.org || doc().title || '配置図') + '_コンクール提出用');
@@ -3166,7 +3168,7 @@
         <li><b>右の「選択中」</b>：何も選んでいないときは「✨ きれいに整える」だけ。扇形・横一列・向き・重なり・左右反転・間隔などの細かいボタンは <b>「くわしく整える」</b> の箱の中です。</li>
         <li><b>安全の確認</b>：人や楽器が <b>舞台の前の縁から1m以内</b> にあるとき、高さ40cm以上の段の <b>いちばん後ろに立つ人</b> がいるとき（後ろに柵や壁がない）も「⚠ 確認」に出ます。縁に近いものは「🔧 自動で直す」で奥へ動かせます。</li>
         <li><b>上級機能</b>：花道・出入り口（扉）・司会（マイクスタンド）は「部品」の <b>「舞台の設備・その他」</b>、3D の「💡 照明」は 3D の下の <b>「⋯ くわしく」</b> の中です。</li>
-        <li><b>★ 首席の印</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席に自動で付きます。「設定」の「首席の★印を表示」で消せます。</li>
+        <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
         <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>

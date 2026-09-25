@@ -879,7 +879,7 @@ window.SS = window.SS || {};
       item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35"/>`, 'いす');
       item(x => `<path d="M${x + 0.4} ${ky - 1.4}l2.8 2.8M${x + 3.2} ${ky - 1.4}l-2.8 2.8" stroke="#111" stroke-width="0.45" stroke-linecap="round"/>`, '譜面台');
       if (standing) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35" stroke-dasharray="0.7 0.5"/>`, '立って演奏する人（打楽器など）');
-      if (lead) item(x => `<text x="${x + 1.8}" y="${ky}" dy="0.35em" text-anchor="middle" font-weight="700">★</text>`, cm ? '首席（★CM＝コンサートマスター）' : '首席');
+      if (lead) item(x => `<text x="${x + 1.8}" y="${ky}" dy="0.35em" text-anchor="middle" font-weight="700">★</text>`, cm ? 'パートのトップ（首席）・★CM＝コンサートマスター' : 'パートのトップ（首席）');
       out += g + '</g>';
     }
     // 編成表（情報欄の左、入らなければ上）

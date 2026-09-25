@@ -1600,6 +1600,8 @@ window.SS = window.SS || {};
         desk[0].lead = 'cm';
         return;
       }
+      // コントラバス：客席側・前の方（チェロに近い側）の人／ブラスバンドのソロ・コルネット：最前列のいちばん端（下手の外側・前）の人
+      if (/^cb$/i.test(l) || (type === 'brass' && /^solocnt$/i.test(l))) { list.slice().sort((a, b) => b.y - a.y)[0].lead = 'p'; return; }
       sorted[0].lead = 'p';
     });
   }
