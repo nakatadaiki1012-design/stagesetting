@@ -310,7 +310,14 @@ window.SS = window.SS || {};
   // 後ろの列：ソプラノ → レピアノ・2nd・3rd コルネット → ベース（真ん中） → バストロンボーン → トロンボーン
   A.BRASS_LAYOUTS = {
     std: {
-      name: '標準・台形のコの字（前：コルネット・ホルン・バリトン・ユーフォ／後ろ：コルネット・ベース・トロンボーン）',
+      name: '標準・台形のコの字（前の列の端に首席ソロ・コルネット、ソプラノは後ろの列）',
+      rows: [
+        ['SoloCnt', 'Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1', 'Euph'],
+        ['RepCnt', 'SopCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
+      ],
+    },
+    sopEnd: {
+      name: 'コの字・ソプラノを後ろの列の端に（これまでの標準）',
       rows: [
         ['SoloCnt', 'Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1', 'Euph'],
         ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
@@ -836,7 +843,12 @@ window.SS = window.SS || {};
     }
     const hasTopPerc = parts.top.length > 0;
     if (!rows.length && !hasTopPerc) {
-      if (parts.back.length) { out.backDepth = A.arrangePerc(parts.back, stage, { yTop: AISLE }); out.items.push(...parts.back); }
+      if (parts.back.length) {
+        // 段がないとき（ブラスバンドなど）：舞台の奥の壁ぎわではなく、バンドのすぐ後ろに
+        const dep = A.arrangePerc(cloneList(parts.back), stage, { yTop: 0 });
+        out.backDepth = A.arrangePerc(parts.back, stage, { yTop: Math.max(AISLE, yFront0 - dep - 20) });
+        out.items.push(...parts.back);
+      }
       return out;
     }
     // 段の横幅（いちばん広い列に合わせ、平台の枚数単位）
