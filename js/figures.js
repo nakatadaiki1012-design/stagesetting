@@ -226,6 +226,46 @@ window.SS = window.SS || {};
     const need = items.filter(it => it.type === 'player' && !['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label)));
     return { stands: need.length - pairs.size / 2, shared: pairs.size / 2 };
   };
+  // 用意する物（備品）の数の目安：いす（種類ごと）・譜面台・指揮台・平台・箱馬・上がり段・譜面灯
+  // 戻り値 [{ key, name, n, note }]（数が0のものは入れない）。編成表・図面の「用意する物」で使う
+  SS.equipmentSummary = function (items) {
+    const ps = items.filter(it => it.type === 'player');
+    const kindOf = it => SS.instrumentKind(it.label);
+    const isTimp = it => /^tim/i.test(String(it.label || '').trim());
+    const count = f => ps.filter(f).length;
+    const STANDING = ['voice', 'perc', 'bass'];
+    const out = [];
+    const add = (key, name, n, note) => { if (n > 0) out.push({ key, name, n, note: note || '' }); };
+    // いす
+    add('chair', '奏者のいす', count(it => !isTimp(it) && !STANDING.includes(kindOf(it)) && !['cb', 'drs', 'pf'].includes(kindOf(it))) + items.filter(it => it.type === 'chair').length, 'ふつうの奏者用のいす（ハープ・ギターもふくむ）');
+    add('bassChair', 'バス椅子（高いいす）', count(it => kindOf(it) === 'cb'), 'コントラバス用');
+    add('timpChair', 'ティンパニ椅子（高いいす）', count(isTimp), 'ティンパニ奏者用');
+    add('pianoBench', 'ピアノ椅子', Math.max(count(it => kindOf(it) === 'pf'), items.filter(it => /^piano/.test(it.type) || it.type === 'upright').length), '高さを変えられるもの');
+    add('drumThrone', 'ドラム椅子', count(it => kindOf(it) === 'drs'), 'ドラムセットに付いていることが多い');
+    // 譜面台
+    const sc = SS.standCount(items);
+    add('stand', '譜面台', sc.stands + items.filter(it => it.type === 'stand').length, sc.shared ? `うち2人で1本 ${sc.shared}本` : '');
+    const pod = items.filter(it => it.type === 'podium').length;
+    add('podium', '指揮台', pod);
+    add('cstand', '指揮者用譜面台', Math.max(pod, items.filter(it => it.type === 'cstand').length));
+    // ひな壇・平台
+    if (SS.hinaSummary) {
+      const sm = SS.hinaSummary(items);
+      Object.keys(sm.pan).forEach(k => add('panel:' + k, '平台 ' + k, sm.pan[k], 'ひな壇'));
+      Object.keys(sm.leg).forEach(k => add('leg:' + k, k, sm.leg[k], 'ひな壇の足'));
+      const hb = Object.keys(sm.leg).filter(k => /箱馬/.test(k));
+      if (hb.length > 1) add('legTotal', '箱馬（合計）', hb.reduce((a, k) => a + sm.leg[k], 0), '向きのちがう箱馬を合わせた数');
+    }
+    const r36 = items.filter(it => it.type === 'riser').length, r46 = items.filter(it => it.type === 'riser46').length;
+    add('riser36', '平台 3×6尺（1枚ずつ置いたもの）', r36);
+    add('riser46', '平台 4×6尺（1枚ずつ置いたもの）', r46);
+    add('stairs', '上がり段', items.filter(it => it.type === 'stairs').length);
+    // 譜面灯
+    if (SS.powerSummary) add('light', '譜面灯', SS.powerSummary(items).lights);
+    // 立って演奏・歌う人（いすなし）
+    add('standing', '立って演奏・歌う人（いすなし）', count(it => !isTimp(it) && STANDING.includes(kindOf(it))), '打楽器・合唱など');
+    return out;
+  };
   // 2人で見る譜面台（2人の譜面台の位置の真ん中、2人の向きの平均）
   SS.sharedStandSVG = function (a, b, opts) {
     const p = SS.standPoint(a, opts), q = SS.standPoint(b, opts);

@@ -798,13 +798,29 @@ window.SS = window.SS || {};
       if (pw && pw.need) legendItems.push({ color: '#fff', text: `電源 ${pw.need}口` });
       legendItems.total = c.total;
     }
+    // 用意する物（いす・譜面台・平台・箱馬など）。名前が長いので2マス分の幅で
+    if (!assembly && ex.equip && SS.equipmentSummary) {
+      const eq = SS.equipmentSummary(doc.items);
+      if (eq.length) {
+        if (!legendItems.length) legendItems.title = '用意する物（目安）';
+        else legendItems.push({ text: '用意する物（目安）：', plain: true, bold: true, wide: true });
+        eq.forEach(e => legendItems.push({ text: `${e.name} ×${e.n}`, plain: true, wide: true }));
+      }
+    }
     const cellW = 25, lfs = 3, lrow = 4.6;
     const sideW = PW - 2 * M - TBW - 4; // 情報欄の左の空き
     const textLen = t => [...t].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.58), 0);
     // 部材の表は1行が長いので、字が小さくなりすぎるときは情報欄の上に出す
     const legendBeside = !contest && sideW >= 55 && (!legendItems.oneCol || Math.max(...legendItems.map(c => textLen(c.text))) * 2.3 <= sideW);
     const lCols = legendItems.oneCol ? 1 : Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
-    const legendH = legendItems.length ? 5 + Math.ceil(legendItems.length / lCols) * lrow : 0;
+    // マス目の位置（wide の項目は2マス。行の終わりに入らなければ次の行へ。見出しの項目は行のはじめから）
+    let slot = 0;
+    legendItems.forEach(c => {
+      const span = c.wide && lCols >= 2 ? 2 : 1;
+      if ((c.bold && c.plain && slot % lCols) || (slot % lCols) + span > lCols) slot = Math.ceil(slot / lCols) * lCols;
+      c.slot = slot; slot += c.bold && c.plain ? lCols : span;
+    });
+    const legendH = legendItems.length ? 5 + Math.ceil(slot / lCols) * lrow : 0;
     // コンクール提出用：記号の見方（凡例）を図のすぐ下に1行で
     const keyOn = contest && ex.keyLegend !== false;
     const keyH = keyOn ? 7 : 0;
@@ -915,8 +931,9 @@ window.SS = window.SS || {};
         });
         legendItems.length = 0;
       }
-      legendItems.forEach((c, i) => {
-        const x = lx + (i % lCols) * cellW, y = ly + 5 + Math.floor(i / lCols) * lrow + 2.6;
+      legendItems.forEach(c => {
+        const x = lx + (c.slot % lCols) * cellW, y = ly + 5 + Math.floor(c.slot / lCols) * lrow + 2.6;
+        if (c.plain) { const room = (c.bold ? lCols : c.wide && lCols >= 2 ? 2 : 1) * cellW - 2, fs2 = Math.max(1.8, Math.min(lfs, room / textLen(c.text))); out += `<text x="${x}" y="${y}" font-size="${fs2.toFixed(2)}"${c.bold ? ' font-weight="700"' : ''}>${SS.esc(c.text)}</text>`; return; }
         out += `<circle cx="${x + 1.4}" cy="${y - 1}" r="1.3" fill="${opts.colorBy && !opts.mono ? c.color : '#fff'}" stroke="#333" stroke-width="0.25"/>`;
         out += `<text x="${x + 3.6}" y="${y}">${SS.esc(c.text)}</text>`;
       });

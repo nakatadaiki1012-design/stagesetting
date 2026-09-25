@@ -1759,6 +1759,13 @@
       x.parts.forEach(p => { h += `<tr><td data-part="${SS.esc(p.label)}" style="cursor:pointer" title="クリックで選択">　${SS.esc(p.label)}</td><td>${p.n}</td></tr>`; });
     });
     h += '</table><p class="hint small">パート名をクリックすると、そのパートの人をまとめて選べます。</p>';
+    // 用意する物（備品）の数
+    const eq = SS.equipmentSummary(doc().items);
+    if (eq.length) {
+      h += '<h3 style="margin-top:16px">用意する物（目安）</h3><table class="count-table eq-table">';
+      eq.forEach(e => { h += `<tr><td>${SS.esc(e.name)}${e.note ? `<span class="small eq-note">${SS.esc(e.note)}</span>` : ''}</td><td>${e.n}</td></tr>`; });
+      h += '</table><p class="hint small">図に置いた人・物から数えた目安です。ホールの備品の数と、予備も確かめてください。画像・PDF にも「用意する物の表を入れる」で入れられます。</p>';
+    }
     const sm = SS.hinaSummary(doc().items);
     if (sm.rows.length) {
       const { pan, leg } = sm;
@@ -3033,6 +3040,7 @@
       ${infoFieldsHTML()}
       ${paperFieldsHTML()}
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
+      <label class="check"><input type="checkbox" id="exEquip"> 用意する物の表（いす・譜面台・平台・箱馬など）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
       ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで入れる</label>' : ''}
       <label class="field" style="margin-top:10px">画質（PNG・PDF）
@@ -3046,7 +3054,7 @@
         <button class="btn" id="exSvg" title="拡大しても荒れない形式">SVG</button>
       </div>
     `);
-    const extra = () => ({ legend: $('exLegend').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
+    const extra = () => ({ legend: $('exLegend').checked, equip: $('exEquip').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
     bindInfoFields(() => { $('exResult').innerHTML = ''; });
     bindPaper(extra);
@@ -3169,6 +3177,7 @@
         <li><b>安全の確認</b>：人や楽器が <b>舞台の前の縁から1m以内</b> にあるとき、高さ40cm以上の段の <b>いちばん後ろに立つ人</b> がいるとき（後ろに柵や壁がない）も「⚠ 確認」に出ます。縁に近いものは「🔧 自動で直す」で奥へ動かせます。</li>
         <li><b>上級機能</b>：花道・出入り口（扉）・司会（マイクスタンド）は「部品」の <b>「舞台の設備・その他」</b>、3D の「💡 照明」は 3D の下の <b>「⋯ くわしく」</b> の中です。</li>
         <li><b>オーケストラ</b>：弦はプルト（2人で1本）ごとに指揮者を中心とした弧に沿って同じ間隔・同じ向きで並べ、Vn1・Vn2・Va・Vc の境目に少しすき間を空けます。ティンパニは最上段の真ん中、大太鼓・小太鼓などはそのとなりにまとめ、弦のすぐ横の床には置きません。</li>
+        <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF にも「用意する物の表を入れる」で入れられます。</li>
         <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
         <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>

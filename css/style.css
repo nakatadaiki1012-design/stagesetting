@@ -498,3 +498,6 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 @media (max-width: 700px) {
   .v3-light { top: auto; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; width: auto; max-height: 46vh; }
 }
+
+/* 編成表：用意する物 */
+.eq-table .eq-note { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
