@@ -271,21 +271,30 @@ window.SS = window.SS || {};
     },
   };
   // ブラスバンドの並び方（前の列から。1列の中は 下手→上手＝指揮者から見て左→右）
+  // 列は「台形のコの字」：指揮者の左の腕（下手）→ 奥の辺 → 右の腕（上手）の順に並ぶ。腕は客席の方へ少しひらく
   // 前の列：ソロ・コルネット → フリューゲル → テナーホルン → バリトン → ユーフォニアム
   // 後ろの列：ソプラノ → レピアノ・2nd・3rd コルネット → ベース（真ん中） → バストロンボーン → トロンボーン
   A.BRASS_LAYOUTS = {
     std: {
-      name: '標準（前：コルネット・ホルン・バリトン・ユーフォ／後ろ：コルネット・ベース・トロンボーン）',
+      name: '標準・台形のコの字（前：コルネット・ホルン・バリトン・ユーフォ／後ろ：コルネット・ベース・トロンボーン）',
       rows: [
         ['SoloCnt', 'Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1', 'Euph'],
         ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
       ],
     },
     hornsIn: {
-      name: 'ホルン・フリューゲルを内側に（前：コルネット・ユーフォ／中：ホルン・バリトン）',
+      name: 'コの字・ホルン・フリューゲルを内側に（前：コルネット・ユーフォ／中：ホルン・バリトン）',
       rows: [
         ['SoloCnt', 'Euph'],
         ['Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1'],
+        ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
+      ],
+    },
+    arc: {
+      name: '扇形（吹奏楽のような弧。前：コルネット・ホルン・バリトン・ユーフォ／後ろ：コルネット・ベース・トロンボーン）',
+      arc: true,
+      rows: [
+        ['SoloCnt', 'Flh', 'SoloHn', '1stHn', '2ndHn', 'Bar2', 'Bar1', 'Euph'],
         ['SopCnt', 'RepCnt', '2ndCnt', '3rdCnt', 'BbBass', 'EbBass', 'B.Tb', 'Tb2', 'Tb1'],
       ],
     },
@@ -853,6 +862,27 @@ window.SS = window.SS || {};
   // 上手の外側の弧に置く低音グループ（内側→外側の順。弦バスがいちばん外）
   const LOW_GROUP = ['B.Cl', 'Euph', 'Tuba', 'St.B'];
 
+  // 台形のコの字（ブラスバンド）：指揮者 c を基準に、奥の辺は R だけ後ろ、腕は客席の方へひらく。
+  // 下手の腕の前のはし → 奥の左の角 → 奥の右の角 → 上手の腕の前のはし（R を 1 としたときの形）
+  const U_PTS = [[-0.95, -0.18], [-0.55, -1], [0.55, -1], [0.95, -0.18]];
+  const U_LEN = U_PTS.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - U_PTS[i][0], p[1] - U_PTS[i][1]), 0);
+  function uRow(n, R, sp, c) {
+    const L = U_LEN * R;
+    const step = n > 1 ? Math.min(Math.max(sp, L / (n - 1)), sp * 1.5) : 0;
+    let s = (L - step * (n - 1)) / 2;
+    const out = [];
+    for (let i = 0; i < n; i++, s += step) {
+      let k = 0, t = s / R;
+      while (k < U_PTS.length - 2) { const seg = Math.hypot(U_PTS[k + 1][0] - U_PTS[k][0], U_PTS[k + 1][1] - U_PTS[k][1]); if (t <= seg) break; t -= seg; k++; }
+      const [a, b] = [U_PTS[k], U_PTS[k + 1]], seg = Math.hypot(b[0] - a[0], b[1] - a[1]), f = Math.min(1, t / seg);
+      const p = { x: c.x + R * (a[0] + (b[0] - a[0]) * f), y: c.y + R * (a[1] + (b[1] - a[1]) * f) };
+      out.push({ x: p.x, y: p.y, rot: G().faceAngle(p, c) });
+    }
+    return out;
+  }
+  // 人数から、コの字がちょうど入る R
+  const uNeed = (n, sp) => (n > 1 ? ((n - 1) * sp) / U_LEN : 0);
+
   function band(st, stage, tune, lowFallback) {
     const n = st.counts;
     const lowOn = st.lowOuter && !lowFallback;
@@ -871,8 +901,17 @@ window.SS = window.SS || {};
     // 床の扇形
     let R0 = r0;
     // 列の中身は { v: ラベル, c: 前の列からはみ出してきたか }
-    const queue = floorRows.map(r => hornSlots(r, st.hornBox).map(v => ({ v, c: false })));
+    const uShape = st.type === 'brass' && !(A.BRASS_LAYOUTS[st.layout] || {}).arc;
+    const queue = uShape ? [] : floorRows.map(r => hornSlots(r, st.hornBox).map(v => ({ v, c: false })));
     let maxR = r0 - gap;
+    if (uShape) {
+      // ブラスバンド：1列を1つのコの字に（はみ出させない。人数が多い列は、コの字を大きくする）
+      floorRows.forEach((labels, i) => {
+        R0 = Math.max(i ? maxR + gap : r0, uNeed(labels.length, sp));
+        uRow(labels.length, R0, sp, c).forEach((p, j) => items.push({ type: 'player', label: labels[j], x: p.x, y: p.y, rot: p.rot }));
+        maxR = R0;
+      });
+    }
     while (queue.length) {
       let row = queue.shift();
       if (!row.length) continue;
@@ -938,7 +977,7 @@ window.SS = window.SS || {};
       const hasTimp = !!kl.timp;
       perc = percItems(hasTimp ? 4 : 0, kl.stations, rep('Perc', P).map((l, i) => (hasTimp && i === 0 ? 'Timp' : l)));
     }
-    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place, { c, R: maxR, yMax: c.y - 40 - (n.Pf ? 230 : 0) - (n.Hp ? 140 : 0), side: !n.Pf && !n.Hp, pts: items.slice() });
+    const tp = tiersAndPerc(stage, c.y - maxR - tune.clear, rowSpecs, H, perc, place, { c, R: uShape ? maxR * 1.15 : maxR, yMax: c.y - 40 - (n.Pf ? 230 : 0) - (n.Hp ? 140 : 0), side: !n.Pf && !n.Hp, pts: items.slice() });
     items.push(...tp.items);
     // 低音グループ：いちばん外側の床の弧の、さらに外側（上手側）に並べる
     if (lowLabels.length) {
@@ -1420,10 +1459,10 @@ window.SS = window.SS || {};
     return fallback;
   }
 
-  function clashCount(items, stage, c) {
+  function clashCount(items, stage, c, aisle) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
-    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin').reduce((a, w) => a + (w.kind === 'loadin' ? 1 : w.spots.length), 0);
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' ? 1 : w.spots.length), 0);
   }
 
   A.build = function (st, stage) {
@@ -1448,7 +1487,7 @@ window.SS = window.SS || {};
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
       const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < AISLE - 1).length;
       // 椅子・譜面台・楽器の重なり、ひな壇の縁にかかる人（⚠ 確認と同じ見方）
-      const clash = clashCount(r.items, stage, r.c);
+      const clash = clashCount(r.items, stage, r.c, st.type === 'brass'); // ブラスバンド（コの字）は奥の通路もみる
       const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + clash * 2 + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
       r.tune = tune;
