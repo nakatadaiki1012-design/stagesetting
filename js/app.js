@@ -336,6 +336,8 @@
     }
     if (after.length < before) toast(`⚠ ${before}件 → ${after.length}件になりました（「戻す」で元に戻せます）`, true);
   }
+  // 「選択中」タブの ✨ きれいに整える（下のボタンと同じ）
+  $('selTidy').onclick = () => $('btnTidy').click();
   $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; renderWarnList(); };
   function warnMarksSVG(k) {
     const ws = S.warnings || [];
@@ -1540,6 +1542,7 @@
     // 選んだときだけ使うボタンは、選んだときだけ出す
     $('alignBox').hidden = sel.length < 2;
     document.querySelectorAll('#selTab .sel-only').forEach(b => { b.hidden = !sel.length; });
+    $('selOps').hidden = !sel.length;
     if (!sel.length) { info.classList.remove('hidden'); box.innerHTML = ''; return; }
     info.classList.add('hidden');
     const allPlayers = sel.every(it => it.type === 'player');

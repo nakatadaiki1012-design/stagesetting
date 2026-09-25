@@ -355,27 +355,31 @@
       <div id="selInfo" class="hint">何も選ばれていません。<br>部品をクリック（タップ）すると選べます。<br>何もないところをドラッグすると範囲で選べます。</div>
       <div id="selProps"></div>
 
-      <h3>整える</h3>
-      <p class="hint small">選んだもの（何も選ばなければ奏者全員）が対象です。</p>
-      <div class="tool-grid">
-        <button class="btn" data-act="tidyArc" title="同じ列の人を同じ円の上に等間隔で並べます">◠ 扇形にそろえる</button>
-        <button class="btn" data-act="tidyLine" title="同じ列の人を横一直線に等間隔で並べます">▭ 横一列にそろえる</button>
-        <button class="btn" data-act="faceConductor" title="指揮者の方を向かせます">👀 指揮者を向く</button>
-        <button class="btn" data-act="faceFront" title="客席の方を向かせます">⬇ 正面を向く</button>
-        <button class="btn" data-act="fixOverlap" title="重なっている人を少しずつ離します">↔ 重なりを直す</button>
-        <button class="btn" data-act="mirror" title="指揮者を中心に左右を入れ替えます">⇋ 左右反転</button>
-        <button class="btn" data-act="arrangePerc" title="打楽器と奏者を舞台奥にきれいに並べます">🥁 打楽器を整列</button>
-        <button class="btn" data-act="fitStage" title="ステージからはみ出したものを内側に入れます">⬚ ステージ内に収める</button>
-        <button class="btn" data-act="alignHina" title="ひな壇の段を、いちばん広い段と同じ横幅・同じ中心にそろえます">▤ ひな壇の幅をそろえる</button>
-        <button class="btn" data-act="spreadOut" title="奏者どうしの間隔を少し広げます（舞台・ひな壇からはみ出さない所まで）">↔ 間隔を広げる</button>
-        <button class="btn" data-act="spreadIn" title="奏者どうしの間隔を少しつめます（重ならない所まで）">→← 間隔をつめる</button>
-      </div>
-      <label class="field arc-curve">弧のカーブ <b id="arcCurveVal">扇形</b>
-        <input type="range" id="arcCurve" min="0" max="100" step="1" value="100">
-        <span class="range-ends"><span>まっすぐ</span><span>ゆるい</span><span>扇形</span></span>
-      </label>
-      <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
-      <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>
+      <button class="btn primary wide" id="selTidy" title="列を見つけて、間隔・向きをそろえます">✨ きれいに整える</button>
+      <details class="fold" id="tidyMore">
+        <summary>くわしく整える</summary>
+        <p class="hint small">選んだもの（何も選ばなければ奏者全員）が対象です。</p>
+        <div class="tool-grid">
+          <button class="btn" data-act="tidyArc" title="同じ列の人を同じ円の上に等間隔で並べます">◠ 扇形にそろえる</button>
+          <button class="btn" data-act="tidyLine" title="同じ列の人を横一直線に等間隔で並べます">▭ 横一列にそろえる</button>
+          <button class="btn" data-act="faceConductor" title="指揮者の方を向かせます">👀 指揮者を向く</button>
+          <button class="btn" data-act="faceFront" title="客席の方を向かせます">⬇ 正面を向く</button>
+          <button class="btn" data-act="fixOverlap" title="重なっている人を少しずつ離します">↔ 重なりを直す</button>
+          <button class="btn" data-act="mirror" title="指揮者を中心に左右を入れ替えます">⇋ 左右反転</button>
+          <button class="btn" data-act="arrangePerc" title="打楽器と奏者を舞台奥にきれいに並べます">🥁 打楽器を整列</button>
+          <button class="btn" data-act="fitStage" title="ステージからはみ出したものを内側に入れます">⬚ ステージ内に収める</button>
+          <button class="btn" data-act="alignHina" title="ひな壇の段を、いちばん広い段と同じ横幅・同じ中心にそろえます">▤ ひな壇の幅をそろえる</button>
+          <button class="btn" data-act="spreadOut" title="奏者どうしの間隔を少し広げます（舞台・ひな壇からはみ出さない所まで）">↔ 間隔を広げる</button>
+          <button class="btn" data-act="spreadIn" title="奏者どうしの間隔を少しつめます（重ならない所まで）">→← 間隔をつめる</button>
+        </div>
+        <label class="field arc-curve">弧のカーブ <b id="arcCurveVal">扇形</b>
+          <input type="range" id="arcCurve" min="0" max="100" step="1" value="100">
+          <span class="range-ends"><span>まっすぐ</span><span>ゆるい</span><span>扇形</span></span>
+        </label>
+        <label class="check"><input type="checkbox" id="optSymmetric" checked> 左右対称にする</label>
+        <label class="check"><input type="checkbox" id="optEvenRows" checked> 列と列の間隔もそろえる</label>
+        <div class="tool-grid"><button class="btn" data-act="selectAll">全部選ぶ</button></div>
+      </details>
       <div id="alignBox" hidden>
       <h4>位置合わせ（2つ以上選択）</h4>
       <div class="tool-grid six">
@@ -389,12 +393,13 @@
         <button class="btn span3" data-act="distV" title="縦方向に等間隔">縦に等間隔</button>
       </div>
       </div>
+      <div id="selOps" hidden>
       <h4>操作</h4>
       <div class="tool-grid">
         <button class="btn sel-only" data-act="duplicate" hidden>⧉ 複製</button>
         <button class="btn danger sel-only" data-act="delete" hidden>🗑 削除</button>
-        <button class="btn" data-act="selectAll">全部選ぶ</button>
         <button class="btn sel-only" data-act="selectSamePart" hidden>同じパートを選ぶ</button>
+      </div>
       </div>
     </section>
 
