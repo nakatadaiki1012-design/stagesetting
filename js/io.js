@@ -112,7 +112,7 @@ window.SS = window.SS || {};
     return Math.max(R.frontY(stage), g.pit ? g.pit.y1 : 0, g.hanamichi ? g.hanamichi.y1 : 0, ...rw);
   };
 
-  // ホールの設備（反射板・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道）。入力したものだけ描く
+  // ホールの設備（反射板・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道・出入り口）。入力したものだけ描く
   // k：文字の大きさの基準（marksSVG と同じ。画面でも図面でも、見た目の大きさを一定にする）
   R.fixturesSVG = function (stage, k) {
     if (!SS.fixtureGeom) return '';
@@ -144,6 +144,13 @@ window.SS = window.SS || {};
       s += `<path d="M${-80} ${p.y}H${p.x0}M${p.x1} ${p.y}H${stage.w + 80}" stroke="#39414d" stroke-width="16" stroke-linecap="butt"/>`;
       s += lab(p.x0 + 4 / k, p.y + 8 + fs * 0.7, 'プロセニアム');
     }
+    // 出入り口：壁のすき間（緑の太線）と、空けておく所（点線）
+    (g.doors || []).forEach(d => {
+      const z = d.zone, out = d.side === 'L' ? -1 : 1;
+      s += `<rect x="${z.x0}" y="${z.y0}" width="${z.x1 - z.x0}" height="${z.y1 - z.y0}" fill="#e8f6ec" fill-opacity=".6" stroke="#2f9e57" stroke-width="2" stroke-dasharray="8 6"/>`;
+      s += `<line x1="${d.x + out * 4}" y1="${d.y0}" x2="${d.x + out * 4}" y2="${d.y1}" stroke="#2f9e57" stroke-width="10"/>`;
+      s += `<text x="${(d.x + out * (14 + 4 / k)).toFixed(1)}" y="${((d.y0 + d.y1) / 2).toFixed(1)}" dy="0.35em" text-anchor="${d.side === 'L' ? 'end' : 'start'}" font-size="${fs}" font-weight="700" fill="#2f9e57" ${halo}>出入口</text>`;
+    });
     if (g.shell) {
       const y = g.shell.y, [xl, xr] = R.xRange(stage, Math.max(0, y));
       s += `<line x1="${xl}" y1="${y}" x2="${xr}" y2="${y}" stroke="#39414d" stroke-width="10"/>`;

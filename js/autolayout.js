@@ -5,6 +5,14 @@ window.SS = window.SS || {};
   const A = {};
   const G = () => SS.geo;
   const R = () => SS.render;
+  // 舞台の左右のはし。上手・下手の出入り口（扉）の前 1.2m は使わない（扉の高さ ±1m の所は、そのぶん内側に）
+  const xRangeD = (stage, y) => {
+    const [l, r] = R().xRange(stage, y);
+    const ds = SS.fixtureGeom ? SS.fixtureGeom(stage).doors || [] : [];
+    let a = l, b = r;
+    ds.forEach(d => { if (y + 100 > d.y0 && y - 100 < d.y1) { if (d.side === 'L') a = Math.max(a, d.zone.x1 + 5); else b = Math.min(b, d.zone.x0 - 5); } });
+    return [a, b];
+  };
   const rep = (label, n) => Array.from({ length: Math.max(0, n | 0) }, () => label);
 
   // ---------------------------------------------------------------- ひな壇（平台＋箱馬）
@@ -356,7 +364,7 @@ window.SS = window.SS || {};
     const rowY = r => zone.yTop + (r === 0 ? 0 : rows.slice(0, r).reduce((a, row) => a + Math.max(...row.map(depthOf)) + 20, 0));
     // 左右の端は数値でも、奥行 y ごとに変わる関数でもよい（台形の舞台・ひな壇や扇形の横）
     const fz = v => (typeof v === 'function' ? v : () => v);
-    const zr = y => (zone.x0 != null ? [Math.max(fz(zone.x0)(y), fz(zone.x0)(y + 150)), Math.min(fz(zone.x1)(y), fz(zone.x1)(y + 150))] : R().xRange(stage, y + 60));
+    const zr = y => (zone.x0 != null ? [Math.max(fz(zone.x0)(y), fz(zone.x0)(y + 150)), Math.min(fz(zone.x1)(y), fz(zone.x1)(y + 150))] : xRangeD(stage, y + 60));
     stations.forEach(s => {
       const [l, rr] = zr(rowY(rows.length));
       const avail = rr - l - (zone.x0 != null ? 0 : 40);
@@ -695,7 +703,7 @@ window.SS = window.SS || {};
       x0 = Math.min(x0, it.x - w / 2); x1 = Math.max(x1, it.x + w / 2);
     });
     const cx = (x0 + x1) / 2;
-    const [bl, br] = R().xRange(stage, Math.max(0, AISLE));
+    const [bl, br] = xRangeD(stage, Math.max(0, AISLE));
     let W = Math.ceil((x1 - x0 + 40) / P.w) * P.w;
     W = Math.min(W, Math.floor((br - bl) / P.w) * P.w);
     const x = Math.max(bl + W / 2, Math.min(br - W / 2, cx));
@@ -713,7 +721,7 @@ window.SS = window.SS || {};
     const parts = splitPerc(percList, place);
     // 最上段に1列で並びきらない打楽器は、下手（または舞台奥）へ回す
     if (parts.top.length) {
-      const [bl, br] = R().xRange(stage, 0);
+      const [bl, br] = xRangeD(stage, 0);
       const leftW = place === 'top' ? 0 : Math.max(330, Math.min(400, stage.w * 0.2)) + 35;
       const maxTop = Math.floor((br - bl - leftW - 20) / pn.w) * pn.w - 40;
       const dest = place === 'top' ? parts.back : parts.left;
@@ -761,7 +769,7 @@ window.SS = window.SS || {};
       const arcL = y => { const Rr = floor.R + 55, dy = floor.c.y - y; return dy >= Rr ? floor.c.x + 1e4 : floor.c.x - Math.sqrt(Rr * Rr - dy * dy); };
       const zone = {
         yTop: AISLE,
-        x0: y => R().xRange(stage, Math.max(0, y))[0] + 18,
+        x0: y => xRangeD(stage, Math.max(0, y))[0] + 18,
         x1: y => Math.min(y < yFront0 + 30 ? tierL : 1e4, arcL(y) - 30, stage.w / 2 - 120),
         faceTo: floor.c,
       };
@@ -771,7 +779,7 @@ window.SS = window.SS || {};
         const C = SS.CATALOG;
         const ok = trial.every(it => {
           const hw = it.type === 'player' ? 25 : (it.w || C[it.type].w) / 2, hh = it.type === 'player' ? 25 : (it.h || C[it.type].h) / 2;
-          return it.x + hw <= zone.x1(it.y - hh) + 12 && it.x + hw <= zone.x1(it.y + hh) + 12 && it.x - hw >= R().xRange(stage, Math.max(0, it.y))[0] && it.y + hh < (floor.yMax || floor.c.y - 40);
+          return it.x + hw <= zone.x1(it.y - hh) + 12 && it.x + hw <= zone.x1(it.y + hh) + 12 && it.x - hw >= xRangeD(stage, Math.max(0, it.y))[0] && it.y + hh < (floor.yMax || floor.c.y - 40);
         });
         if (ok) {
           trial.forEach((t, i) => Object.assign(parts.left[i], { x: t.x, y: t.y, rot: t.rot }));
@@ -788,7 +796,7 @@ window.SS = window.SS || {};
       }
     }
     if (parts.left.length && !beside) {
-      const [xl] = R().xRange(stage, 30);
+      const [xl] = xRangeD(stage, 30);
       const bw = Math.max(330, Math.min(400, stage.w * 0.2));
       const zone = { yTop: AISLE, x0: xl + 15, x1: xl + 15 + bw };
       const dep = A.arrangePerc(parts.left, stage, zone);
@@ -811,7 +819,7 @@ window.SS = window.SS || {};
       }
       const total = rows.reduce((a, r) => a + (r.need ? r.need(Math.min(W, 2000)) : r.depth), 0) + percD;
       const yBack = yFront0 - total;
-      let [xl, xr] = R().xRange(stage, Math.max(0, yBack, AISLE));
+      let [xl, xr] = xRangeD(stage, Math.max(0, yBack, AISLE));
       if (out.leftRect && !out.leftRect.beside && yBack < out.leftRect.y1) xl = Math.max(xl, out.leftRect.x1 + 10);
       // ティンパニを最上段に上げるときは、段の下手の横に運び上げる通路を残す
       if (floor && floor.timpTier) xl += 140;
@@ -1016,13 +1024,13 @@ window.SS = window.SS || {};
     const xOut = c.x - maxR - 70;
     rep('Pf', n.Pf).forEach(() => {
       const C = SS.CATALOG.piano;
-      const [xl] = R().xRange(stage, yL - C.w / 2);
+      const [xl] = xRangeD(stage, yL - C.w / 2);
       const px = Math.max(xl + 80 + C.h / 2, xOut - C.h / 2);
       items.push({ type: 'piano', x: px, y: yL - C.w / 2, rot: 90 }, { type: 'player', label: 'Pf', x: px - C.h / 2 - 38, y: yL - C.w / 2, rot: -90 });
       yL -= C.w + 40;
     });
     rep('Hp', n.Hp).forEach(() => {
-      const [xl] = R().xRange(stage, yL - 50);
+      const [xl] = xRangeD(stage, yL - 50);
       const hx = Math.max(xl + 110, xOut - 40);
       items.push({ type: 'harp', x: hx, y: yL - 50, rot: 90 }, { type: 'player', label: 'Hp', x: hx - 70, y: yL - 50, rot: -90 });
       yL -= 130;
@@ -1083,7 +1091,7 @@ window.SS = window.SS || {};
     // 管の横幅と、リズム隊（下手）の幅
     const Ww = Math.max((sax.length - 1) * sp.sax, (tb.length - 1) * sp.tb, (tp.length - 1) * sp.tp) + 140;
     const rhythmW = n.Pf || n.Drs || n.Bass || n.Gt ? 500 : 0;
-    const [xl, xr] = R().xRange(stage, front - 300);
+    const [xl, xr] = xRangeD(stage, front - 300);
     const total = Ww + rhythmW + 40;
     const x0 = Math.max(xl + 30, (xl + xr) / 2 - total / 2); // リズム隊の左はし
     const cx = Math.min(xr - 30 - Ww / 2, x0 + rhythmW + 40 + Ww / 2); // 管の真ん中
@@ -1175,7 +1183,7 @@ window.SS = window.SS || {};
     items.forEach(it => { const a = G().faceAngle(it, c); it.rot = Math.max(-25, Math.min(25, a)); });
     if (n.Pf) {
       // ピアノは下手の前。ピアニストはピアノの下手側に座り、上手（指揮者・合唱）の方を向く
-      const [xl] = R().xRange(stage, c.y);
+      const [xl] = xRangeD(stage, c.y);
       const px = Math.max(xl + 250, c.x - (maxLen * sp) / 2 - 150);
       items.push({ type: 'piano', x: px, y: c.y - 40, rot: -90 }, { type: 'player', label: 'Pf', x: px - 118, y: c.y - 30, rot: -90 });
     }
@@ -1386,7 +1394,7 @@ window.SS = window.SS || {};
       if (ok) { trial.forEach((t, i) => Object.assign(parts.left[i], { x: t.x, y: t.y, rot: t.rot })); parts.left = []; }
     }
     if (parts.left.length) {
-      const [xl] = R().xRange(stage, 30);
+      const [xl] = xRangeD(stage, 30);
       const bw = Math.max(330, Math.min(400, stage.w * 0.2));
       A.arrangePerc(parts.left, stage, { yTop: AISLE, x0: xl + 15, x1: xl + 15 + bw });
     }
@@ -1462,7 +1470,7 @@ window.SS = window.SS || {};
   function clashCount(items, stage, c, aisle) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
-    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' ? 1 : w.spots.length), 0);
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' ? 1 : w.spots.length), 0);
   }
 
   A.build = function (st, stage) {

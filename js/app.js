@@ -1726,7 +1726,7 @@
     const st = doc().stage, R = SS.render;
     const shapeName = { rect: '四角', apron: '前が丸い', trapezoid: '台形', shell: '反射板', arc: '前が弧', round: '円形' }[st.shape || 'rect'] || '';
     if ($('stageBoxNow')) $('stageBoxNow').textContent = `${st.w / 100}×${st.d / 100}m・${shapeName}`;
-    const fx = st.fixtures || {}, nFx = ['shell', 'curtain', 'proscenium', 'pit', 'hanamichi'].filter(k => fx[k] != null).length + (fx.lifts || []).length;
+    const fx = st.fixtures || {}, nFx = ['shell', 'curtain', 'proscenium', 'pit', 'hanamichi'].filter(k => fx[k] != null).length + (fx.lifts || []).length + (fx.doors || []).length;
     if ($('safetyBoxNow')) $('safetyBoxNow').textContent = `通路${SS.auto.aisleOf(st)}cm・指揮台の前${SS.auto.podiumGapOf(st)}cm${nFx ? `・設備${nFx}` : ''}`;
     void R;
   }
@@ -1785,6 +1785,21 @@
       inp.addEventListener('change', () => { readFixtures(); render(); });
     });
     box.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { pushHistory(); const f = doc().stage.fixtures; f.lifts.splice(+b.getAttribute('data-del'), 1); readFixtures(); render(); renderFixtures(); }; });
+    renderDoors();
+  }
+  // 出入り口（上手・下手の扉）の入力欄
+  function renderDoors() {
+    const box = $('fxDoors');
+    if (!box || box.contains(document.activeElement)) return;
+    const doors = (doc().stage.fixtures || {}).doors || [];
+    box.innerHTML = doors.map((d, i) => `<div class="fx-door" data-door="${i}"><select data-k="side" aria-label="どちら側"><option value="L"${d.side === 'L' ? ' selected' : ''}>下手</option><option value="R"${d.side === 'R' ? ' selected' : ''}>上手</option></select>` +
+      ['y', 'w'].map(k => `<input type="number" step="0.1" min="0" data-k="${k}" value="${cmToM(d[k])}" aria-label="${{ y: '奥のふちから扉の真ん中まで', w: '扉の幅' }[k]}">`).join('') +
+      `<button type="button" data-del="${i}" title="この出入り口を消す">✕</button></div>`).join('');
+    box.querySelectorAll('input,select').forEach(inp => {
+      inp.addEventListener('focus', () => pushHistory());
+      inp.addEventListener('change', () => { readFixtures(); render(); renderFoldSummaries(); });
+    });
+    box.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { pushHistory(); doc().stage.fixtures.doors.splice(+b.getAttribute('data-del'), 1); readFixtures(); render(); renderDoors(); renderFoldSummaries(); }; });
   }
   // halls.js の設備（m）→ 図の設備（cm）
   function fixturesFromHall(f) {
@@ -1795,6 +1810,7 @@
     if (f.proscenium && c(f.proscenium.y) != null && c(f.proscenium.w) != null) o.proscenium = { y: c(f.proscenium.y), w: c(f.proscenium.w) };
     if (f.pit && c(f.pit.depth) != null) o.pit = Object.assign({ depth: c(f.pit.depth) }, c(f.pit.w) != null ? { w: c(f.pit.w) } : {});
     if (f.hanamichi && [f.hanamichi.x, f.hanamichi.w, f.hanamichi.len].every(v => c(v) != null)) o.hanamichi = { x: c(f.hanamichi.x), w: c(f.hanamichi.w), len: c(f.hanamichi.len) };
+    if (Array.isArray(f.doors) && f.doors.length) o.doors = f.doors.map(d => ({ side: d.side, y: c(d.y), w: c(d.w) }));
     if (Array.isArray(f.lifts) && f.lifts.length) o.lifts = f.lifts.map(l => ({ x: c(l.x), y: c(l.y), w: c(l.w), h: c(l.h), name: l.name || '' }));
     return o;
   }
@@ -1813,6 +1829,12 @@
       return o;
     });
     if (lifts.length) fx.lifts = lifts;
+    const doors = [...$('fxDoors').querySelectorAll('.fx-door')].map(row => {
+      const o = {};
+      row.querySelectorAll('input,select').forEach(inp => { const k = inp.getAttribute('data-k'); o[k] = k === 'side' ? inp.value : mToCm(inp.value); });
+      return o;
+    });
+    if (doors.length) fx.doors = doors;
     if (Object.keys(fx).length) doc().stage.fixtures = fx; else delete doc().stage.fixtures;
   }
   FX_FIELDS.forEach(id => bindSetting(id, 'change', () => {
@@ -1821,6 +1843,15 @@
     // 反射板の位置が変わったら、かんたん編成の配置は通路を空けて並べ直す
     if ((doc().stage.fixtures || {}).shell !== shell0 && doc().items.some(it => it.auto)) applyAuto({ noHistory: true, quiet: true });
   }));
+  $('fxDoorAdd').onclick = () => {
+    pushHistory();
+    readFixtures();
+    const st = doc().stage, f = st.fixtures = st.fixtures || {};
+    // はじめは、まだ出入り口のない側の、舞台の奥から 1/3 のところに幅 1.8m
+    const has = s2 => (f.doors || []).some(d => d.side === s2);
+    (f.doors = f.doors || []).push({ side: has('L') && !has('R') ? 'R' : 'L', y: Math.round(st.d / 3), w: 180 });
+    renderDoors(); render(); renderFoldSummaries();
+  };
   $('fxLiftAdd').onclick = () => {
     pushHistory();
     readFixtures();

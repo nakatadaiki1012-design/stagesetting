@@ -412,6 +412,9 @@ details.fixtures .field { font-size: 12.5px; }
 .fx-lift { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 4px; margin: 4px 0; align-items: center; }
 .fx-lift input { min-width: 0; }
 .fx-lift button { border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 4px; }
+.fx-door { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 4px; margin: 4px 0; align-items: center; }
+.fx-door input, .fx-door select { min-width: 0; }
+.fx-door button { border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 4px; }
 /* 開け閉めできる箱 */
 details.fold { border: 1px solid var(--line); border-radius: 10px; padding: 4px 10px; margin: 8px 0; background: #fff; }
 details.fold > summary { cursor: pointer; font-weight: 700; padding: 6px 0; list-style-position: inside; }

@@ -905,6 +905,19 @@ window.SS = window.SS || {};
       wall(fl, bl, -0.13);
       wall(br, fr, -0.13);
     }
+    // 上手・下手の出入り口（扉）：横の壁に、濃い色の扉と枠
+    (fg.doors || []).forEach(dr => {
+      const yc = (dr.y0 + dr.y1) / 2, [a0, a1] = SS.render.xRange(st, yc - 20), [b0, b1] = SS.render.xRange(st, yc + 20);
+      const ang = dr.side === 'L' ? Math.atan2(b0 - a0, 40) : Math.atan2(b1 - a1, 40);
+      const g = new T.Group();
+      const dw = (dr.y1 - dr.y0) / 100;
+      box(g, 0.32, 2.5, dw + 0.16, '#2a1a10', 0, 1.25, 0, { roughness: 0.5 });
+      box(g, 0.34, 2.36, dw, '#6a4a30', 0, 1.18, 0, { roughness: 0.45 });
+      box(g, 0.36, 0.03, dw * 0.9, '#d8d0c0', 0, 1.1, 0, METAL);
+      g.position.set(dr.x / 100, 0, yc / 100);
+      g.rotation.y = ang;
+      scene.add(g);
+    });
     // ステージの前のふち
     box(scene, W + 2, 0.9, 0.1, '#1a1410', W / 2, -0.55, D + 0.06);
 

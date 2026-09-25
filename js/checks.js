@@ -77,8 +77,14 @@ window.SS = window.SS || {};
       const hx = +fx.hanamichi.x, hw = +fx.hanamichi.w;
       g.hanamichi = { x0: hx - hw / 2, x1: hx + hw / 2, y0: R().frontAt(stage, hx), y1: R().frontAt(stage, hx) + +fx.hanamichi.len };
     }
+    // 上手・下手の出入り口（扉）：横の壁の、奥のふちから y（扉の中心）・幅 w。扉の前 1.2m は人が出入りするので空けておく
+    g.doors = (fx.doors || []).filter(d => (d.side === 'L' || d.side === 'R') && num(d.y) && num(d.w) && +d.w > 0).map(d => {
+      const y = +d.y, w = +d.w, [xl, xr] = R().xRange(stage, y), x = d.side === 'L' ? xl : xr;
+      return { side: d.side, x, y0: y - w / 2, y1: y + w / 2, zone: d.side === 'L' ? { x0: x, x1: x + DOOR_CLEAR, y0: y - w / 2, y1: y + w / 2 } : { x0: x - DOOR_CLEAR, x1: x, y0: y - w / 2, y1: y + w / 2 } };
+    });
     return g;
   };
+  const DOOR_CLEAR = 120;
 
   // 花道（部品）の上か（向きを変えた花道も）
   SS.onRunway = function (items, p) {
@@ -170,6 +176,10 @@ window.SS = window.SS || {};
       const bad = hitList(b => overlap(b, fg.pit, 1));
       if (bad.length) out.push({ kind: 'pit', msg: `オーケストラピットのふたの上にあります（ふたの耐荷重・すき間を確認してください）：${names(bad, hno)}`, spots: bad.map(it => bx.get(it)) });
     }
+    fg.doors.forEach(d => {
+      const bad = hitList(b => overlap(b, d.zone, 1));
+      if (bad.length) out.push({ kind: 'door', msg: `${d.side === 'L' ? '下手' : '上手'}の出入り口の前（${cm(DOOR_CLEAR)}）がふさがっています（出入りや楽器の運び込みができません）：${names(bad, hno)}`, spots: [d.zone].concat(bad.map(it => bx.get(it))) });
+    });
     if (fg.hanamichi) {
       const bad = hitList(b => overlap(b, fg.hanamichi, 1));
       if (bad.length) out.push({ kind: 'hanamichi', msg: `花道の上にあります：${names(bad, hno)}`, spots: bad.map(it => bx.get(it)) });
