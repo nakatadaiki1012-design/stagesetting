@@ -172,7 +172,8 @@
    * 直したあとで ⚠ が増えるときは、元に戻す。直せなかったものは、手で直す場所として残す
    */
   function autoFix() {
-    const d = doc(), count = () => SS.checks(d).reduce((a, w) => a + (w.kind === 'overlap' || w.kind === 'tieredge' ? w.spots.length : 1), 0);
+    // ⚠ の重さ：場所（赤い枠）の数で数える（搬入経路だけは1件で1）。少しでも減った手直しだけを残す
+    const d = doc(), count = () => SS.checks(d).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'stairs' || w.kind === 'podium' ? 1 : w.spots.length), 0);
     const before = SS.checks(d).length, score0 = count();
     if (!before) return;
     pushHistory();
@@ -182,28 +183,105 @@
     const tiers = () => d.items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46');
     const onTier = it => tiers().some(t => SS.hinaContains(t, it.x, it.y, 14));
     const has = k => SS.checks(d).some(w => w.kind === k);
+    // 手直しを1つ試して、⚠ が増えたら元に戻す
+    const attempt = fn => {
+      const snap = JSON.stringify(d.items), c0 = count();
+      fn();
+      if (count() > c0) { d.items = JSON.parse(snap); return false; }
+      return true;
+    };
+    // いくつかの直し方をためして、⚠ がいちばん少ないものを残す（同じなら先に書いたもの）
+    const best = fns => {
+      const snap = JSON.stringify(d.items);
+      let bi = -1, bc = Infinity;
+      fns.forEach((fn, i) => { d.items = JSON.parse(snap); fn(); const c = count(); if (c < bc) { bc = c; bi = i; } });
+      d.items = JSON.parse(snap);
+      if (bi >= 0) fns[bi]();
+    };
+    const FIXED = new Set(['text', 'cable', 'outlet', 'tap', 'runway', 'podium', 'stairs']);
+    const PLAT = new Set(['hina', 'riser', 'riser46']);
+    const hit = (a, b) => a.x0 < b.x1 - 1 && a.x1 > b.x0 + 1 && a.y0 < b.y1 - 1 && a.y1 > b.y0 + 1;
+    const unitOf = it => {
+      if (PLAT.has(it.type)) return [it].concat(d.items.filter(o => o !== it && !PLAT.has(o.type) && o.type !== 'text' && SS.hinaContains(it, o.x, o.y, 0)));
+      return [it].concat(matesOf(it));
+    };
+    const okPos = o => o.type === 'text' || onExtension(o) || (PLAT.has(o.type) ? (b => [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].every(([x, y]) => R.insideStage(st, { x, y }, -2)))(SS.itemAABB(o, {})) : R.insideStage(st, o, o.type === 'player' ? 26 : Math.min(SS.itemSize(o, {}).w, SS.itemSize(o, {}).h) / 2));
+    function nudgeFix() {
+      for (let pass = 0; pass < 4; pass++) {
+        const ws = SS.checks(d).filter(w => !['stairs', 'podium', 'tieredge'].includes(w.kind));
+        if (!ws.length) return;
+        const spots = ws.flatMap(w => w.spots);
+        const done = new Set();
+        // 小さい物から（段は最後）
+        const cands = d.items.filter(it => !FIXED.has(it.type) && spots.some(b => hit(SS.itemAABB(it, {}), b)))
+          .sort((a, b) => (PLAT.has(a.type) ? 1 : 0) - (PLAT.has(b.type) ? 1 : 0));
+        let moved = false;
+        for (const it of cands) {
+          if (done.has(it)) continue;
+          const unit = unitOf(it);
+          unit.forEach(o => done.add(o));
+          const c0 = count();
+          let ok = false;
+          for (const step of [12, 25, 45, 70, 100]) {
+            for (let k = 0; k < 8 && !ok; k++) {
+              const a = (k * Math.PI) / 4, dx = Math.round(Math.cos(a) * step), dy = Math.round(Math.sin(a) * step);
+              unit.forEach(o => { o.x += dx; o.y += dy; });
+              if (unit.every(okPos) && count() < c0) ok = true;
+              else unit.forEach(o => { o.x -= dx; o.y -= dy; });
+            }
+            if (ok) break;
+          }
+          // 段が出入り口の前にかかるとき：出入り口の側の平台を1列ずつ外して段をせまくする（外した所の人・物は内側へ）
+          if (!ok && PLAT.has(it.type) && !(it.rot % 180)) {
+            const doors = (SS.fixtureGeom(st).doors || []).filter(dr => hit(SS.itemAABB(it, {}), dr.zone));
+            for (const dr of doors) {
+              const pw = (SS.panelSize ? SS.panelSize(it).w : 182) || 182, b = SS.itemAABB(it, {});
+              const over = dr.side === 'L' ? dr.zone.x1 - b.x0 : b.x1 - dr.zone.x0;
+              const k = Math.ceil((over + 2) / pw);
+              if (k * pw >= it.w - pw) continue;
+              const snap = JSON.stringify(d.items), c0 = count(), sgn = dr.side === 'L' ? 1 : -1;
+              const edge = dr.side === 'L' ? b.x0 + k * pw : b.x1 - k * pw;
+              unit.slice(1).forEach(o => { if (sgn * (edge - o.x) > -30) o.x += sgn * (Math.abs(edge - o.x) + 40); });
+              it.w -= k * pw; it.x += (sgn * k * pw) / 2;
+              if (count() < c0) { ok = true; break; }
+              const back = JSON.parse(snap); d.items.forEach((o, i) => { Object.keys(o).forEach(key => { if (!(key in back[i])) delete o[key]; }); Object.assign(o, back[i]); });
+            }
+          }
+          if (ok) moved = true;
+        }
+        if (!moved) return;
+      }
+    }
     for (let round = 0; round < 3; round++) {
       // 指揮台の前：指揮台と床の人・物を、足りない分だけ奥へ
-      const pod = d.items.find(it => it.type === 'podium');
-      if (pod && has('podium')) {
-        const pb = SS.itemAABB(pod, {}), need = SS.auto.podiumGapOf(st), gap = R.frontAt(st, pod.x) - pb.y1;
-        const dy = need - gap + 2;
-        if (dy > 0) d.items.filter(it => it === pod || (it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46' && it.type !== 'text' && !onTier(it) && !onExtension(it))).forEach(it => { it.y -= dy; });
+      // 指揮台の前：足りない分だけ奥へ。①全体を奥へ ②指揮台と床の人・物を奥へ ③指揮台だけ奥へ のうち、⚠ がいちばん少ないものを使う
+      if (has('podium')) {
+        const pod = d.items.find(it => it.type === 'podium');
+        const pb = pod && SS.itemAABB(pod, {}), need = SS.auto.podiumGapOf(st), dy = pod ? need - (R.frontAt(st, pod.x) - pb.y1) + 2 : 0;
+        if (dy > 0) {
+          const movable = it => it.type !== 'text' && !onExtension(it);
+          const floorOnly = it => it.type === 'podium' || (!PLAT.has(it.type) && it.type !== 'text' && !onTier(it) && !onExtension(it));
+          best([
+            () => d.items.filter(movable).forEach(it => { it.y -= dy; }),
+            () => d.items.filter(floorOnly).forEach(it => { it.y -= dy; }),
+            () => { d.items.find(it => it.type === 'podium').y -= dy; },
+          ]);
+        }
       }
       // 舞台奥の通路・反射板：段の上にない物を、通路の前まで出す
-      if (has('aisle') || has('shell')) {
+      if (has('aisle') || has('shell')) attempt(() => {
         const fx = st.fixtures || {}, back = SS.auto.aisleOf(st) + (fx.shell != null && isFinite(+fx.shell) ? +fx.shell : 0);
         d.items.forEach(it => {
           if (tiers().includes(it) || it.type === 'text' || onTier(it)) return;
           const b = SS.itemAABB(it, {});
           if (b.y0 < back) it.y += back - b.y0 + 2;
         });
-      }
+      });
       // ひな壇の縁・舞台からのはみ出し・段が通路にかかる：✨きれいに整えると同じ
-      if (has('tieredge') || has('aisle') || has('shell')) tidyAuto(undefined, true);
+      if (has('tieredge') || has('aisle') || has('shell')) attempt(() => tidyAuto(undefined, true));
       // 重なり：奏者を少しずつ離す。打楽器の楽器が重なるときは、打楽器を並べ直す
       if (has('overlap')) {
-        G.fixOverlap(players().filter(it => !onExtension(it)), opts().seatR * 2 + 8);
+        attempt(() => G.fixOverlap(players().filter(it => !onExtension(it)), opts().seatR * 2 + 8));
         const ov = SS.checks(d).find(w => w.kind === 'overlap');
         if (ov && d.items.some(it => SS.auto.PERC_TYPES.has(it.type))) {
           const place = (d.ensemble && d.ensemble.percPlace) || 'back';
@@ -212,6 +290,9 @@
           if (count() > c0) { const back2 = JSON.parse(snap); d.items.forEach((it, i) => Object.assign(it, back2[i])); }
         }
       }
+      // まだ残っている所：⚠ の枠にかかっている物を、楽器と奏者のまとまりごと（段なら上の人・物ごと）
+      // 8方向に少しずつ（12cm〜1m）動かしてみて、⚠ が減る動かし方があれば残す（重なり・出入り口・緞帳線・迫り・ピット・通路など）
+      nudgeFix();
       // 上がり段：高い段の横（下手・上手）か前に、上がり段を付ける
       if (has('stairs')) {
         SS.checks(d).filter(w => w.kind === 'stairs').forEach(w => {
