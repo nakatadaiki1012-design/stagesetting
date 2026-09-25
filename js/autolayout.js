@@ -276,6 +276,25 @@ window.SS = window.SS || {};
         ['Tp'],
       ],
     },
+    tpShift: {
+      name: '標準・トランペットをホルンの真後ろからずらす（2段目：Tb → Tp の順）',
+      rows: [
+        ['Picc', 'Fl', 'Ob', 'Es.Cl', 'Cl1'],
+        ['A.Sx', 'T.Sx', 'B.Sx', 'Fg', 'Cl2', 'Cl3', 'B.Cl'],
+        ['Hr', 'Euph', 'Tuba', 'St.B'],
+        ['Tb', 'B.Tb', 'Tp'],
+      ],
+    },
+    lowTb: {
+      name: '標準・低音をトロンボーンの近くに（1段目の上手寄りに Euph・Tuba・弦バス）',
+      noLowOuter: true,
+      rows: [
+        ['Picc', 'Fl', 'Ob', 'Es.Cl', 'Cl1'],
+        ['A.Sx', 'T.Sx', 'B.Sx', 'Fg', 'Cl2', 'Cl3', 'B.Cl'],
+        ['Hr', 'Euph', 'Tuba', 'St.B'],
+        ['Tp', 'Tb', 'B.Tb'],
+      ],
+    },
     german: {
       name: 'ドイツ式（Cl下手・Fl/Ob中央・Sax上手、後ろにTp｜Tuba｜Tb）',
       rows: [
@@ -905,7 +924,7 @@ window.SS = window.SS || {};
 
   function band(st, stage, tune, lowFallback) {
     const n = st.counts;
-    const lowOn = st.lowOuter && !lowFallback;
+    const lowOn = st.lowOuter && !lowFallback && !(st.type === 'band' && (A.BAND_LAYOUTS[st.layout] || {}).noLowOuter);
     const c = { x: stage.w / 2, y: podiumY(stage) };
     const H = st.hina || { steps: 0 };
     const pn = SS.panelSize(H);
