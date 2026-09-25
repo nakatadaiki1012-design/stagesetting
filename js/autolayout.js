@@ -1256,8 +1256,14 @@ window.SS = window.SS || {};
         if (q.left <= 0) return;
         const m = seatsIn(q.w1 - q.w0, R, q.left);
         const mid = (q.w0 + q.w1) / 2;
-        deskRow(m, spS).forEach(([off, dn]) => {
-          const a = mid + off / R;
+        // いちばん外のパート（下手の Vn1・上手の Vc など）は、客席側のはしから順に座る（1プルトが指揮者のすぐ横。どのリングも同じはしからそろう）。
+        // 内側のパートは扇の真ん中から
+        const qi = secs.indexOf(q), from = qi === 0 && secs.length > 1 ? -1 : qi === secs.length - 1 && secs.length > 1 ? 1 : 0;
+        const row = deskRow(m, spS);
+        const span = row.length > 1 ? row[row.length - 1][0] - row[0][0] : 0;
+        const shift = from < 0 ? q.w0 + (span / 2 + spS / 2) / R - mid : from > 0 ? q.w1 - (span / 2 + spS / 2) / R - mid : 0;
+        (from > 0 ? row.map(([o, d2]) => [-o, d2]) : row).forEach(([off, dn]) => {
+          const a = mid + shift + off / R;
           const p = G().fromPolar(R, a, c);
           items.push({ type: 'player', label: q.k, x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `${q.k}-${q.desk + dn}` });
           q.a0 = Math.min(q.a0, (a * 180) / Math.PI); q.a1 = Math.max(q.a1, (a * 180) / Math.PI);
