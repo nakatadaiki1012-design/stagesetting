@@ -14,6 +14,12 @@ window.SS = window.SS || {};
     ds.forEach(d => { if (y + 100 > d.zone.y0 && y - 100 < d.zone.y1) { if (d.side === 'L') a = Math.max(a, d.zone.x1 + 5); else b = Math.min(b, d.zone.x0 - 5); } });
     return [a, b];
   };
+  // ピアノと奏者：鍵盤を下手に向け（rot 90）、奏者は鍵盤の前（下手側）に座って上手（指揮者・バンド）の方を向く。
+  // 蓋の開く曲線の側（奏者の右手側）が客席を向く
+  const pianoAt = (px, py) => {
+    const C = SS.CATALOG.piano;
+    return [{ type: 'piano', x: px, y: py, rot: 90 }, { type: 'player', label: 'Pf', x: px - C.h / 2 - 38, y: py, rot: -90 }];
+  };
   const rep = (label, n) => Array.from({ length: Math.max(0, n | 0) }, () => label);
 
   // ---------------------------------------------------------------- ひな壇（平台＋箱馬）
@@ -1029,7 +1035,7 @@ window.SS = window.SS || {};
       const C = SS.CATALOG.piano;
       const [xl] = xRangeD(stage, yL - C.w / 2);
       const px = Math.max(xl + 80 + C.h / 2, xOut - C.h / 2);
-      items.push({ type: 'piano', x: px, y: yL - C.w / 2, rot: 90 }, { type: 'player', label: 'Pf', x: px - C.h / 2 - 38, y: yL - C.w / 2, rot: -90 });
+      items.push(...pianoAt(px, yL - C.w / 2));
       yL -= C.w + 40;
     });
     rep('Hp', n.Hp).forEach(() => {
@@ -1130,7 +1136,7 @@ window.SS = window.SS || {};
     if (n.Bass) { const a = behind(bs.x, bs.y, -30, 75); items.push(...station(null, 'Bass', bs.x, bs.y, -30, 0), { type: 'amp', x: a.x, y: a.y, rot: -30 }); }
     const gt = { x: hornL - 35, y: ySax + 50 };
     if (n.Gt) items.push(...station(null, 'Gt', gt.x, gt.y, -35, 0), { type: 'amp', x: gt.x - 80, y: gt.y + 20, rot: -35 });
-    if (n.Pf) { const px = Math.min(x0 + 190, gt.x - 250); items.push({ type: 'piano', x: px, y: ySax + 60, rot: -90 }, { type: 'player', label: 'Pf', x: px - 118, y: ySax + 70, rot: -90 }); }
+    if (n.Pf) { const [pl] = xRangeD(stage, ySax + 60); const px = Math.max(pl + 180, Math.min(x0 + 190, gt.x - 250)); items.push(...pianoAt(px, ySax + 60)); }
     rep('Vib', n.Vib).forEach((l, i) => items.push({ type: 'vib', x: cx + Ww / 2 + 100, y: yTb + 20 + i * 140, rot: 90 }, { type: 'player', label: l, x: cx + Ww / 2 + 170, y: yTb + 20 + i * 140, rot: 90 }));
     const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1) || items.some(it => it.y < AISLE);
     return { items: tiers.concat(items), c: { x: cx, y: front + 200 }, overlap: over };
@@ -1185,10 +1191,10 @@ window.SS = window.SS || {};
     // 指揮者の方を向く（まっすぐな列でも、端の人は少し内向きに）
     items.forEach(it => { const a = G().faceAngle(it, c); it.rot = Math.max(-25, Math.min(25, a)); });
     if (n.Pf) {
-      // ピアノは下手の前。ピアニストはピアノの下手側に座り、上手（指揮者・合唱）の方を向く
+      // ピアノは下手の前。ピアニストは鍵盤の前（ピアノの下手側）に座り、上手（指揮者・合唱）の方を向く
       const [xl] = xRangeD(stage, c.y);
       const px = Math.max(xl + 250, c.x - (maxLen * sp) / 2 - 150);
-      items.push({ type: 'piano', x: px, y: c.y - 40, rot: -90 }, { type: 'player', label: 'Pf', x: px - 118, y: c.y - 30, rot: -90 });
+      items.push(...pianoAt(px, c.y - 40));
     }
     items.push({ type: 'podium', x: c.x, y: c.y, rot: 0 });
     const over = tiers.some(t => t.y - t.h / 2 < AISLE - 1);
@@ -1367,7 +1373,7 @@ window.SS = window.SS || {};
       const r = G().faceAngle(p, c), a = r * Math.PI / 180;
       items.push({ type: 'player', label: 'Hp', x: p.x, y: p.y, rot: r }, { type: 'harp', x: p.x - Math.sin(a) * 70, y: p.y + Math.cos(a) * 70, rot: r + 180 });
     });
-    rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(maxR + 120, -0.85, c); items.push({ type: 'piano', x: p.x, y: p.y, rot: 90 }, { type: 'player', label: 'Pf', x: p.x - 100, y: p.y, rot: 90 }); });
+    rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(maxR + 120, -0.85, c); items.push(...pianoAt(p.x, p.y)); });
     const all = tp.tiers.concat(items);
     return { items: all, c, overlap: overlapCheck(tp, all) };
   }
