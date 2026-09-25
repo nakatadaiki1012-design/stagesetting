@@ -388,8 +388,10 @@ window.SS = window.SS || {};
     }
     stations.forEach(s => { if (!s.player && free.length) s.player = free.shift(); });
     free.forEach(p => stations.push({ kind: 'stand', items: [], player: p, order: 99 }));
-    const width = s => s.kind === 'timp' ? (s.items.length > 1 ? 2 * 112 * Math.sin(66 * Math.PI / 180) : 0) + (C[s.items[0].type].w) + 20
-      : s.kind === 'stand' ? 75 : (s.items[0].w || C[s.items[0].type].w) + 28;
+    // 楽器どうしのすき間。1列に入りきらないときは、2列にする前に少しつめて（楽器の間 14cm）1列に入るか試す
+    let pad = 28;
+    const width = s => s.kind === 'timp' ? (s.items.length > 1 ? 2 * 112 * Math.sin(66 * Math.PI / 180) : 0) + (C[s.items[0].type].w) + pad - 8
+      : s.kind === 'stand' ? 75 : (s.items[0].w || C[s.items[0].type].w) + pad;
     const depthOf = s => s.kind === 'timp' ? 230 : s.kind === 'stand' ? 90 : (s.items[0].h || C[s.items[0].type].h) + 100;
     // 行に分ける（入りきらなければ手前にもう1行）
     const rows = [];
@@ -398,6 +400,12 @@ window.SS = window.SS || {};
     // 左右の端は数値でも、奥行 y ごとに変わる関数でもよい（台形の舞台・ひな壇や扇形の横）
     const fz = v => (typeof v === 'function' ? v : () => v);
     const zr = y => (zone.x0 != null ? [Math.max(fz(zone.x0)(y), fz(zone.x0)(y + 150)), Math.min(fz(zone.x1)(y), fz(zone.x1)(y + 150))] : xRangeD(stage, y + 60));
+    {
+      const [l0, r0] = zr(rowY(0));
+      const avail0 = r0 - l0 - (zone.x0 != null ? 0 : 40);
+      const sum = () => stations.reduce((a2, q) => a2 + width(q), 0);
+      if (sum() > avail0) { pad = 14; if (sum() > avail0) pad = 28; }
+    }
     stations.forEach(s => {
       const [l, rr] = zr(rowY(rows.length));
       const avail = rr - l - (zone.x0 != null ? 0 : 40);
@@ -893,11 +901,16 @@ window.SS = window.SS || {};
         // ひな壇があるときは、奥の打楽器も床に落ちないよう、最上段にくっつけた「打楽器の段」に乗せる
         // 段のうしろ（反射板側）には通路を残す。入りきらないときは「ぶつかる」として、詰めた並べ方を探す
         const P = SS.panelSize(H);
-        const dep = A.arrangePerc(cloneList(parts.back), stage, { yTop: 0 });
+        // 打楽器の段に乗る幅（舞台の奥はせまいので、段の奥から前までのどこでも入る幅。平台の枚数単位）の中に並べる。
+        // 入りきらないときは段の上で2列にする（マリンバなどが段からはみ出さないように）
+        const rs = [AISLE, (AISLE + yFront) / 2, yFront].map(y => xRangeD(stage, y));
+        const bl = Math.max(...rs.map(r => r[0])), br = Math.min(...rs.map(r => r[1]));
+        const Wmax = Math.floor((br - bl) / P.w) * P.w, zx0 = (bl + br) / 2 - Wmax / 2 + 20, zx1 = (bl + br) / 2 + Wmax / 2 - 20;
+        const dep = A.arrangePerc(cloneList(parts.back), stage, { yTop: 0, x0: zx0, x1: zx1 });
         let D = Math.ceil((dep + 20) / P.d) * P.d;
         const room = yFront - AISLE;
         if (D > room) { out.percCramped = true; D = Math.max(P.d, Math.floor(room / P.d) * P.d); }
-        out.backDepth = A.arrangePerc(parts.back, stage, { yTop: yFront - D + 10 });
+        out.backDepth = A.arrangePerc(parts.back, stage, { yTop: yFront - D + 10, x0: zx0, x1: zx1 });
         const top = Math.max(...out.tiers.map(t => t.hgt || 0));
         const next = [21.2, 42.4, 63.6, 84.8].find(v => v > top + 1) || top; // 最上段より1段高く
         out.tiers.push(percPlatform(parts.back, stage, H, next, yFront, out.tiers.length + 1, D));
