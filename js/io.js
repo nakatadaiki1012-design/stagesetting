@@ -620,7 +620,18 @@ window.SS = window.SS || {};
     return loc.map(([x, y]) => [it.x + x * c - y * sn, it.y + x * sn + y * c]);
   };
   const inPolyW = (x, y, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
-  R.contestPlayersSVG = function (doc) {
+  // パート名の略し方（◯に入りきらないとき）。よく使う略号はそのまま、長い名前は頭の文字＋番号
+  const SHORT = { picc: 'Pic', piccolo: 'Pic', flute: 'Fl', oboe: 'Ob', clarinet: 'Cl', bassoon: 'Fg', fagott: 'Fg', horn: 'Hr', trumpet: 'Tp', trombone: 'Tb', euph: 'Eu', euphonium: 'Eu', tuba: 'Tu', timp: 'Ti', perc: 'Pc', 'st.b': 'SB', 'b.tb': 'BTb', 'b.cl': 'BCl', 'a.sx': 'ASx', 't.sx': 'TSx', 'b.sx': 'BSx', 'es.cl': 'EsC', solocnt: 'SoC', sopcnt: 'Sop', repcnt: 'Rep', '2ndcnt': '2Co', '3rdcnt': '3Co', flh: 'Flh', solohn: 'SHn', '1sthn': '1Hn', '2ndhn': '2Hn', ebbass: 'EbB', bbbass: 'BbB', bar1: 'Ba1', bar2: 'Ba2' };
+  R.shortPart = function (lab) {
+    const l = String(lab || '').trim(), k = l.toLowerCase();
+    if (SHORT[k]) return SHORT[k];
+    const m = /^(.+?)\s*(\d+)$/.exec(l);
+    if (m && SHORT[m[1].toLowerCase()]) return SHORT[m[1].toLowerCase()] + m[2];
+    if (l.length <= 3) return l;
+    return m ? m[1].replace(/[.\s]/g, '').slice(0, 2) + m[2] : l.replace(/[.\s]/g, '').slice(0, 3);
+  };
+  R.contestPlayersSVG = function (doc, opts) {
+    const showLeads = !opts || opts.showLeads !== false;
     const ps = doc.items.filter(it => it.type === 'player');
     const noStand = it => ['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label));
     const fwd = it => { const a = ((it.rot || 0) * Math.PI) / 180; return [-Math.sin(a), Math.cos(a)]; };
@@ -658,62 +669,19 @@ window.SS = window.SS || {};
       body += `<circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${SEAT_R}" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
     });
     xs.forEach(p => { body += `<path transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${p.rot.toFixed(1)})" d="M-11 -11L11 11M11 -11L-11 11" stroke="#111" stroke-width="3.4" stroke-linecap="round" fill="none"/>`; });
-    // 2) パート名：◯のすぐ横・後ろに。◯・×・ほかの名前・段のふちの線と重ならない所。重なるときは字を小さく、最後は◯の中
-    const boxes = [];
-    const hitB = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
-    const boxHitsCircle = (bx, x, y, r) => { const nx = Math.max(bx.x0, Math.min(x, bx.x1)), ny = Math.max(bx.y0, Math.min(y, bx.y1)); return Math.hypot(nx - x, ny - y) < r; };
-    const crossesLine = bx => {
-      const pts = [[bx.x0, bx.y0], [bx.x1, bx.y0], [bx.x1, bx.y1], [bx.x0, bx.y1], [(bx.x0 + bx.x1) / 2, bx.y0], [(bx.x0 + bx.x1) / 2, bx.y1]];
-      return lines.some(pg => { const n = pts.filter(([x, y]) => inPolyW(x, y, pg)).length; return n > 0 && n < pts.length; });
-    };
-    const where = new Map(); // 奏者 → 置いた場所（null は◯の中）
-    order.forEach(it => {
-      const lab = (it.label || '').trim();
-      if (!lab) return;
-      const [fx, fy] = fwd(it);
-      const lw = SS.labelWidth(lab);
-      let placed = null;
-      // となりがとても近い（合唱など、72cm 以内）ときは、はじめから◯の中に
-      const dense = ps.some(q => q !== it && Math.hypot(q.x - it.x, q.y - it.y) < 72);
-      for (const fs of dense ? [] : [24, 20]) {
-        const w = lw * fs + 4, h = fs * 1.05;
-        // 後ろ（指揮者と反対）→ 横 → 後ろななめ
-        const back = SEAT_R + 3 + (Math.abs(fx) * w + Math.abs(fy) * h) / 2;
-        const side = SEAT_R + 4 + (Math.abs(fy) * w + Math.abs(fx) * h) / 2;
-        const cands = [[-fx * back, -fy * back], [-fy * side, fx * side], [fy * side, -fx * side], [-fx * back - fy * side * 0.8, -fy * back + fx * side * 0.8], [-fx * back + fy * side * 0.8, -fy * back - fx * side * 0.8]];
-        for (const [dx, dy] of cands) {
-          const x = it.x + dx, y = it.y + dy, bx = { x0: x - w / 2, x1: x + w / 2, y0: y - h / 2, y1: y + h / 2 };
-          if (ps.some(q => boxHitsCircle(bx, q.x, q.y, SEAT_R + 2))) continue;
-          if (xs.some(p => boxHitsCircle(bx, p.x, p.y, X_R + 1))) continue;
-          if (boxes.some(b => hitB(bx, b))) continue;
-          if (crossesLine(bx)) continue;
-          if (things.some(pg => inPolyW(x, y, pg))) continue;
-          // どの◯の名前か迷わないように：自分の◯より、ほかの◯のほうが近すぎる所には置かない
-          const own = Math.hypot(x - it.x, y - it.y);
-          if (ps.some(q => q !== it && Math.hypot(x - q.x, y - q.y) < own * 1.45)) continue;
-          placed = { x, y, fs, bx };
-          break;
-        }
-        if (placed) break;
-      }
-      if (placed) boxes.push(placed.bx);
-      where.set(it, placed);
-    });
-    // まっすぐな列（ひな壇の上など）で、となりが◯の中なら、その列はみんな◯の中にそろえる
-    const sameRow = (a, b) => { const [fx, fy] = fwd(a); return Math.abs((a.rot || 0) - (b.rot || 0)) < 3 && Math.abs((b.x - a.x) * fx + (b.y - a.y) * fy) < 15 && Math.hypot(b.x - a.x, b.y - a.y) < 110; };
-    for (let changed = true; changed;) {
-      changed = false;
-      where.forEach((pl, it) => { if (pl && [...where.keys()].some(q => q !== it && where.get(q) === null && sameRow(it, q))) { where.set(it, null); changed = true; } });
-    }
+    // 2) パート名：どの◯の名前か迷わないよう、いつも◯の中に。入りきらないときは字を小さく、それでも入らなければ略して（例：Trombone → Tb）
     let text = '';
-    where.forEach((placed, it) => {
+    ps.forEach(it => {
       const lab = (it.label || '').trim();
-      if (placed) text += `<text x="${placed.x.toFixed(1)}" y="${placed.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${placed.fs}" font-weight="700" fill="#111">${SS.esc(lab)}</text>`;
-      else {
-        // 入る所がないときは◯の中に、◯に入る大きさで
-        const fs = Math.max(7, Math.min(17, (SEAT_R * 2 - 5) / SS.labelWidth(lab)));
-        text += `<text x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="#111">${SS.esc(lab)}</text>`;
+      if (lab) {
+        const fit = t => Math.min(17, (SEAT_R * 2 - 6) / SS.labelWidth(t));
+        let t = lab, fs = fit(t);
+        if (fs < 10.5) { const ab = R.shortPart(lab); if (ab !== lab) { t = ab; fs = fit(t); } }
+        fs = Math.max(7, fs);
+        text += `<text x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="#111">${SS.esc(t)}</text>`;
       }
+      // 首席の★（◯の右上）
+      if (it.lead && showLeads) text += `<text x="${(it.x + SEAT_R * 0.62).toFixed(1)}" y="${(it.y - SEAT_R * 0.95).toFixed(1)}" dy="0.35em" font-size="14" font-weight="700" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${SS.leadMark(it)}</text>`;
     });
     return body + `<g pointer-events="none">${text}</g>`;
   };
@@ -729,7 +697,7 @@ window.SS = window.SS || {};
     let s = R.stageSVG(d2, 0);
     const others = Object.assign({}, d2, { items: d2.items.filter(it => it.type !== 'player') });
     s += R.itemsSVG(others, o, null, false);
-    s += R.contestPlayersSVG(d2);
+    s += R.contestPlayersSVG(d2, opts);
     s += R.contestMarksSVG(d2, k);
     return s;
   }
@@ -819,7 +787,10 @@ window.SS = window.SS || {};
     const legendBeside = !contest && sideW >= 55 && (!legendItems.oneCol || Math.max(...legendItems.map(c => textLen(c.text))) * 2.3 <= sideW);
     const lCols = legendItems.oneCol ? 1 : Math.max(1, Math.floor((legendBeside ? sideW : PW - 2 * M) / cellW));
     const legendH = legendItems.length ? 5 + Math.ceil(legendItems.length / lCols) * lrow : 0;
-    const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0);
+    // コンクール提出用：記号の見方（凡例）を図のすぐ下に1行で
+    const keyOn = contest && ex.keyLegend !== false;
+    const keyH = keyOn ? 7 : 0;
+    const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0) + keyH;
     const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - (contest ? 0 : 4) };
     const SB = contest ? 0 : 9; // 縮尺のものさしの高さ
 
@@ -896,10 +867,25 @@ window.SS = window.SS || {};
       });
       out += '</g>';
     }
+    // 記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）
+    if (keyOn) {
+      const ky = draw.y + ch + 4.5, fs2 = 2.9;
+      const ps2 = doc.items.filter(it => it.type === 'player');
+      const standing = ps2.some(it => ['perc', 'bass'].includes(SS.instrumentKind(it.label)));
+      const lead = opts.showLeads !== false && ps2.some(it => it.lead);
+      const cm = lead && ps2.some(it => it.lead === 'cm');
+      let kx = M, g = `<g font-size="${fs2}" fill="#111">`;
+      const item = (sym, label) => { g += sym(kx) + `<text x="${(kx + 4.4).toFixed(2)}" y="${ky}" dy="0.35em">${label}</text>`; kx += 4.4 + textLen(label) * fs2 * 0.98 + 5; };
+      item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35"/>`, 'いす');
+      item(x => `<path d="M${x + 0.4} ${ky - 1.4}l2.8 2.8M${x + 3.2} ${ky - 1.4}l-2.8 2.8" stroke="#111" stroke-width="0.45" stroke-linecap="round"/>`, '譜面台');
+      if (standing) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35" stroke-dasharray="0.7 0.5"/>`, '立って演奏する人（打楽器など）');
+      if (lead) item(x => `<text x="${x + 1.8}" y="${ky}" dy="0.35em" text-anchor="middle" font-weight="700">★</text>`, cm ? '首席（★CM＝コンサートマスター）' : '首席');
+      out += g + '</g>';
+    }
     // 編成表（情報欄の左、入らなければ上）
     if (legendItems.length) {
-      // コンクール提出用は、図のすぐ下に
-      const lx = M, ly = contest ? draw.y + ch + 3 : legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
+      // コンクール提出用は、図のすぐ下に（記号の見方の下）
+      const lx = M, ly = contest ? draw.y + ch + 3 + keyH : legendBeside ? PH - M - Math.max(legendH, TBH) : PH - M - TBH - 3 - legendH;
       out += `<g font-size="${lfs}" fill="#111"><text x="${lx}" y="${ly + 3}" font-weight="700" font-size="3.4">${legendItems.title ? SS.esc(legendItems.title) : `編成（計 ${legendItems.total} 人）`}</text>`;
       if (legendItems.oneCol) {
         // 1行に1段。入りきらない行は字を小さくする
