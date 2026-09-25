@@ -1391,6 +1391,7 @@ window.SS = window.SS || {};
         try { localStorage.setItem('stagesetting.v3label', V.labelSize); } catch (err) { /* ignore */ }
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) setLabelScale(o); });
       };
+      $('v3more').onclick = () => { const b = $('v3lightBtn'); b.hidden = !b.hidden; $('v3more').classList.toggle('active', !b.hidden); if (b.hidden) { $('v3light').hidden = true; b.classList.remove('active'); } };
       $('v3lightBtn').onclick = () => { const p = $('v3light'); p.hidden = !p.hidden; $('v3lightBtn').classList.toggle('active', !p.hidden); if (!p.hidden) renderLightPanel(); };
       $('v3labels').onchange = e => {
         labelsOn = e.target.checked;

@@ -2110,7 +2110,10 @@
     const cats = {};
     Object.keys(SS.CATALOG).forEach(k => { const c = SS.CATALOG[k]; if (c.cat) (cats[c.cat] = cats[c.cat] || []).push(k); });
     let h = '';
-    Object.keys(cats).forEach(cat => {
+    // よく使う人が少ない部品（花道・出入り口・司会）は「舞台の設備・その他」にまとめ、はじめは閉じておく
+    const FOLD = '舞台の設備・その他';
+    Object.keys(cats).sort((a, b) => (a === FOLD) - (b === FOLD)).forEach(cat => {
+      if (cat === FOLD) { h += `<details class="fold pal-fold"><summary>${cat}（花道・出入り口・司会）</summary><div class="palette-grid">`; cats[cat].forEach(k => { const c = SS.CATALOG[k]; const size = c.w ? `${c.w}×${c.h}cm` : ''; h += `<button class="pal-item" draggable="true" data-type="${k}" title="${SS.esc(c.note || size)}">${SS.iconFor(k)}<span>${c.name}${size ? `<small>${size}</small>` : ''}</span></button>`; }); h += '</div></details>'; return; }
       h += `<h4>${cat}</h4><div class="palette-grid">`;
       cats[cat].forEach(k => {
         const c = SS.CATALOG[k];
