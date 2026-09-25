@@ -45,8 +45,8 @@ window.SS = window.SS || {};
       id: 'band-contest',
       words: ['コンクールA', 'A編成', 'A部門', '大編成'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽コンクールA（55人）',
-      desc: '大きめの舞台（20×12.5m）。ひな壇2段＋打楽器段。ティンパニ・鍵盤は最上段、太鼓類は下手',
-      make: auto('band', SHELL_L, { layout: 'std', percPlace: 'both' },
+      desc: '大きめの舞台（20×12.5m）。ひな壇2段＋打楽器段。打楽器はいちばん奥の打楽器段に1か所にまとめる',
+      make: auto('band', SHELL_L, { layout: 'std', percPlace: 'back' },
         { Picc: 1, Fl: 5, Ob: 2, Fg: 2, 'Es.Cl': 1, Cl1: 4, Cl2: 4, Cl3: 4, 'B.Cl': 2, 'A.Sx': 2, 'T.Sx': 1, 'B.Sx': 1, Hr: 4, Tp: 5, Tb: 3, 'B.Tb': 1, Euph: 2, Tuba: 3, 'St.B': 1, Perc: 7 }),
     },
     {

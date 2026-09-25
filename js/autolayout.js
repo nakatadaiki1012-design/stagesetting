@@ -437,6 +437,8 @@ window.SS = window.SS || {};
    * opt: { c 指揮者, Rin 扇形の外の半径＋すき間, allowed(p, r), avoid [{x,y,r}], timpAt {x,y}（ティンパニの置き場所の候補） }
    * 置けたら true（items を動かす）
    */
+  const EDGE_CLEAR = 100; // 舞台の前の縁から空ける（cm）
+  A.EDGE_CLEAR = EDGE_CLEAR;
   const KEYS_ORDER = ['glock', 'xylo', 'vib', 'marimba43', 'marimba', 'chimes'];
   const DRUM_ORDER = ['bd', 'cym', 'sd', 'tam', 'table', 'drums'];
   let grpSeq = 0;
@@ -513,11 +515,12 @@ window.SS = window.SS || {};
     const fits = list => list.every(([it, p]) => {
       const hw = it.type === 'player' ? 25 : (it.w || C[it.type].w) / 2, hh = it.type === 'player' ? 25 : (it.h || C[it.type].h) / 2;
       const r = Math.max(hw, hh);
-      if (it.type === 'player') return R().insideStage(stage, Object.assign({}, it, p), 30) && allowed(p, r) && !(avoid && avoid.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 50));
+      // 舞台の前の縁から1m以内には置かない（客席に落ちない・前の人の通り道）
+      if (it.type === 'player') return R().insideStage(stage, Object.assign({}, it, p), 30) && R().frontAt(stage, p.x) - p.y >= EDGE_CLEAR + 25 && allowed(p, r + 10) && !(avoid && avoid.some(o => Math.hypot(o.x - p.x, o.y - p.y) < o.r + 50));
       const a = ((p.rot || 0) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
       if (avoid && avoid.some(o => { const dx = o.x - p.x, dy = o.y - p.y, lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca; return Math.hypot(Math.max(0, Math.abs(lx) - hw), Math.max(0, Math.abs(ly) - hh)) < o.r + 25; })) return false;
       const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => ({ x: p.x + x * ca - y * sa, y: p.y + x * sa + y * ca }));
-      return corners.every(q => R().insideStage(stage, q, 6)) && allowed(p, r);
+      return corners.every(q => R().insideStage(stage, q, 6) && R().frontAt(stage, q.x) - q.y >= EDGE_CLEAR) && allowed(p, r);
     });
     const done = [];
     const clash = list => list.some(([it, p]) => done.some(([o, q]) => {
