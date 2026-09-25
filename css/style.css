@@ -475,3 +475,9 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .kit-row button { border: none; background: #eef2f8; border-radius: 6px; height: 26px; font: inherit; cursor: pointer; }
 .kit-row.zero span, .kit-row.zero b { opacity: .5; }
 .linkbtn { border: none; background: none; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; text-decoration: underline; margin-left: 6px; padding: 0; }
+
+/* 2点の長さ：よく使う長さのボタン */
+.len-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+.len-presets .btn { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; font-weight: 700; }
+.len-presets small { font-weight: 400; font-size: 10.5px; color: var(--muted); line-height: 1.2; }
+@media (max-width: 480px) { .len-presets { grid-template-columns: repeat(2, 1fr); } }

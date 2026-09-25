@@ -2172,7 +2172,7 @@
       $('traceControls').classList.add('hidden');
       openTab('leftPanel', 'traceTab');
       openPanel('leftPanel');
-      toast('舞台図を重ねました。「⤢ 舞台の前の角に合わせる」を押して、図の舞台の左の角 → 右の角をタップすると、ぴったり重なります', true);
+      toast('舞台図を重ねました。「📏 長さのわかる2点で縮尺を合わせる」で、長さのわかる2点（平台の端から端＝1.82m など）をタップすると縮尺が合います。「⤢ 舞台の前の角に合わせる」なら位置もいっしょに合います', true);
     } catch (err) {
       toast(err.message || '読み込めませんでした');
     }
@@ -2263,11 +2263,14 @@
     if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 5) return toast('2つの点が近すぎます。もう一度どうぞ');
     if (kind === 'len') {
       const cur = Math.hypot(p2.x - p1.x, p2.y - p1.y) / 100;
-      openModal(`<h2>📏 2点の間の実際の長さ</h2><p class="hint">図に書かれている寸法（例：間口 18m）を入れてください。</p>
+      const PRESETS = [['0.91', '3尺（平台の短い辺）'], ['1', '1m'], ['1.21', '4尺'], ['1.82', '6尺・1間（平台の長い辺）'], ['2', '2m'], ['3.64', '2間'], ['5', '5m'], ['10', '10m']];
+      openModal(`<h2>📏 2点の間の実際の長さ</h2><p class="hint">タップした2点の間が、実際に何mかを入れてください（図に書かれている寸法や、平台の大きさなど）。</p>
+        <div class="len-presets">${PRESETS.map(([v, t]) => `<button class="btn" type="button" data-len="${v}" title="${t}">${v}m<small>${t.replace(/^[0-9.]+m$/, '')}</small></button>`).join('')}</div>
         <label class="field">長さ（m）<input id="pickLen" type="number" step="0.01" min="0.1" value="${cur.toFixed(2)}"></label>
         <div class="btn-row"><button class="btn primary" id="pickLenOk">この長さで合わせる</button><button class="btn" id="pickLenNo">やめる</button></div>`);
       setTimeout(() => { const el = $('pickLen'); if (el) { el.focus(); el.select(); } }, 50);
       $('pickLenNo').onclick = closeModal;
+      document.querySelectorAll('[data-len]').forEach(b => { b.onclick = () => { $('pickLen').value = b.getAttribute('data-len'); $('pickLenOk').click(); }; });
       $('pickLenOk').onclick = () => {
         const L = +$('pickLen').value * 100;
         if (!(L > 0)) return;
