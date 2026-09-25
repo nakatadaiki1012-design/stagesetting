@@ -67,6 +67,7 @@ window.SS = window.SS || {};
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
     stairs:  { name: '上がり段', cat: '基本', w: 91, h: 60, shape: 'stairs', fill: '#efe3cc', label: '', note: 'ひな壇に上がる階段。段の横か前にくっつけて置く（矢印の向きに上がる）' },
     runway:  { name: '花道（張り出し）', cat: '基本', w: 180, h: 540, shape: 'runway', fill: '#f1e2c6', label: '花道', note: '舞台と同じ高さの張り出し（花道・張り出し舞台）。客席の方や舞台の横へ出して置けます。長さ・幅・向きは自由に。上に置いた人や物は舞台の外でもそのまま' },
+    mc:      { name: '司会（マイクスタンド）', cat: '基本', w: 60, h: 70, shape: 'mc', fill: '#3a3f48', label: '司会', note: '立って話す人と、前にマイクスタンド。3D の「💡 照明」で、ピンスポットを当てる相手に選べます' },
     door:    { name: '出入り口（扉）', cat: '基本', w: 180, h: 134, shape: 'door', fill: '#2f9e57', label: '出入口', note: '舞台の横か奥の壁の近くに置くと、壁にくっついて内側を向きます。緑の太線が扉、点線の所（扉の前1.2m）に人や物があると「⚠ 確認」に出ます' },
     text:    { name: '文字', cat: '基本', w: 200, h: 50, shape: 'text', label: 'テキスト', fontSize: 36 },
     box:     { name: '四角', cat: '基本', w: 120, h: 70, shape: 'rect', fill: '#f2f2f2', label: '' },
@@ -407,6 +408,14 @@ window.SS = window.SS || {};
           }
           break;
         }
+        case 'mc': {
+          // 上から見た、立って話す人（肩・頭）と、前（+y）のマイクスタンド
+          body += `<circle cx="0" cy="${h / 2 - 12}" r="12" fill="none" stroke="#6b717c" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+          body += `<line x1="0" y1="${h / 2 - 12}" x2="0" y2="4" stroke="#39414d" stroke-width="2.5"/><circle cx="0" cy="4" r="4.5" fill="#222"/>`;
+          body += `<ellipse cx="0" cy="-10" rx="${Math.min(22, w / 2 - 4)}" ry="11" fill="${fill}" stroke="#111" stroke-width="1.5"/>`;
+          body += `<circle cx="0" cy="-10" r="9" fill="#e8c9a8" stroke="#6b4a2a" stroke-width="1.2"/>`;
+          break;
+        }
         case 'door': {
           // 出入り口：-y の側（壁）に扉（緑の太線）、+y の側（舞台の内側）に空けておく所（点線）と、扉の開く向き
           const top = -h / 2, bar = 14;
@@ -504,6 +513,8 @@ window.SS = window.SS || {};
         text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${it.color || '#1f2733'}">${esc(lab)}</text>`;
         // クリックできるよう透明の当たり判定
         body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" fill="transparent"/>`;
+      } else if (lab && shape === 'mc') {
+        text += `<text x="${x}" y="${(y + h / 2 + 16).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="24" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="4" paint-order="stroke">${esc(lab)}</text>`;
       } else if (lab && ['micTall', 'monitor', 'outlet', 'tap'].includes(shape)) {
         // 小さい機材の名前（例：L・R・1番）は、形の下に黒い字で
         text += `<text x="${x}" y="${(y + Math.max(w, h) / 2 + 14).toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(lab)}</text>`;

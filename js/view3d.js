@@ -13,6 +13,7 @@ window.SS = window.SS || {};
   let hiddenHead = null;
   let labelsOn = true;
   let stageW = 14, stageD = 9;
+  let baseLights = [], rig = null, sceneRH = new Map(); // 照明テスト：もとの明かり・足した明かり・段の高さ
   V.clothes = 'black';
 
   function loadThree() {
@@ -233,10 +234,10 @@ window.SS = window.SS || {};
   }
 
   // shared：2人で1本の譜面台のとき（譜面台は別に1本だけ描く）
-  function makePlayer(it, partColor, shared) {
+  function makePlayer(it, partColor, shared, kindAs) {
     const g = new T.Group();
-    const kind = SS.instrumentKind(it.label);
-    const standing = kind === 'perc' || kind === 'bass' || kind === 'voice';
+    const kind = kindAs || SS.instrumentKind(it.label);
+    const standing = kind === 'perc' || kind === 'bass' || kind === 'voice' || kind === 'mc';
     const stool = kind === 'cb' || kind === 'drs';
     const bench = kind === 'pf';
     const seatY = stool ? 0.64 : 0.46;
@@ -444,6 +445,7 @@ window.SS = window.SS || {};
         break;
       }
       case 'pf': hands = [[-0.12, 0.74, 0.34], [0.12, 0.74, 0.34]]; break;
+      case 'mc': hands = [[-0.2, hipY + 0.02, 0.06], [0.2, hipY + 0.02, 0.06]]; break; // 司会：手は体の横
       default: break;
     }
     // 右手は -x 側、左手は +x 側
@@ -452,7 +454,7 @@ window.SS = window.SS || {};
     arm(g, shR, hr, cloth, skin);
     arm(g, shL, hl, cloth, skin);
     // 譜面台（楽譜つき）
-    const noStand = ['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind);
+    const noStand = ['perc', 'drs', 'pf', 'hp', 'voice', 'mc'].includes(kind);
     if (!noStand && V.showStands && !shared) {
       const sz = kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
       makeStand(g, sz[0], sz[1]);
@@ -638,6 +640,18 @@ window.SS = window.SS || {};
           });
         } else makeRiser(g, w, d, riserH, SS.panelSize(it).d / 100, SS.panelSize(it).w / 100);
         break;
+      case 'mc': {
+        // 司会：立って話す人と、前にマイクスタンド
+        const p = makePlayer({ id: it.id, label: it.label || '司会' }, '#8c96a8', false, 'mc');
+        p.g.position.z = -0.08;
+        g.add(p.g);
+        const mz = d / 2 - 0.12;
+        cyl(g, 0.012, 0.012, 1.42, '#222', 0, 0.71, mz, METAL, 8);
+        [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.02, mz], [Math.sin(a) * 0.2, 0.0, mz + Math.cos(a) * 0.2], 0.01, '#222'));
+        tube(g, [0, 1.42, mz], [0, 1.5, mz - 0.14], 0.01, '#222', METAL);
+        sph(g, 0.028, '#555', 0, 1.51, mz - 0.16, METAL);
+        break;
+      }
       case 'door': {
         // 出入り口：壁の側（-z）に両開きの扉と枠
         const z = -d / 2 + 0.05;
@@ -820,7 +834,9 @@ window.SS = window.SS || {};
     scene.background = new T.Color('#0d0e11');
     scene.fog = new T.Fog('#0d0e11', 35, 80);
     scene.environment = makeEnvironment();
-    scene.add(new T.HemisphereLight('#fff1dc', '#2a2420', 0.35));
+    baseLights = [];
+    const hemi = new T.HemisphereLight('#fff1dc', '#2a2420', 0.35);
+    scene.add(hemi); baseLights.push(hemi);
     // 舞台照明（前明かりと天井の明かり）
     const key = new T.DirectionalLight('#fff0d8', 0.75);
     key.position.set(W * 0.5, 16, D + 10);
@@ -831,18 +847,19 @@ window.SS = window.SS || {};
     key.shadow.normalBias = 0.02;
     const sc = key.shadow.camera;
     sc.left = -W * 0.75; sc.right = W * 0.75; sc.top = D * 0.9; sc.bottom = -D * 0.9; sc.near = 2; sc.far = 50;
-    scene.add(key); scene.add(key.target);
+    scene.add(key); scene.add(key.target); baseLights.push(key);
     [-0.3, 0.5, 1.3].forEach(fx => {
       const sp = new T.SpotLight('#ffe7c4', 0.55, 40, 0.55, 0.6, 1.2);
       sp.position.set(W * fx, 11, D + 6);
       sp.target.position.set(W / 2 + (fx - 0.5) * W * 0.3, 0, D * 0.4);
-      scene.add(sp); scene.add(sp.target);
+      scene.add(sp); scene.add(sp.target); baseLights.push(sp);
     });
     for (let i = 0; i < 3; i++) {
       const pl = new T.PointLight('#fff2dd', 0.35, 18, 1.6);
       pl.position.set(W * (0.25 + i * 0.25), 6.5, D * 0.45);
-      scene.add(pl);
+      scene.add(pl); baseLights.push(pl);
     }
+    baseLights.forEach(l => { l.userData.i0 = l.intensity; });
 
     // ステージの床（板張り）
     const poly = SS.render.stagePoly(st).map(p => [p[0] / 100, p[1] / 100]);
@@ -983,6 +1000,7 @@ window.SS = window.SS || {};
     // 部品
     playerGroups = new Map();
     const rh = riserHeights(doc.items);
+    sceneRH = rh;
     const ropts = { colorBy: true, figure: true };
     // 弦楽器は2人で1本の譜面台：2人の譜面台の位置の真ん中に1本
     const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
@@ -1174,6 +1192,161 @@ window.SS = window.SS || {};
   }
 
   let bound = false, closeBound = false;
+  // ---------------------------------------------------------------- 照明のテスト
+  // 配置図に保存（doc.lighting）。地明かりの明るさ・反射板を下から色で照らす（アッパー）・上から色・ピンスポット
+  const LIGHT_COLORS = [['#ffffff', '白'], ['#ffd28a', '電球色'], ['#3a6bff', '青'], ['#35c8ff', '水色'], ['#ff3b3b', '赤'], ['#ff9f1a', 'オレンジ'], ['#35d06a', '緑'], ['#b04dff', '紫'], ['#ff5fb0', 'ピンク']];
+  const SPOT_FROM = { back: '客席のうしろ（真ん中）', left: '2階の下手側', right: '2階の上手側', top: '舞台の真上' };
+  const SPOT_SIZE = { s: ['小（顔と上半身）', 0.55], m: ['中（1人）', 0.9], l: ['大（2〜3人）', 1.5] };
+  let glowT = null;
+  function glowTex() {
+    if (glowT) return glowT;
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128;
+    const x = cv.getContext('2d');
+    const gr = x.createLinearGradient(0, 128, 0, 0); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 128);
+    const gh = x.createLinearGradient(0, 0, 64, 0); gh.addColorStop(0, 'rgba(0,0,0,1)'); gh.addColorStop(0.5, 'rgba(0,0,0,0)'); gh.addColorStop(1, 'rgba(0,0,0,1)');
+    x.globalCompositeOperation = 'destination-out'; x.fillStyle = gh; x.globalAlpha = 0.6; x.fillRect(0, 0, 64, 128);
+    glowT = new T.CanvasTexture(cv);
+    return glowT;
+  }
+  V.lightingOf = function () {
+    const d = SS.app.doc();
+    return Object.assign({ base: 100, horizon: false, hColor: '#3a6bff', hColor2: '', hPower: 70, wash: false, wColor: '#b04dff', wPower: 60, spots: [] }, d.lighting || {});
+  };
+  function saveLighting(L) { SS.app.doc().lighting = L; if (SS.app.touch) SS.app.touch(); }
+  function spotSource(from, W, D) {
+    if (from === 'left') return new T.Vector3(-2.5, 7.5, D + 11);
+    if (from === 'right') return new T.Vector3(W + 2.5, 7.5, D + 11);
+    if (from === 'top') return new T.Vector3(W / 2, 11, D * 0.5);
+    return new T.Vector3(W / 2, 9, D + 22);
+  }
+  // ピンスポットを当てる相手：司会・指揮者・奏者（パート名と名前）
+  function spotTargets() {
+    const items = SS.app.doc().items, out = [];
+    items.filter(it => it.type === 'mc').forEach(it => out.push([it.id, `🎤 ${it.label || '司会'}`]));
+    items.filter(it => it.type === 'podium').forEach(it => out.push([it.id, '🎼 指揮者（指揮台）']));
+    items.filter(it => it.type === 'player').forEach(it => out.push([it.id, `${it.label || '奏者'}${it.name ? '（' + it.name + '）' : ''}`]));
+    return out;
+  }
+  function applyLighting() {
+    if (!scene || !T) return;
+    const L = V.lightingOf(), W = stageW, D = stageD;
+    // 目で見た明るさに近くなるよう、％は2乗で効かせる（50%でもしっかり暗くなる）
+    const k0 = Math.max(0, Math.min(1, L.base / 100)), k = Math.pow(k0, 1.8);
+    baseLights.forEach(l => { l.intensity = l.userData.i0 * k; });
+    // 映り込みの明るさ（環境光）も同じだけ落とす（暗くしないと、ピンスポットや色の明かりが見えない）
+    scene.traverse(o => { if (!o.isMesh || !o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.envMapIntensity == null) return; if (m.userData.env0 == null) m.userData.env0 = m.envMapIntensity; m.envMapIntensity = m.userData.env0 * Math.max(0.03, k); }); });
+    if (rig) {
+      scene.remove(rig);
+      rig.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.userData.own) o.material.dispose(); if (o.shadow && o.shadow.map) o.shadow.map.dispose(); });
+    }
+    rig = new T.Group();
+    scene.add(rig);
+    const addSpot = (color, power, from, to, angle, penumbra, shadow, reach) => {
+      const sp = new T.SpotLight(color, power, reach || 0, angle, penumbra, reach ? 1.2 : 1);
+      sp.position.copy(from); sp.target.position.copy(to);
+      if (shadow) { sp.castShadow = true; sp.shadow.mapSize.set(1024, 1024); sp.shadow.bias = -0.0005; }
+      rig.add(sp); rig.add(sp.target);
+      return sp;
+    };
+    // 反射板（舞台の奥の壁）を、床に置いた明かりで下から色で照らす
+    if (L.horizon) {
+      const poly = SS.render.stagePoly(SS.app.doc().stage).map(p => [p[0] / 100, p[1] / 100]);
+      const a = poly[0], b = poly[1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const n = Math.max(3, Math.round(len / 1.5));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n, x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+        const col = L.hColor2 && i % 2 ? L.hColor2 : L.hColor;
+        addSpot(col, (L.hPower / 100) * 1.6, new T.Vector3(x, 0.15, z + 1.0), new T.Vector3(x, 3.2, z), 0.42, 0.8, false, 12);
+        // 壁にうつる色（下が濃く、上へうすく）
+        const glow = new T.Mesh(new T.PlaneGeometry((len / n) * 1.25, 5.5), new T.MeshBasicMaterial({ map: glowTex(), color: col, transparent: true, opacity: 0.85 * (L.hPower / 100), depthWrite: false, toneMapped: false }));
+        glow.position.set(x, 2.75, z + 0.32); glow.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]); glow.userData.own = true; rig.add(glow);
+        const fx = box(rig, 0.3, 0.16, 0.24, '#111', x, 0.08, z + 0.42);
+        void fx;
+        const lens = new T.Mesh(new T.CircleGeometry(0.07, 16), new T.MeshBasicMaterial({ color: col }));
+        lens.position.set(x, 0.17, z + 0.4); lens.rotation.x = -Math.PI / 2 + 0.5; lens.userData.own = true; rig.add(lens);
+      }
+    }
+    // 上から色の照明（舞台全体）
+    if (L.wash) addSpot(L.wColor, (L.wPower / 100) * 1.4, new T.Vector3(W / 2, 12, D * 0.55), new T.Vector3(W / 2, 0, D * 0.5), 0.8, 0.5, false);
+    // ピンスポット
+    const items = SS.app.doc().items;
+    (L.spots || []).forEach((s2, i) => {
+      const it = items.find(o => o.id === s2.target);
+      if (!it) return;
+      const base = heightAt(it.x, it.y, sceneRH);
+      const aim = new T.Vector3(it.x / 100, base + (it.type === 'podium' ? 0.2 : 0), it.y / 100);
+      const src = spotSource(s2.from || 'back', W, D);
+      const r = (SPOT_SIZE[s2.size] || SPOT_SIZE.m)[1];
+      const dist = src.distanceTo(aim);
+      const ang = Math.atan(r / dist);
+      addSpot(s2.color || '#ffffff', 2.6, src, aim, ang, 0.3, i < 4);
+      // 光の筋（うすく見える円すい）
+      const cone = new T.Mesh(new T.ConeGeometry(r, dist, 32, 1, true), new T.MeshBasicMaterial({ color: s2.color || '#ffffff', transparent: true, opacity: 0.06, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide }));
+      cone.position.copy(src.clone().add(aim).multiplyScalar(0.5));
+      cone.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), src.clone().sub(aim).normalize());
+      cone.userData.own = true;
+      rig.add(cone);
+    });
+  }
+  V.applyLighting = applyLighting;
+
+  // 照明のパネル
+  function swatches(name, cur, allowNone) {
+    return `<div class="v3-sw" data-sw="${name}">${allowNone ? `<button type="button" data-c="" class="${!cur ? 'on' : ''}" title="なし">なし</button>` : ''}${LIGHT_COLORS.map(([c, t]) => `<button type="button" data-c="${c}" title="${t}" class="${cur === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>`;
+  }
+  function renderLightPanel() {
+    const box2 = $('v3light'); if (!box2) return;
+    const L = V.lightingOf(), tg = spotTargets();
+    const opt = (list, cur) => list.map(([v, t]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${SS.esc(t)}</option>`).join('');
+    box2.innerHTML = `<div class="v3l-head"><b>💡 照明のテスト</b><button type="button" class="v3l-x" id="v3lClose" title="閉じる">✕</button></div>
+      <label class="field">地明かり（ふだんの舞台の明かり） <b>${L.base}%</b><input type="range" min="0" max="100" step="5" value="${L.base}" data-k="base"></label>
+      <div class="v3l-sec"><label class="check"><input type="checkbox" data-k="horizon"${L.horizon ? ' checked' : ''}> 反射板を下から色で照らす（床に置いた明かり）</label>
+        ${L.horizon ? `${swatches('hColor', L.hColor)}<div class="small">2色を交互に：</div>${swatches('hColor2', L.hColor2, true)}<label class="field">強さ <b>${L.hPower}%</b><input type="range" min="10" max="100" step="5" value="${L.hPower}" data-k="hPower"></label>` : ''}</div>
+      <div class="v3l-sec"><label class="check"><input type="checkbox" data-k="wash"${L.wash ? ' checked' : ''}> 上から色の明かり（舞台全体）</label>
+        ${L.wash ? `${swatches('wColor', L.wColor)}<label class="field">強さ <b>${L.wPower}%</b><input type="range" min="10" max="100" step="5" value="${L.wPower}" data-k="wPower"></label>` : ''}</div>
+      <div class="v3l-sec"><b class="small">ピンスポット</b>
+        ${(L.spots || []).map((s2, i) => `<div class="v3l-spot" data-i="${i}">
+          <label class="field">当てる人<select data-s="target">${opt(tg, s2.target)}</select></label>
+          <div class="row2"><label class="field">どこから<select data-s="from">${opt(Object.entries(SPOT_FROM), s2.from || 'back')}</select></label>
+          <label class="field">大きさ<select data-s="size">${opt(Object.entries(SPOT_SIZE).map(([k2, v]) => [k2, v[0]]), s2.size || 'm')}</select></label></div>
+          ${swatches('spot' + i, s2.color || '#ffffff')}
+          <button type="button" class="btn small" data-del="${i}">このピンスポットを消す</button></div>`).join('')}
+        <button type="button" class="btn wide" id="v3lAdd"${tg.length ? '' : ' disabled'}>＋ ピンスポットを足す</button>
+        ${tg.length ? '' : '<p class="small">当てる人がいません。「部品」の「司会（マイクスタンド）」や奏者を置いてください。</p>'}
+        <p class="small">司会の位置は、2D の図で「部品」の <b>司会（マイクスタンド）</b> を置いて決めます。</p></div>
+      <button type="button" class="btn wide" id="v3lReset">照明をもとに戻す</button>`;
+    const set = (k2, v) => { const L2 = V.lightingOf(); L2[k2] = v; saveLighting(L2); applyLighting(); };
+    box2.querySelectorAll('[data-k]').forEach(el => {
+      const k2 = el.getAttribute('data-k');
+      if (el.type === 'checkbox') el.onchange = () => { set(k2, el.checked); renderLightPanel(); };
+      else { el.oninput = () => { set(k2, +el.value); el.previousElementSibling && (el.previousElementSibling.textContent = el.value + '%'); }; }
+    });
+    box2.querySelectorAll('[data-sw]').forEach(sw => {
+      const name = sw.getAttribute('data-sw');
+      sw.querySelectorAll('button').forEach(b => { b.onclick = () => {
+        const L2 = V.lightingOf(), c = b.getAttribute('data-c');
+        if (/^spot\d+$/.test(name)) { const i = +name.slice(4); L2.spots = L2.spots.map((q, j) => (j === i ? Object.assign({}, q, { color: c }) : q)); } else L2[name] = c;
+        saveLighting(L2); applyLighting(); renderLightPanel();
+      }; });
+    });
+    box2.querySelectorAll('.v3l-spot').forEach(row => {
+      const i = +row.getAttribute('data-i');
+      row.querySelectorAll('[data-s]').forEach(el => { el.onchange = () => { const L2 = V.lightingOf(); L2.spots = L2.spots.map((q, j) => (j === i ? Object.assign({}, q, { [el.getAttribute('data-s')]: el.value }) : q)); saveLighting(L2); applyLighting(); }; });
+      row.querySelector('[data-del]').onclick = () => { const L2 = V.lightingOf(); L2.spots = L2.spots.filter((q, j) => j !== i); saveLighting(L2); applyLighting(); renderLightPanel(); };
+    });
+    if ($('v3lAdd')) $('v3lAdd').onclick = () => {
+      const L2 = V.lightingOf(); const used = new Set((L2.spots || []).map(q => q.target));
+      const t = tg.find(([id]) => !used.has(id)) || tg[0];
+      L2.spots = (L2.spots || []).concat([{ target: t[0], color: '#ffffff', size: 'm', from: 'back' }]);
+      // はじめてのピンスポットは、ほかの明かりを少し暗くして見やすく
+      if (L2.spots.length === 1 && L2.base > 60) L2.base = 60;
+      saveLighting(L2); applyLighting(); renderLightPanel();
+    };
+    $('v3lReset').onclick = () => { saveLighting(null); delete SS.app.doc().lighting; applyLighting(); renderLightPanel(); };
+    $('v3lClose').onclick = () => { box2.hidden = true; $('v3lightBtn').classList.remove('active'); };
+  }
+
   V.open = async function (playerId) {
     // 閉じるボタンと Esc は、読み込みの前に登録する（読み込みに失敗しても閉じられるように）
     if (!closeBound) {
@@ -1212,12 +1385,13 @@ window.SS = window.SS || {};
       cv.addEventListener('wheel', e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); }, { passive: false });
       window.addEventListener('resize', resize);
       document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => setCam(b.getAttribute('data-cam')); });
-      $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); if (id) setCam('seat', id); };
+      $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); rig = null; applyLighting(); if (id) setCam('seat', id); };
       $('v3labelSize').onchange = e => {
         V.labelSize = e.target.value;
         try { localStorage.setItem('stagesetting.v3label', V.labelSize); } catch (err) { /* ignore */ }
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) setLabelScale(o); });
       };
+      $('v3lightBtn').onclick = () => { const p = $('v3light'); p.hidden = !p.hidden; $('v3lightBtn').classList.toggle('active', !p.hidden); if (!p.hidden) renderLightPanel(); };
       $('v3labels').onchange = e => {
         labelsOn = e.target.checked;
         scene && scene.traverse(o => { if (o.userData && o.userData.isLabel) o.visible = labelsOn; });
@@ -1227,6 +1401,9 @@ window.SS = window.SS || {};
     $('v3labelSize').value = V.labelSize;
     disposeScene();
     buildScene();
+    rig = null;
+    applyLighting();
+    if (!$('v3light').hidden) renderLightPanel();
     resize();
     setCam(playerId ? 'seat' : 'audience', playerId);
     $('v3loading').hidden = true;

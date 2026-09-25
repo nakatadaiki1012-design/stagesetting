@@ -1023,6 +1023,8 @@ window.SS = window.SS || {};
   R.encodeShare = async function (doc) {
     const slim = JSON.parse(JSON.stringify(doc));
     delete slim.underlay;
+    // ピンスポットの「当てる人」は部品の番号で覚える（共有リンクでは部品の id を省くため）
+    if (slim.lighting && slim.lighting.spots) slim.lighting.spots.forEach(sp => { const i = doc.items.findIndex(it => it.id === sp.target); sp.target = i >= 0 ? '#' + i : ''; });
     slim.items.forEach(it => { it.x = Math.round(it.x); it.y = Math.round(it.y); it.rot = Math.round(it.rot || 0); delete it.id; });
     const bytes = new TextEncoder().encode(JSON.stringify(slim));
     if (window.CompressionStream) return 'z' + b64url(await pipe(bytes, new CompressionStream('deflate-raw')));

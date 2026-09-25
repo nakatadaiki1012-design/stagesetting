@@ -481,3 +481,19 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .len-presets .btn { display: flex; flex-direction: column; align-items: center; padding: 6px 4px; font-weight: 700; }
 .len-presets small { font-weight: 400; font-size: 10.5px; color: var(--muted); line-height: 1.2; }
 @media (max-width: 480px) { .len-presets { grid-template-columns: repeat(2, 1fr); } }
+
+/* 3D：照明のテストのパネル */
+.v3-light { position: absolute; top: 56px; right: 12px; width: 300px; max-height: calc(100% - 150px); overflow-y: auto; background: rgba(255,255,255,.96); color: var(--text, #1f2733); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font-size: 13px; z-index: 2; }
+.v3-light .field { display: block; margin: 6px 0; }
+.v3-light .field input[type=range], .v3-light select { width: 100%; }
+.v3l-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.v3l-x { border: 0; background: none; font-size: 18px; cursor: pointer; color: #666; }
+.v3l-sec { border-top: 1px solid #e3e6ec; padding-top: 8px; margin-top: 8px; }
+.v3l-spot { background: #f4f6fa; border-radius: 10px; padding: 6px 8px; margin: 6px 0; }
+.v3-sw { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.v3-sw button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #c9ced8; cursor: pointer; padding: 0; font-size: 10px; background: #fff; }
+.v3-sw button.on { border-color: #1f5fbf; box-shadow: 0 0 0 2px #fff inset, 0 0 0 2px #1f5fbf; }
+.v3-sw button[data-c=""] { width: auto; border-radius: 13px; padding: 0 8px; }
+@media (max-width: 700px) {
+  .v3-light { top: auto; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 8px; width: auto; max-height: 46vh; }
+}
