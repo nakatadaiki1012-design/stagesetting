@@ -27,6 +27,11 @@ const CASES = [
   ['Tp 5', { Tp: 5 }],
   ['ホルンを2人増やす', { Hr: 6 }],
   ['サックス5人', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1 }],
+  // 書き方がちがっても、サックスの分け方は同じ（今の人数の割合：A.Sx 2・T.Sx 1・B.Sx 1）
+  ['Sax 5', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1 }],
+  ['SAX5人', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1 }],
+  ['sax ５名', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1 }],
+  ['サクソフォーン5人', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1 }],
   ['パーカス4人', { Perc: 4 }],
   ['打楽器4人', { Perc: 4 }],
   ['ペット5人、ボーン4人', { Tp: 5, Tb: 4 }],
@@ -42,6 +47,11 @@ const OTHER = [
   ['パーカスは上手', r => r.changes.percPlace === 'right'],
   ['Aの部 高校55人', r => /コンクールA/.test(r.said.join()) && Object.values(r.changes.counts || {}).reduce((a, v) => a + v, 0) === 55],
   ['A部門55人', r => /コンクールA/.test(r.said.join()) && Object.values(r.changes.counts || {}).reduce((a, v) => a + v, 0) === 55],
+  // 多すぎる人数は「読み取れませんでした」ではなく「多すぎます」
+  ['フルートを100人', r => (r.tooMany || []).join() === 'フルート100人は多すぎます（1パート最大40人）' && !(r.changes.counts || {}).Fl],
+  ['フルートを100人、クラ10人', r => /フルート100人は多すぎます/.test((r.tooMany || []).join()) && (r.changes.counts || {}).Cl1 === 4 && (r.changes.counts || {}).Fl == null],
+  ['Fl 41', r => /Fl41人は多すぎます（1パート最大40人）/.test((r.tooMany || []).join())],
+  ['フルート40人', r => !r.tooMany && (r.changes.counts || {}).Fl === 40],
 ];
 
 (async () => {
@@ -65,6 +75,25 @@ const OTHER = [
     const good = ok(r);
     if (!good) ng++;
     console.log(`${good ? 'OK' : 'NG'} 「${text}」 ${r.said.join('／')}`);
+  }
+  // AI（Claude）が別の分け方で答えても、アプリの決まりにそろえる（「Sax 5」→ A.Sx 3・T.Sx 1・B.Sx 1）
+  {
+    const c = await p.evaluate(() => SS.assistant.alignSplit({ counts: { 'A.Sx': 2, 'T.Sx': 2, 'B.Sx': 1 } }, 'Sax 5', SS.auto.defaultState('band')).counts);
+    const good = c['A.Sx'] === 3 && c['T.Sx'] === 1 && c['B.Sx'] === 1;
+    if (!good) ng++;
+    console.log(`${good ? 'OK' : 'NG'} AIの答え（A.Sx 2・T.Sx 2・B.Sx 1）を「Sax 5」の決まりにそろえる → ${JSON.stringify(c)}`);
+  }
+  // 画面：多すぎる人数は「多すぎます」と出る（「読み取れませんでした」ではない）
+  {
+    const msg = await p.evaluate(async () => {
+      const box = document.getElementById('aiText'); if (!box) return 'no-box';
+      box.value = 'フルートを100人'; document.getElementById('aiGo').click();
+      await new Promise(r => setTimeout(r, 300));
+      return document.getElementById('aiOut').textContent;
+    });
+    const good = /フルート100人は多すぎます（1パート最大40人）/.test(msg) && !/読み取れませんでした/.test(msg);
+    if (!good) ng++;
+    console.log(`${good ? 'OK' : 'NG'} 画面の答え：${msg.slice(0, 80)}`);
   }
   if (errs.length) { ng++; console.log('NG 画面のエラー：' + errs.join(' / ')); }
   console.log(ng ? `${ng}件 NG` : 'すべて OK');

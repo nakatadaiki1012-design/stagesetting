@@ -70,6 +70,28 @@ const ROSTER = [
   await p.waitForTimeout(300);
   const after2 = await snap();
   check(after2.n === 44, `確認で「やめる」を押すと人数はそのまま（${after2.n}人）`);
+  // 「サックス」とまとめて書いた5人を、人数も合わせて取り込む → 文章の「サックス5人」と同じ分け方（A.Sx 3・T.Sx 1・B.Sx 1）
+  {
+    const q = await b.newPage({ viewport: { width: 1400, height: 900 } });
+    q.on('pageerror', e => errs.push(e.message));
+    await q.goto(URL);
+    await q.evaluate(() => { localStorage.clear(); localStorage.setItem('stagesetting.helped', '1'); });
+    await q.reload();
+    await q.waitForTimeout(800);
+    await q.evaluate(() => document.getElementById('btnRoster').click());
+    await q.waitForTimeout(300);
+    await q.click('#rsPasteBtn');
+    await q.fill('#rsPasteText', ['サックス\t石井', 'Sax\t森', 'サックス\t池田', 'sax\t橋本', 'サックス\t山本'].join('\n'));
+    await q.click('#rsPasteGo');
+    await q.waitForTimeout(800);
+    await q.check('#rsCounts');
+    await q.click('#rsApply');
+    await q.waitForTimeout(800);
+    if (await q.$('#cfYes')) { await q.click('#cfYes'); await q.waitForTimeout(800); }
+    const sx = await q.evaluate(() => ({ c: ['A.Sx', 'T.Sx', 'B.Sx'].map(k => SS.state.doc.ensemble.counts[k]).join('・'), named: SS.state.doc.items.filter(i => /Sx/.test(i.label || '') && i.name).length }));
+    check(sx.c === '3・1・1' && sx.named === 5, `名簿の「サックス」5人は A.Sx 3・T.Sx 1・B.Sx 1（文章の「サックス5人」と同じ）→ ${sx.c}、名前が入った席 ${sx.named}`);
+    await q.close();
+  }
   if (errs.length) { ng++; console.log('NG 画面のエラー：' + errs.join(' / ')); }
   console.log(ng ? `${ng}件 NG` : 'すべて OK');
   await b.close();

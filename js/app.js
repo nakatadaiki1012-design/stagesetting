@@ -554,6 +554,14 @@
     const keyOf = p => (keys.includes(p) ? p : p === 'Timp' && keys.includes('Perc') ? 'Perc' : null);
     const cnt = {};
     Object.keys(cnt0).forEach(p => { const k = keyOf(p); if (k) cnt[k] = (cnt[k] || 0) + cnt0[p]; });
+    // 「サックス」「クラ」とまとめて書いた人は、文章での指示（「サックス5人」）と同じ決まり（今の人数の割合）で分けて数える
+    Object.keys(RSx().GROUPS).forEach(g => {
+      if (!cnt0[g]) return;
+      const ps = RSx().GROUPS[g].filter(p => keys.includes(p));
+      if (!ps.length) return;
+      const sp = SS.assistant.splitCount(cnt0[g], ps, st.counts);
+      ps.forEach(p => { cnt[p] = (cnt[p] || 0) + sp[p]; });
+    });
     return Object.keys(cnt).filter(p => (st.counts[p] || 0) !== cnt[p]).map(p => ({ p, from: st.counts[p] || 0, to: cnt[p] }));
   }
   /**
@@ -4221,7 +4229,7 @@
     openModal(`
       <h2>🎼 使い方</h2>
       <ol>
-        <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
+        <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。「サックス5人」「Sax 5」のように書き方がちがっても、分け方は同じです。1パートは40人までで、多すぎるときは「フルート100人は多すぎます（1パート最大40人）」と出ます。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
         <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。サントリーホール・ミューザ・みなとみらいもホール一覧にあります（寸法は目安なので図面で確認を）。</li>
         <li><b>ホールの寸法</b>：ホールの寸法は公開されている資料からの<b>目安</b>です（△のホールは推定値）。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
@@ -4757,8 +4765,14 @@
     $('aiGo').disabled = true; $('aiStop').hidden = false;
     aiShow('AIが考えています…（10〜60秒ほどかかることがあります）');
     try {
+    // 人数が多すぎるときは「読み取れませんでした」ではなく、何が多すぎるかを伝える
+    const many = r.tooMany ? r.tooMany.join('／') : '';
+    if (r.unknown && many) { aiShow((note ? note + '\n' : '') + many + '。40人までの人数にして、もう一度「並べ直す」を押してください。', true); return; }
+    if (many) r.said.push(many + '（その人数は変えていません）');
       const raw = await aiSample.json(SS.assistant.buildPrompt(text, ens(), doc().stage, doc().hall), { signal: aiCtl.signal, cache: false });
-      const ch = SS.assistant.sanitize(raw);
+      const ch = SS.assistant.alignSplit(SS.assistant.sanitize(raw), text, ens());
+      const many = (SS.assistant.parseLocal(text, ens()).tooMany || []).join('／');
+      if (many) ch.message = many + '（その人数は変えていません）。' + (ch.message || '');
       const keys = Object.keys(ch).filter(k => k !== 'message');
       if (!keys.length) { aiShow('🤖 ' + (ch.message || '変えるところが見つかりませんでした。もう少し具体的に書いてみてください。')); return; }
       confirmDrop(ch, () => {

@@ -173,7 +173,7 @@ window.SS = window.SS || {};
     const allParts = SS.auto.ENSEMBLES[type].parts.map(p => p[0]);
     // 人数：「フルート6人」「Tp 5」「ホルンを4人に」「クラを2人増やす／減らす」「クラ10人」「サックス×5」
     // 数字はまとまりで読む（「10人」は10人。全角の「１０」・漢数字の「十」も）。パート名の後ろの数字（Cl1 の 1）とは区別する
-    const counts = {}, countSaid = [];
+    const counts = {}, countSaid = [], splitSet = {}, tooMany = [];
     const CNT = new RegExp('\\s*(?:の|を|は|が|も|:)?\\s*(?:あと)?\\s*[×xX✕*]?\\s*' + N + '(?!\\s*(?:段|m|メートル|曲|番|列|%|割|尺|cm))\\s*(人|名)?\\s*(増|減|ふや|へら)?', 'y');
     AI.scanParts(t, allParts).forEach(pm => {
       CNT.lastIndex = pm.end;
@@ -186,6 +186,11 @@ window.SS = window.SS || {};
       }
       if (!m) return;
       const v = num(m[1]), delta = m[3], tg = pm.targets;
+      // 多すぎる人数（1パート40人まで）は、読めなかったことにせず「多すぎます」と伝える
+      if (v > (pm.split ? 40 * tg.length : 40) && !delta) {
+        tooMany.push(`${pm.text}${v}人は多すぎます（1パート最大40人${pm.split ? `。${pm.text}は${tg.length}パート合わせて${40 * tg.length}人まで` : ''}）`);
+        return;
+      }
       if (!(v >= 0 && v <= (pm.split ? 40 * tg.length : 40))) return;
       if (tg.some(p => counts[p] != null)) return; // 同じパートは最初の指示だけ
       const cur = p => (st && st.counts && st.counts[p]) || 0;
@@ -198,6 +203,7 @@ window.SS = window.SS || {};
         const total = delta ? Math.max(0, now + (/増|ふや/.test(delta) ? v : -v)) : v;
         const sp = AI.splitCount(total, tg, st && st.counts);
         Object.assign(counts, sp);
+        Object.assign(splitSet, sp);
         countSaid.push(`${pm.text}${total}人（${tg.map(p => `${p} ${sp[p]}`).join('・')}）`);
       }
     });
@@ -276,7 +282,17 @@ window.SS = window.SS || {};
     if (/円形|丸い舞台/.test(t)) { ch.stage = Object.assign(ch.stage || {}, { shape: 'round' }); said.push('舞台を円形に'); }
     else if (/弧|アーチ/.test(t) && /舞台|ステージ/.test(t)) { ch.stage = Object.assign(ch.stage || {}, { shape: 'arc' }); said.push('舞台の前を弧に'); }
     void parts;
-    return { changes: ch, said, unknown: !said.length };
+    return { changes: ch, said, unknown: !said.length, split: Object.keys(splitSet).length ? splitSet : null, tooMany: tooMany.length ? tooMany : null };
+  };
+  // 「サックス5人」「Sax 5」「クラ10人」のように、まとめて言った人数の分け方を、アプリの決まり（今の人数の割合）にそろえる。
+  // AI（Claude）が別の分け方を答えても、同じ言い方なら同じ結果になるように
+  AI.alignSplit = function (changes, text, st) {
+    if (!changes || !st) return changes;
+    if (changes.type && changes.type !== st.type) return changes;
+    const loc = AI.parseLocal(text, st);
+    if (!loc.split) return changes;
+    changes.counts = Object.assign(changes.counts || {}, loc.split);
+    return changes;
   };
 
   // Claude に渡す説明（今の設定と、変えられる項目・値）
@@ -287,6 +303,7 @@ window.SS = window.SS || {};
       'あなたは吹奏楽・オーケストラのステージ配置の専門家です。',
       '下の「要望」を読み、配置アプリの「かんたん編成」の設定をどう変えるかを JSON で答えてください。配置そのものはアプリが自動で作ります。',
       '要望にないことは変えないでください（変える項目だけ書く）。人数の合計・パートの内訳は要望どおりに。あいまいなら、日本の吹奏楽・オーケストラでよくある形を選んでください。',
+      '「サックス5人」「クラ10人」のように、いくつかのパートをまとめた人数は、今の人数の割合で分けてください（端数は前のパートから。例：今 A.Sx 2・T.Sx 1・B.Sx 1 なら、サックス5人は A.Sx 3・T.Sx 1・B.Sx 1）。',
       '',
       '## 返す JSON の形（使う項目だけ）',
       '{',
