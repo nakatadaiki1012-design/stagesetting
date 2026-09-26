@@ -47,10 +47,17 @@ window.SS = window.SS || {};
     ['bass', /^(bass|e\.?b|ベース)/i],
     ['perc', /^(perc|per|pc|timp|tim|sd|s\.d|bd|b\.d|cym|mar|xyl|vib|glk|glock|chime|tri|tamb|打|パーカッション|ティンパニ)/i],
   ];
+  // 同じパート名は何度も調べるので、1回調べたら覚えておく
+  const kindMemo = new Map();
   SS.instrumentKind = function (label) {
     const l = String(label || '').trim();
-    for (const [k, re] of KINDS) if (re.test(l)) return k;
-    return 'none';
+    let k = kindMemo.get(l);
+    if (k !== undefined) return k;
+    k = 'none';
+    for (const [kk, re] of KINDS) if (re.test(l)) { k = kk; break; }
+    if (kindMemo.size > 2000) kindMemo.clear();
+    kindMemo.set(l, k);
+    return k;
   };
 
   const f = n => +n.toFixed(1);
@@ -184,10 +191,17 @@ window.SS = window.SS || {};
   const DESK_KINDS = new Set(['vn', 'va', 'vc', 'cb']);
   SS.isDeskPart = it => it.type === 'player' && DESK_KINDS.has(SS.instrumentKind(it.label));
   // 奏者から見た譜面台の位置（奏者の向きの座標、cm）
+  const standMemo = new Map();
   SS.standOffset = function (it, opts) {
     opts = opts || {};
     if (opts.contest) return [0, 52];
-    if (opts.figure !== false) { const ins = instrument(SS.instrumentKind(it.label)) || {}; return ins.stand || [0, 64]; }
+    if (opts.figure !== false) {
+      // 楽器ごとの譜面台の位置は決まっているので、1回調べたら覚えておく（楽器の絵は作らない）
+      const kind = SS.instrumentKind(it.label);
+      let st = standMemo.get(kind);
+      if (!st) { const ins = instrument(kind) || {}; st = ins.stand || [0, 64]; standMemo.set(kind, st); }
+      return st.slice();
+    }
     return [0, (opts.seatR || SS.PLAYER_R) + 12.5];
   };
   SS.standPoint = function (it, opts) {

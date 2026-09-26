@@ -279,12 +279,13 @@ window.SS = window.SS || {};
     const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
     const fig = { figure: true };
     const shapes = [];
+    const order = new Map(doc.items.map((it, i) => [it, i])), ix = it => (order.has(it) ? order.get(it) : -1);
     ps.forEach(p => {
-      shapes.push({ kind: 'chair', it: p, x: p.x, y: p.y, r: CHAIR });
       const kind = SS.instrumentKind ? SS.instrumentKind(p.label) : '';
+      shapes.push({ kind: 'chair', it: p, x: p.x, y: p.y, r: CHAIR, plays: PLAYS_ITEM.has(kind) });
       if (['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind)) return;
       const b = pairs.get(p);
-      if (b && doc.items.indexOf(b) < doc.items.indexOf(p)) return; // 2人で1本：1本だけ
+      if (b && ix(b) < ix(p)) return; // 2人で1本：1本だけ
       const s1 = SS.standPoint(p, fig), s2 = b ? SS.standPoint(b, fig) : s1;
       shapes.push({ kind: 'stand', it: p, it2: b || null, x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2, r: STAND });
     });
@@ -308,21 +309,29 @@ window.SS = window.SS || {};
       return d;
     };
     const hits = [], who = [];
-    const owner = s => [s.it, s.it2].filter(Boolean);
+    // 遠く離れた組は、くわしく調べる前に飛ばす（結果は同じ。速くするため）
+    const apart = (a, b) => b.x1 < a.x0 || a.x1 < b.x0 || b.y1 < a.y0 || a.y1 < b.y0;
+    const shBox = sh => ({ x0: sh.x - sh.r, x1: sh.x + sh.r, y0: sh.y - sh.r, y1: sh.y + sh.r });
+    const shared = (a, c) => a.it === c.it || (c.it2 && a.it === c.it2) || (a.it2 && (a.it2 === c.it || a.it2 === c.it2));
     for (let i = 0; i < shapes.length; i++) for (let j = i + 1; j < shapes.length; j++) {
-      const a = shapes[i], c = shapes[j];
-      if (owner(a).some(o => owner(c).includes(o))) continue; // 自分の椅子と自分の譜面台
-      const depth = a.r + c.r - Math.hypot(a.x - c.x, a.y - c.y);
+      const a = shapes[i], c = shapes[j], rr = a.r + c.r;
+      if (Math.abs(a.x - c.x) > rr || Math.abs(a.y - c.y) > rr) continue;
+      if (shared(a, c)) continue; // 自分の椅子と自分の譜面台
+      const depth = rr - Math.hypot(a.x - c.x, a.y - c.y);
       if (depth >= DEPTH) { hits.push({ x0: Math.min(a.x, c.x) - 20, x1: Math.max(a.x, c.x) + 20, y0: Math.min(a.y, c.y) - 20, y1: Math.max(a.y, c.y) + 20 }); who.push(a.it, c.it); }
     }
-    shapes.forEach(sh => things.forEach(t => {
+    const tInfo = new Map(things.map(t => [t, { b: bx.get(t), tc: circOf(t) }]));
+    shapes.forEach(sh => { const sb = shBox(sh); things.forEach(t => {
       // 打楽器・鍵盤・ハープなどの奏者は、自分の楽器のすぐ後ろに立つので、奏者と楽器の重なりは見ない
-      if (sh.kind === 'chair' && PLAYS_ITEM.has(SS.instrumentKind ? SS.instrumentKind(sh.it.label) : '')) return;
-      const b = bx.get(t), tc = circOf(t);
+      if (sh.kind === 'chair' && sh.plays) return;
+      const { b, tc } = tInfo.get(t);
+      if (apart(sb, b)) return;
       if (tc ? sh.r + tc.r - Math.hypot(sh.x - tc.x, sh.y - tc.y) >= DEPTH : (turned(t) ? circRect(sh, rectOf(t)) : circBox(sh, b)) >= DEPTH) { hits.push({ x0: Math.min(b.x0, sh.x - sh.r), x1: Math.max(b.x1, sh.x + sh.r), y0: Math.min(b.y0, sh.y - sh.r), y1: Math.max(b.y1, sh.y + sh.r) }); who.push(sh.it, t); }
-    }));
+    }); });
     for (let i = 0; i < things.length; i++) for (let j = i + 1; j < things.length; j++) {
-      const a = bx.get(things[i]), c = bx.get(things[j]), ca = circOf(things[i]), cc = circOf(things[j]);
+      const a = bx.get(things[i]), c = bx.get(things[j]);
+      if (apart(a, c)) continue;
+      const ca = tInfo.get(things[i]).tc, cc = tInfo.get(things[j]).tc;
       const ti = turned(things[i]), tj = turned(things[j]);
       const hit = ca && cc ? ca.r + cc.r - Math.hypot(ca.x - cc.x, ca.y - cc.y) >= DEPTH
         : ca || cc ? ((ca ? tj : ti) ? circRect(ca || cc, rectOf(ca ? things[j] : things[i])) : circBox(ca || cc, ca ? c : a)) >= DEPTH
