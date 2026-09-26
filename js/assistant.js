@@ -8,40 +8,89 @@ window.SS = window.SS || {};
 (function (SS) {
   const AI = {};
 
-  // パートのよびかた → かんたん編成のパート
+  // パートのよびかた（言いかえの辞書）→ かんたん編成のパート。文章での指示と、名簿の取り込みで同じものを使う
+  // [正規表現, パート, { split: true }]：split のものは、いくつかのパートに分ける（「クラ10人」→ Cl1・Cl2・Cl3、「サックス5人」→ A.Sx・T.Sx・B.Sx）
+  // split でないのに2つ以上あるものは、編成にある方を使う（弦バス → 吹奏楽は St.B、オーケストラは Cb）
+  // パート名の後ろの数字（Cl1 の 1）は、次に数字が続くときは読まない（「クラ10人」の 1 を Cl1 にしない）
+  const ND = '(?![0-9])';
   const PART_WORDS = [
-    [/ピッコロ|picc/i, ['Picc']],
-    [/フルート|fl(?!ug)/i, ['Fl']],
-    [/イングリッシュ|コールアングレ|e\.?h/i, ['E.H.']],
-    [/オーボエ|ob/i, ['Ob']],
-    [/コントラ?ファゴット|c\.?fg/i, ['C.Fg']],
-    [/ファゴット|バスーン|fg/i, ['Fg']],
-    [/エス?クラ|es\.?cl/i, ['Es.Cl']],
-    [/バスクラ|b\.?cl/i, ['B.Cl']],
-    [/1st\s*クラ|クラ(?:リネット)?\s*1|cl\s*1/i, ['Cl1']],
-    [/2nd\s*クラ|クラ(?:リネット)?\s*2|cl\s*2/i, ['Cl2']],
-    [/3rd\s*クラ|クラ(?:リネット)?\s*3|cl\s*3/i, ['Cl3']],
-    [/クラ(?:リネット)?|cl/i, ['Cl1', 'Cl2', 'Cl3', 'Cl']],
-    [/アルト\s*サックス|アルト|a\.?sx|a\.?sax/i, ['A.Sx']],
-    [/テナー\s*サックス|テナー|t\.?sx|t\.?sax/i, ['T.Sx']],
-    [/バリトン\s*サックス|バリサク|バリトン|b\.?sx|b\.?sax/i, ['B.Sx']],
-    [/ホルン|hr|horn/i, ['Hr']],
-    [/トランペット|ラッパ|tp|trp/i, ['Tp']],
-    [/バス\s*トロンボーン|バストロ|b\.?tb/i, ['B.Tb']],
-    [/トロンボーン|tb|trb/i, ['Tb']],
-    [/ユーフォ(?:ニアム)?|euph/i, ['Euph']],
-    [/チューバ|tuba/i, ['Tuba']],
-    [/弦バス|ストリングベース|st\.?b/i, ['St.B', 'Cb']],
-    [/コントラバス|コンバス|cb/i, ['Cb', 'St.B']],
-    [/(?:1st|第?1)\s*(?:ヴァ|バ)イオリン|vn\s*1/i, ['Vn1']],
-    [/(?:2nd|第?2)\s*(?:ヴァ|バ)イオリン|vn\s*2/i, ['Vn2']],
-    [/(?:ヴィ|ビ)オラ|va/i, ['Va']],
-    [/チェロ|vc/i, ['Vc']],
-    [/ティンパニ|timp/i, ['Timp']],
-    [/打楽器|パーカッション|perc/i, ['Perc']],
-    [/ハープ|hp/i, ['Hp']],
-    [/ピアノ|pf/i, ['Pf']],
+    [/ピッコロ|picc?/i, ['Picc']],
+    [/フルート|flute|fl(?!ug|h)/i, ['Fl']],
+    [/イングリッシュ\s*ホルン|コール\s*アングレ|e\.?\s*h\.?(?![a-z])/i, ['E.H.']],
+    [/オーボエ|oboe|ob/i, ['Ob']],
+    [/コントラ\s*ファゴット|c\.?\s*fg/i, ['C.Fg']],
+    [/ファゴット|バスーン|bassoon|fg/i, ['Fg']],
+    [/エス\s*クラ(?:リネット)?|es\.?\s*cl/i, ['Es.Cl']],
+    [/バス\s*クラ(?:リネット)?|b\.?\s*cl/i, ['B.Cl']],
+    [new RegExp('(?:1st|ファースト|1番)\\s*クラ(?:リネット)?|クラ(?:リネット)?\\s*1' + ND + '|cl\\s*1' + ND, 'i'), ['Cl1']],
+    [new RegExp('(?:2nd|セカンド|2番)\\s*クラ(?:リネット)?|クラ(?:リネット)?\\s*2' + ND + '|cl\\s*2' + ND, 'i'), ['Cl2']],
+    [new RegExp('(?:3rd|サード|3番)\\s*クラ(?:リネット)?|クラ(?:リネット)?\\s*3' + ND + '|cl\\s*3' + ND, 'i'), ['Cl3']],
+    [/クラリネット|クラ|clarinet|cl/i, ['Cl1', 'Cl2', 'Cl3'], { split: true }],
+    [/アルト\s*サ(?:ッ)?ク(?:ス|ソフォーン)|アルト|a\.?\s*s(?:a)?x/i, ['A.Sx']],
+    [/テナー\s*サ(?:ッ)?ク(?:ス|ソフォーン)|テナー|t\.?\s*s(?:a)?x/i, ['T.Sx']],
+    [/バリトン\s*サ(?:ッ)?ク(?:ス|ソフォーン)|バリ\s*サク|バリトン|b\.?\s*s(?:a)?x/i, ['B.Sx']],
+    [/サックス|サクソフォーン|saxophone|sax|sx/i, ['A.Sx', 'T.Sx', 'B.Sx'], { split: true }],
+    [/ホルン|horn|hr/i, ['Hr']],
+    [/トランペット|ペット|trumpet|trp|tp/i, ['Tp']],
+    [/バス\s*トロンボーン|バス\s*トロ|バス\s*ボーン|b\.?\s*tb/i, ['B.Tb']],
+    [/トロンボーン|ボーン|trombone|trb|tb/i, ['Tb']],
+    [/ユーフォ(?:ニアム)?|euphonium|euph?/i, ['Euph']],
+    [/チューバ|テューバ|tuba/i, ['Tuba']],
+    [/弦バス|ストリング\s*ベース|コンバス|st\.?\s*b(?![a-z])/i, ['St.B', 'Cb']],
+    [/コントラバス|cb/i, ['Cb', 'St.B']],
+    [new RegExp('(?:1st|ファースト|第?1)\\s*(?:ヴァ|バ)イオリン|vn\\s*1' + ND, 'i'), ['Vn1']],
+    [new RegExp('(?:2nd|セカンド|第?2)\\s*(?:ヴァ|バ)イオリン|vn\\s*2' + ND, 'i'), ['Vn2']],
+    [/(?:ヴィ|ビ)オラ|va(?![a-z])/i, ['Va']],
+    [/チェロ|cello|vc/i, ['Vc']],
+    [/ティンパニ|timp?/i, ['Timp']],
+    [/打楽器|パーカッション|パーカス|percussion|perc?/i, ['Perc']],
+    [/ハープ|harp|hp/i, ['Hp']],
+    [/ピアノ|piano|pf/i, ['Pf']],
   ];
+  // 全角の英数字・記号を半角に
+  const half = s => String(s == null ? '' : s).replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/　/g, ' ');
+  AI.half = half;
+  const STICKY = PART_WORDS.map(([re, tg, o]) => ({ re: new RegExp('(?:' + re.source + ')', re.flags.replace(/[gy]/g, '') + 'y'), tg, split: !!(o && o.split) }));
+  /**
+   * 文の中のパート名を、前から順に見つける（その場所でいちばん長く当てはまるもの。known にあるパートだけ）
+   * 戻り値 [{ index, end, text, targets, split }]。targets は known にあるものだけ（split でないものは1つ）
+   */
+  AI.scanParts = function (text, known) {
+    const t = half(text), out = [];
+    for (let i = 0; i < t.length;) {
+      const prev = t[i - 1] || '';
+      let best = null;
+      if (!/[a-z]/i.test(prev)) {
+        STICKY.forEach(w => {
+          w.re.lastIndex = i;
+          const m = w.re.exec(t);
+          if (!m || !m[0].length || /[a-z]/i.test(m[0].slice(-1)) && /[a-z]/i.test(t[i + m[0].length] || '')) return; // 英字の略号は、単語の途中では読まない
+          const tg = known ? w.tg.filter(p => known.includes(p)) : w.tg;
+          if (!tg.length) return;
+          if (!best || m[0].length > best.text.length) best = { index: i, end: i + m[0].length, text: m[0], targets: w.split ? tg : [tg[0]], split: w.split && tg.length > 1 };
+        });
+      }
+      if (best) { out.push(best); i = best.end; } else i++;
+    }
+    return out;
+  };
+  // 1つのことば（名簿のパートの欄など）をパートにする。まるごと当てはまるときだけ
+  AI.partOf = function (text, known) {
+    const t = half(text).trim();
+    const f = AI.scanParts(t, known);
+    return f.length === 1 && f[0].index === 0 && f[0].end >= t.replace(/\s+$/, '').length ? f[0] : null;
+  };
+  // 人数を、今の人数の割合でいくつかのパートに分ける（全部0なら同じくらいずつ。端数は前のパートから）
+  AI.splitCount = function (total, parts, cur) {
+    const w = parts.map(p => (cur && cur[p]) || 0), sum = w.reduce((a, v) => a + v, 0);
+    const raw = parts.map((p, i) => (sum ? (w[i] * total) / sum : total / parts.length));
+    const out = {};
+    parts.forEach((p, i) => { out[p] = Math.floor(raw[i] + 1e-9); });
+    let left = total - parts.reduce((a, p) => a + out[p], 0);
+    const order = parts.map((p, i) => ({ p, f: raw[i] - Math.floor(raw[i] + 1e-9), i })).sort((a, b) => b.f - a.f || a.i - b.i);
+    for (let k = 0; left > 0; k = (k + 1) % order.length) { out[order[k].p]++; left--; }
+    return out;
+  };
   AI.PART_WORDS = PART_WORDS; // 名簿の取り込みでも使う
   const NUM = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
   const num = s => {
@@ -100,7 +149,7 @@ window.SS = window.SS || {};
    * 戻り値 { changes, said: [何をしたか], unknown: 読み取れなかったか }
    */
   AI.parseLocal = function (text, st) {
-    const t = String(text || '').replace(/\s+/g, ' ');
+    const t = half(text).replace(/\s+/g, ' ');
     const ch = {}, said = [];
     const parts = SS.auto.ENSEMBLES[(st && st.type) || 'band'].parts.map(p => p[0]);
     // 編成の種類
@@ -122,24 +171,34 @@ window.SS = window.SS || {};
     }
     const type = ch.type || (st && st.type) || 'band';
     const allParts = SS.auto.ENSEMBLES[type].parts.map(p => p[0]);
-    // 人数：「フルート6人」「Tp 5」「ホルンを4人に」「クラを2人増やす／減らす」
-    const counts = {};
-    PART_WORDS.forEach(([re, targets]) => {
-      const m = new RegExp('(?:' + re.source + ')\\s*(?:を|は|が)?\\s*(?:あと)?' + N + '\\s*(人|名)?\\s*(増|減|ふや|へら)?', re.flags.replace('g', '')).exec(t);
+    // 人数：「フルート6人」「Tp 5」「ホルンを4人に」「クラを2人増やす／減らす」「クラ10人」「サックス×5」
+    // 数字はまとまりで読む（「10人」は10人。全角の「１０」・漢数字の「十」も）。パート名の後ろの数字（Cl1 の 1）とは区別する
+    const counts = {}, countSaid = [];
+    const CNT = new RegExp('\\s*(?:の|を|は|が|も|:)?\\s*(?:あと)?\\s*[×xX✕*]?\\s*' + N + '(?!\\s*(?:段|m|メートル|曲|番|列|%|割|尺|cm))\\s*(人|名)?\\s*(増|減|ふや|へら)?', 'y');
+    AI.scanParts(t, allParts).forEach(pm => {
+      CNT.lastIndex = pm.end;
+      let m = CNT.exec(t);
+      // 「クラ3人」「Cl 2名」：パート名の後ろの数字のすぐ後に「人・名」があれば、それは人数（Cl3 ではなく、クラ3人）
+      const tail = /^(.*?)\s*([0-9])$/.exec(pm.text);
+      if (!m && tail && /^\s*(人|名)/.test(t.slice(pm.end))) {
+        const g = AI.scanParts(tail[1], allParts)[0];
+        if (g && g.end === tail[1].length) { pm = Object.assign({}, g, { index: pm.index }); CNT.lastIndex = pm.index + tail[1].length; m = CNT.exec(t); }
+      }
       if (!m) return;
-      const v = num(m[m.length - 3]);
-      if (!(v >= 0 && v <= 40)) return;
-      const tg = targets.filter(p => allParts.includes(p));
-      if (!tg.length || tg.some(p => counts[p] != null)) return;
-      const delta = m[m.length - 1];
-      if (tg.length === 1) {
-        const cur = (st && st.counts && st.counts[tg[0]]) || 0;
-        counts[tg[0]] = delta ? Math.max(0, cur + (/増|ふや/.test(delta) ? v : -v)) : v;
+      const v = num(m[1]), delta = m[3], tg = pm.targets;
+      if (!(v >= 0 && v <= (pm.split ? 40 * tg.length : 40))) return;
+      if (tg.some(p => counts[p] != null)) return; // 同じパートは最初の指示だけ
+      const cur = p => (st && st.counts && st.counts[p]) || 0;
+      if (!pm.split) {
+        const p = tg[0];
+        counts[p] = delta ? Math.max(0, cur(p) + (/増|ふや/.test(delta) ? v : -v)) : v;
+        countSaid.push(`${p} ${counts[p]}人`);
       } else {
-        // クラリネット9人 → 1st・2nd・3rd に分ける
-        const k = tg.filter(p => p !== 'Cl');
-        const base = Math.floor(v / k.length), extra = v - base * k.length;
-        k.forEach((p, i) => { counts[p] = base + (i < extra ? 1 : 0); });
+        const now = tg.reduce((a, p) => a + cur(p), 0);
+        const total = delta ? Math.max(0, now + (/増|ふや/.test(delta) ? v : -v)) : v;
+        const sp = AI.splitCount(total, tg, st && st.counts);
+        Object.assign(counts, sp);
+        countSaid.push(`${pm.text}${total}人（${tg.map(p => `${p} ${sp[p]}`).join('・')}）`);
       }
     });
     // 全体の人数（「55人くらい」「合計40人」「総勢30名」）：パートの割合はそのままで合計を合わせる
@@ -153,7 +212,9 @@ window.SS = window.SS || {};
     }
     if (/(?:ハープ|hp)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Hp == null) counts.Hp = 1;
     if (/(?:ピアノ|pf)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Pf == null) counts.Pf = 1;
-    if (Object.keys(counts).length) { ch.counts = Object.assign(ch.counts || {}, counts); said.push('人数：' + Object.entries(counts).map(([k, v]) => `${k} ${v}人`).join('、')); }
+    if (counts.Hp === 1 && !countSaid.some(x => /^Hp /.test(x))) countSaid.push('Hp 1人');
+    if (counts.Pf === 1 && !countSaid.some(x => /^Pf /.test(x))) countSaid.push('Pf 1人');
+    if (Object.keys(counts).length) { ch.counts = Object.assign(ch.counts || {}, counts); said.push('人数：' + countSaid.join('、')); }
     // 並び方
     let lay = '';
     if (/ドイツ/.test(t)) lay = 'german';

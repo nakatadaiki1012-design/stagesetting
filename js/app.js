@@ -3784,7 +3784,7 @@
     openModal(`
       <h2>🎼 使い方</h2>
       <ol>
-        <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
+        <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
         <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。サントリーホール・ミューザ・みなとみらいもホール一覧にあります（寸法は目安なので図面で確認を）。</li>
         <li><b>ホールの寸法</b>：ホールの寸法は公開されている資料からの<b>目安</b>です（△のホールは推定値）。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
@@ -4234,14 +4234,31 @@
     updateHallNote();
     renderSettings();
   }
+  // 読み取った結果で人数が大きく（5人以上）減るときは、先に確かめる
+  function confirmDrop(ch, go, cancel) {
+    const st = ens(), sum = o => Object.values(o).reduce((a, v) => a + (+v || 0), 0);
+    const type = ch.type || st.type, keys = SS.auto.ENSEMBLES[type].parts.map(([k]) => k);
+    const from = type === st.type ? st.counts : SS.auto.defaultState(type).counts;
+    const next = {};
+    keys.forEach(k => { next[k] = ch.counts && ch.counts[k] != null ? ch.counts[k] : from[k] || 0; });
+    const before = sum(st.counts), after = sum(next);
+    if (before - after < 5) { go(); return; }
+    const down = type === st.type ? keys.filter(k => next[k] < (from[k] || 0)).map(k => `${k} ${from[k]}人→${next[k]}人`) : [];
+    askConfirm(`${down.length ? down.slice(0, 5).join('、') + (down.length > 5 ? ' など、' : '、') : ''}合わせて${before - after}人減ります（${before}人 → ${after}人）。\nよいですか？（あとで「戻す」で元に戻せます）`, `${before - after}人減らして並べ直す`, go);
+    // 「やめる」を押したとき
+    const no = $('cfNo');
+    if (no && cancel) no.addEventListener('click', cancel);
+  }
   function aiLocal(text, note) {
     const r = SS.assistant.parseLocal(text, ens());
     if (r.unknown) {
       aiShow((note ? note + '\n' : '') + '読み取れませんでした。「フルート6人」「打楽器は下手」「ひな壇2段」「ホルンをボックス型に」「ミューザで」のように書いてみてください。', true);
       return;
     }
-    applyAIChanges(r.changes);
-    aiShow((note ? note + '\n' : '') + '✔ ' + r.said.join('／'));
+    confirmDrop(r.changes, () => {
+      applyAIChanges(r.changes);
+      aiShow((note ? note + '\n' : '') + '✔ ' + r.said.join('／'));
+    }, () => aiShow('やめました（配置は変えていません）。読み取った内容：' + r.said.join('／')));
   }
   $('aiGo').onclick = async () => {
     const text = $('aiText').value.trim();
@@ -4255,8 +4272,10 @@
       const ch = SS.assistant.sanitize(raw);
       const keys = Object.keys(ch).filter(k => k !== 'message');
       if (!keys.length) { aiShow('🤖 ' + (ch.message || '変えるところが見つかりませんでした。もう少し具体的に書いてみてください。')); return; }
-      applyAIChanges(ch);
-      aiShow('🤖 ' + (ch.message || '要望に合わせて並べ直しました。') + '\n（気に入らなければ「戻す」で元に戻せます）');
+      confirmDrop(ch, () => {
+        applyAIChanges(ch);
+        aiShow('🤖 ' + (ch.message || '要望に合わせて並べ直しました。') + '\n（気に入らなければ「戻す」で元に戻せます）');
+      }, () => aiShow('やめました（配置は変えていません）。'));
     } catch (e) {
       const code = e && e.code;
       if (code === 'cancelled') aiShow('止めました。');
