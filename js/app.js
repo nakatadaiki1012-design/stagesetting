@@ -110,6 +110,13 @@
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
+  // ドラッグ中は、画面の書き直しを1コマ（約1/60秒）に1回にまとめる（動きがカクカクしないように）
+  let renderRaf = 0;
+  function renderSoon() {
+    if (renderRaf) return;
+    renderRaf = requestAnimationFrame(() => { renderRaf = 0; render(); });
+  }
+  function renderNow() { if (renderRaf) { cancelAnimationFrame(renderRaf); renderRaf = 0; render(); } }
   function render() {
     const d = doc();
     ['layerStage', 'layerItems', 'layerDims'].forEach(id => $(id).classList.toggle('mono', !!opts().mono));
@@ -708,13 +715,13 @@
           // ひな壇・平台・上がり段は、ほかの段にマグネットのようにくっつく（Alt を押しながらだと、くっつかない）
           const g = magnetSnap(drag, dx, dy);
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
-        } else if (opts().guides && !opts().snap && !e.altKey) {
+        } else if (opts().guides && !opts().snap && !e.shiftKey) {
           const g = smartSnap(drag, dx, dy);
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
         }
         drag.orig.forEach((o, oid) => { const it = byId(oid); if (it) { it.x = o.x + dx; it.y = o.y + dy; } });
         if (primIt && primIt.type === 'door' && drag.orig.size === 1 && !e.altKey) snapDoor(primIt);
-        render();
+        renderSoon();
         break;
       }
       case 'cpt': {
@@ -788,6 +795,7 @@
   function endPointer(e) {
     pointers.delete(e.pointerId);
     if (!drag) return;
+    renderNow();
     if (drag.kind === 'pinch') {
       if (pointers.size < 2) drag = null;
       return;
@@ -947,8 +955,10 @@
   }
 
   // ドラッグ中に、ほかの部品と位置をそろえる（ガイド線）
+  // ほかの人・物とそろう所に、ガイドの線を出す（線は出すだけで、引っぱらない＝マウスどおりに細かく動かせる）。
+  // 画面で1px以内のときだけ、ぴったりそろえる。ガイドの線も要らないときは Shift を押しながら
   function smartSnap(d, dx, dy) {
-    const th = 9 / S.view.k;
+    const th = 3 / S.view.k, pull = 1 / S.view.k;
     const p0 = d.orig.get(d.primary);
     const prim = byId(d.primary);
     if (!p0 || !prim) return { dx, dy, guides: null };
@@ -967,9 +977,9 @@
         if (diff < th && (!best || diff < best.diff)) best = { r: q.r, diff };
       });
       if (best) {
-        const q = G.fromPolar(best.r, pol.t, c);
         guides.push({ kind: 'r', v: best.r, c });
-        return { dx: q.x - p0.x, dy: q.y - p0.y, guides };
+        if (best.diff < pull) { const q = G.fromPolar(best.r, pol.t, c); return { dx: q.x - p0.x, dy: q.y - p0.y, guides }; }
+        return { dx, dy, guides };
       }
     }
     let bx = null, by = null;
@@ -978,8 +988,8 @@
       if (ddx < th && (!bx || ddx < bx.d)) bx = { v: o.x, d: ddx };
       if (ddy < th && (!by || ddy < by.d)) by = { v: o.y, d: ddy };
     });
-    if (bx) { dx = bx.v - p0.x; guides.push({ kind: 'x', v: bx.v }); }
-    if (by) { dy = by.v - p0.y; guides.push({ kind: 'y', v: by.v }); }
+    if (bx) { if (bx.d < pull) dx = bx.v - p0.x; guides.push({ kind: 'x', v: bx.v }); }
+    if (by) { if (by.d < pull) dy = by.v - p0.y; guides.push({ kind: 'y', v: by.v }); }
     return { dx, dy, guides: guides.length ? guides : null };
   }
 
@@ -1085,7 +1095,7 @@
     if (arrows[e.key] && S.sel.size) {
       e.preventDefault();
       if (!e.repeat) pushHistory();
-      const st = e.shiftKey ? 25 : 5;
+      const st = e.altKey ? 1 : e.shiftKey ? 25 : 5; // 矢印キー：5cm、Shift で25cm、Alt で1cm
       selected().forEach(it => { it.x += arrows[e.key][0] * st; it.y += arrows[e.key][1] * st; });
       render();
       return;
