@@ -1651,9 +1651,63 @@ window.SS = window.SS || {};
 
   A.build = function (st, stage) {
     const r = buildInner(st, stage);
-    if (r && r.items) A.groupStations(r.items);
+    if (r && r.items) { A.groupStations(r.items); keepPercFromStrings(r, stage); }
     return r;
   };
+  // 打楽器（床に置く物）を、弦楽器のすぐ横（2m以内）には置かない。舞台がせまくて入りきらないときも。
+  // まとまり（楽器と奏者）ごとに、いちばん近い空いている床（ひな壇にかからず、弦から2m以上、奥の通路の外）へ動かす。
+  // 舞台の上にどうしても場所がないときは、下手のそでに置いて offstage の印を付ける（「入りきりません」の案内に出す）
+  const STRINGS_RE = /^(vn\s*1|vn\s*2|va|vc|cb)$/i;
+  function keepPercFromStrings(r, stage) {
+    const items = r.items;
+    const strings = items.filter(it => it.type === 'player' && STRINGS_RE.test(it.label || ''));
+    if (!strings.length) return;
+    const tiers = items.filter(it => it.type === 'hina');
+    const tierBoxes = tiers.map(t => SS.itemAABB(t, {}));
+    const onTier = it => tiers.some(t => SS.hinaContains(t, it.x, it.y, 5));
+    const nearStr = q => strings.some(s => Math.hypot(s.x - q.x, s.y - q.y) < 200);
+    const bad = items.filter(it => A.PERC_TYPES.has(it.type) && !onTier(it) && nearStr(it));
+    if (!bad.length) return;
+    const groups = [], seen = new Set();
+    bad.forEach(it => {
+      if (seen.has(it)) return;
+      const g = it.grp ? items.filter(o => o.grp === it.grp) : [it];
+      g.forEach(o => seen.add(o));
+      groups.push(g);
+    });
+    const hit = (a, b, m) => a.x0 < b.x1 + m && a.x1 > b.x0 - m && a.y0 < b.y1 + m && a.y1 > b.y0 - m;
+    const boxAt = (o, dx, dy) => { const b = SS.itemAABB(o, {}); return { x0: b.x0 + dx, x1: b.x1 + dx, y0: b.y0 + dy, y1: b.y1 + dy }; };
+    let wingX = -60;
+    groups.forEach(g => {
+      const others = items.filter(o => !g.includes(o) && o.type !== 'hina' && o.type !== 'text' && !o.offstage);
+      const otherBoxes = others.map(o => SS.itemAABB(o, {}));
+      const ok = (dx, dy) => g.every(o => {
+        const q = { x: o.x + dx, y: o.y + dy }, b = boxAt(o, dx, dy);
+        if (!inside(stage, q, o.type === 'player' ? 28 : 20) || b.y0 < AISLE) return false;
+        if (tierBoxes.some(tb => hit(b, tb, 5))) return false;
+        if (nearStr(q)) return false;
+        return !otherBoxes.some(ob => hit(b, ob, 4));
+      });
+      let best = null;
+      const STEP = 25;
+      for (let dy = -stage.d; dy <= stage.d; dy += STEP) {
+        for (let dx = -stage.w; dx <= stage.w; dx += STEP) {
+          const dd = Math.hypot(dx, dy);
+          if (best && dd >= best.dd) continue;
+          if (ok(dx, dy)) best = { dx, dy, dd };
+        }
+      }
+      if (best) { g.forEach(o => { o.x += best.dx; o.y += best.dy; }); return; }
+      // 舞台に場所がない：下手のそでへ（弦から2m以上はなす）
+      const bx = g.map(o => SS.itemAABB(o, {}));
+      const x1 = Math.max(...bx.map(b => b.x1)), x0 = Math.min(...bx.map(b => b.x0)), y0 = Math.min(...bx.map(b => b.y0)), y1 = Math.max(...bx.map(b => b.y1));
+      const minStrX = Math.min(...strings.map(s => s.x));
+      const dx = Math.min(wingX, minStrX - 230) - x1, dy = stage.d * 0.4 - (y0 + y1) / 2;
+      g.forEach(o => { o.x += dx; o.y += dy; o.offstage = true; });
+      wingX -= x1 - x0 + 40;
+      r.offstage = (r.offstage || 0) + g.filter(o => o.type !== 'player').length;
+    });
+  }
   function buildInner(st, stage) {
     AISLE = backLimit(stage);
     const f = st.type === 'band' || st.type === 'brass' ? band : st.type === 'bigband' ? bigBand : st.type === 'choir' ? choir : orch;

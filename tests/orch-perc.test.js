@@ -6,6 +6,7 @@
 //   2) 床に置いた打楽器は、弦楽器（Vn1・Vn2・Va・Vc・Cb）から2m以上はなれている
 //   3) 大太鼓・小太鼓・シンバルなどは、ティンパニから4m以内か段の上
 // ひな形「オーケストラ（通常配置）」「オーケストラ（対向配置）」と、かんたん編成で「オーケストラ」を選んだときを調べる
+// さらに、せまいホール8か所でも 2) を調べる（入りきらないときは「入りきりません」の案内が出ていること）
 let chromium;
 try { ({ chromium } = require('playwright')); } catch (e) { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); }
 const URL = process.argv[2] || 'http://localhost:8765/index.html';
@@ -57,6 +58,19 @@ const URL = process.argv[2] || 'http://localhost:8765/index.html';
   const r = await measure();
   console.log(r.length ? 'NG' : 'OK', 'かんたん編成のオーケストラ', r.join(' / '));
   if (r.length) fail++;
+  // せまいホール（8か所）：入りきらないときでも、床の打楽器を弦楽器から2m以内に置かない。
+  // 入りきらないときは「入りきりません」の案内（⚠ の一覧のいちばん上）が出ていること
+  const TIGHT = ['神奈川県立音楽堂', 'ひまわりの郷', '横浜関内ホール', '杉並公会堂', '風のホール', 'きゅりあん', 'シアター1010', 'エコルマ'];
+  for (const hn of TIGHT) {
+    await p.evaluate(hn => { const i = SS.HALLS.findIndex(h => h.name.includes(hn)); const s = document.getElementById('hallSelect'); s.value = String(i); s.dispatchEvent(new Event('change')); }, hn);
+    await p.waitForTimeout(700);
+    const r2 = await measure();
+    const near = r2.filter(x => /弦楽器から/.test(x));
+    const info = await p.evaluate(() => ({ warn: SS.checks(SS.state.doc).length, card: !!document.querySelector('.fit-card'), stuck: SS.state.doc.items.some(it => it.offstage) }));
+    const ok = !near.length && (info.warn === 0 || info.card);
+    console.log(ok ? 'OK' : 'NG', hn, near.length ? near.join(' / ') : '床の打楽器は弦から2m以上', info.card ? '（入りきりませんの案内あり）' : '', info.stuck ? '（そでに置いた打楽器あり）' : '');
+    if (!ok) fail++;
+  }
   if (errs.length) { console.log('NG 画面のエラー', errs.join(' / ')); fail++; }
   await b.close();
   console.log(fail ? `失敗 ${fail}件` : 'すべて OK');
