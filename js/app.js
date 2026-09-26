@@ -1022,6 +1022,16 @@
       }
       s += '</g>';
     }
+    // スマホ：選んだ人が分かるように、画面の上で大きめの枠と名前（パート名・名前）を出す
+    if (isMobile() && sel.length && sel.length <= 3 && !(drag && drag.moved)) {
+      sel.filter(it => it.type === 'player').forEach(it => {
+        const r = Math.max(SS.itemSize(it, o).w / 2 + 6, 24 / k), fs = 14 / k;
+        const lab = (it.label || '奏者') + (it.name ? `（${it.name}）` : '');
+        s += `<circle cx="${it.x}" cy="${it.y}" r="${r}" fill="none" stroke="#fff" stroke-width="${6 / k}"/><circle cx="${it.x}" cy="${it.y}" r="${r}" fill="none" stroke="#2f6fde" stroke-width="${3 / k}"/>`;
+        const tw = lab.length * fs * 0.95 + 12 / k, ty = it.y + r + 8 / k;
+        s += `<g pointer-events="none"><rect x="${it.x - tw / 2}" y="${ty}" width="${tw}" height="${fs * 1.6}" rx="${6 / k}" fill="#2f6fde"/><text x="${it.x}" y="${ty + fs * 0.8}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#fff">${SS.esc(lab)}</text></g>`;
+      });
+    }
     s += stageHandlesSVG(k);
     if (S.pick) {
       const tg = pickTargets(S.pick.kind);
@@ -1190,7 +1200,18 @@
 
     const w = toWorld(e.clientX, e.clientY);
     const handle = e.target.closest && e.target.closest('[data-handle]');
-    const itemEl = doorEl || (e.target.closest && e.target.closest('.item'));
+    let itemEl = doorEl || (e.target.closest && e.target.closest('.item'));
+    // 指で押したとき（スマホ・タブレット）：見た目はそのまま、奏者は指のまわり約44px（半径22px）まで当たりにして、
+    // いちばん近い人を選ぶ（奏者が小さく表示されていて、押しにくいので）
+    if (e.pointerType === 'touch' && !handle && !S.pick && !S.placing) {
+      const R = 22 / S.view.k;
+      let best = null, bd = Infinity;
+      players().forEach(p => { const dd = Math.hypot(p.x - w.x, p.y - w.y); if (dd < bd) { bd = dd; best = p; } });
+      if (best && bd <= Math.max(R, (SS.itemSize(best, renderOpts()).w || 0) / 2)) {
+        const el = layerItems.querySelector(`.item[data-id="${best.id}"]`);
+        if (el) itemEl = el;
+      }
+    }
     const start = { sx: e.clientX, sy: e.clientY, w };
 
     if (S.pick) {
