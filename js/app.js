@@ -155,6 +155,12 @@
   }
   function renderCompareBar() {
     const bar = $('cmpBar');
+    if (S.blocks) {
+      bar.hidden = false;
+      bar.innerHTML = `<span>🧩 <b>パートのかたまり</b>：ドラッグで動かす。ほかのパートの上で離すと並び順を入れかえ</span><button class="btn" id="blkStop">終わる</button>`;
+      $('blkStop').onclick = () => setBlocks(false);
+      return;
+    }
     if (S.trans && doc().parts && doc().parts[S.trans.a] && doc().parts[S.trans.b]) {
       const r = transResult();
       // 出入り口（そで）ごとの数：「（下手 6・上手 4）」
@@ -312,10 +318,131 @@
     $('coA').onchange = re; $('coB').onchange = re;
     if (a === b) return;
     const text = () => SS.changeoverText(SS.changeover(partItems(a), partItems(b), d.stage, renderOpts()), d.stage, partName(a), partName(b));
-    $('coShow').onclick = () => { closeModal(); startTrans(a, b); fitView(); toast('× はける・○ 出す・→ 動かす を図に出しました。この部を直すと、印もすぐ変わります', true); };
+    $('coShow').onclick = () => { closeModal(); startTrans(a, b); fitView(); toast('× はける・○ 出す・→ 動かす を図に出しました。この部を直すと、印もすぐ変わります'); };
     $('coCopy').onclick = async () => { try { await navigator.clipboard.writeText(text()); toast('転換の計画を文字でコピーしました'); } catch (e) { toast('コピーできませんでした。「文字で保存」を使ってください'); } };
     $('coSave').onclick = () => SS.render.download(new Blob([text()], { type: 'text/plain;charset=utf-8' }), SS.render.safeName(`${doc().title || '転換'}_${partName(a)}から${partName(b)}`) + '.txt');
   }
+
+  // ------------------------------------------------------------ パートのかたまり（パートごとに動かす・並び順を入れかえる）
+  // 同じパートで、となりどうし（1.5m以内）の人を1つのかたまりにする。打楽器の楽器など、奏者といっしょに動く物も入れる
+  function computeBlocks() {
+    const by = new Map();
+    players().forEach(p => { const k = (p.label || '').trim() || '（パートなし）'; if (!by.has(k)) by.set(k, []); by.get(k).push(p); });
+    const out = [];
+    by.forEach((ps, label) => {
+      const left = new Set(ps);
+      while (left.size) {
+        const first = left.values().next().value, grp = [first];
+        left.delete(first);
+        for (let i = 0; i < grp.length; i++) left.forEach(q => { if (Math.hypot(q.x - grp[i].x, q.y - grp[i].y) <= 150) { grp.push(q); left.delete(q); } });
+        const all = new Set(grp);
+        grp.forEach(p => matesOf(p).forEach(m => all.add(m)));
+        const cx = grp.reduce((a, p) => a + p.x, 0) / grp.length, cy = grp.reduce((a, p) => a + p.y, 0) / grp.length;
+        out.push({ key: label + '@' + out.length, label, members: grp, all: [...all], cx, cy });
+      }
+    });
+    return out;
+  }
+  // 凸包（かたまりの外形）
+  function hullOf(pts) {
+    const P = pts.map(p => [p.x, p.y]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (P.length < 3) return P;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    P.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    P.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); });
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+  function blocksSVG(k) {
+    S.blockList = computeBlocks();
+    const fs = Math.max(12, 12.5 / k), tgt = S.blockTarget, dragKey = drag && drag.kind === 'block' ? drag.blk.key : null;
+    let s = '', labels = '';
+    S.blockList.forEach(b => {
+      const h = hullOf(b.members), col = SS.partGroup ? SS.partGroup(b.label).color : '#6b7686';
+      const on = tgt && tgt.key === b.key, me = dragKey && b.members.includes(drag.blk.members[0]);
+      const d = h.length === 1 ? `M${h[0][0]} ${h[0][1]}h0.1` : 'M' + h.map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L') + 'Z';
+      // ふちどり（少し太い濃い線）の上に、パートの色（かたまりの人より36cm外まで）
+      s += `<path d="${d}" fill="#39414d" fill-opacity=".5" stroke="#39414d" stroke-opacity=".5" stroke-width="${(72 + 5 / k).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += `<path d="${d}" fill="${col}" fill-opacity="${me ? 0.95 : 0.8}" stroke="${col}" stroke-opacity="${me ? 0.95 : 0.8}" stroke-width="72" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (on) s += `<path d="${d}" fill="none" stroke="#e8590c" stroke-width="80" stroke-opacity=".35" stroke-linejoin="round" stroke-linecap="round"/><path d="${d}" fill="none" stroke="#e8590c" stroke-width="${(3 / k).toFixed(2)}" stroke-dasharray="${8 / k} ${5 / k}"/>`;
+      labels += `<text x="${b.cx.toFixed(1)}" y="${b.cy.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="800" fill="#1f2733" stroke="#fff" stroke-width="${(4 / k).toFixed(2)}" paint-order="stroke">${SS.esc(b.label)}<tspan font-weight="600" font-size="${(fs * 0.8).toFixed(1)}"> ${b.members.length}</tspan></text>`;
+    });
+    return s + labels;
+  }
+  function blockAt(w) {
+    const list = S.blockList || computeBlocks();
+    let best = null, bd = 60;
+    list.forEach(b => b.members.forEach(p => { const d = Math.hypot(p.x - w.x, p.y - w.y); if (d < bd) { bd = d; best = b; } }));
+    return best;
+  }
+  // 離した所にいちばん近い、ほかのパートのかたまり（1.2m以内）
+  function blockTarget(dg) {
+    const ms = dg.blk.members, cx = ms.reduce((a, p) => a + p.x, 0) / ms.length, cy = ms.reduce((a, p) => a + p.y, 0) / ms.length;
+    let best = null, bd = 120;
+    (dg.blocks || []).forEach(b => {
+      if (b.key === dg.blk.key || b.label === dg.blk.label) return;
+      b.members.forEach(p => { const d = Math.hypot(p.x - cx, p.y - cy); if (d < bd) { bd = d; best = b; } });
+    });
+    return best ? Object.assign({ dropX: cx }, best) : null;
+  }
+  const blockRestore = dg => dg.orig.forEach((o, id) => { const it = byId(id); if (it) { it.x = o.x; it.y = o.y; } });
+  function dropBlock(dg) {
+    const tgt = blockTarget(dg), A = dg.blk.label;
+    const st = doc().ensemble, auto = st && doc().items.some(it => it.auto) && ['band', 'brass'].includes(st.type);
+    if (auto) {
+      // かんたん編成（吹奏楽・ブラスバンド）：列の中のパートの順を書きかえて、並べ直す（ひな壇・間隔もそろったまま）
+      const rows = JSON.parse(JSON.stringify(SS.auto.layOf(st).rows));
+      const where = lab => { for (let r = 0; r < rows.length; r++) { const i = rows[r].indexOf(lab); if (i >= 0) return [r, i]; } return null; };
+      if (!tgt) { blockRestore(dg); render(); return toast('ほかのパートの上で離すと、そのとなりに並べかえます'); }
+      const B = tgt.label;
+      if (!where(A) || !where(B)) { blockRestore(dg); render(); return toast(`${!where(A) ? A : B} は列の並び順では動かせません（打楽器は「打楽器の置き場所」で決めます）`); }
+      const before = tgt.dropX < tgt.cx;
+      const [ra, ia] = where(A);
+      rows[ra].splice(ia, 1);
+      const [rb, ib] = where(B);
+      rows[rb].splice(before ? ib : ib + 1, 0, A);
+      let note = '';
+      if (st.lowOuter && [A, B].some(l => (SS.auto.LOW_GROUP || []).includes(l))) { st.lowOuter = false; note = '（「低音を外側に」は切りました）'; }
+      if (st.layout !== 'custom') st.customBase = st.layout;
+      st.layout = 'custom';
+      st.customRows = rows;
+      applyAuto({ noHistory: true, quiet: true });
+      renderSteppers();
+      toast(`${A} を ${B} の${before ? '下手' : '上手'}側に並べかえました${note}`, true);
+      return;
+    }
+    if (tgt) {
+      // 手で並べた配置：2つのかたまりの席を入れかえる（人数が同じなら席ごと、ちがうときは下手から順に座り直す）
+      blockRestore(dg);
+      const c = conductor(), t = p => G.polar(p, c).t, byT = arr => arr.slice().sort((a, b) => t(a) - t(b));
+      const a = byT(dg.blk.members), b = byT(tgt.members);
+      const seat = p => ({ x: p.x, y: p.y, rot: p.rot || 0 });
+      const moveTo = (p, q) => { const dx = q.x - p.x, dy = q.y - p.y; matesOf(p).forEach(m => { m.x += dx; m.y += dy; }); p.x = q.x; p.y = q.y; p.rot = q.rot; };
+      if (a.length === b.length) {
+        const sa = a.map(seat), sb = b.map(seat);
+        a.forEach((p, i) => moveTo(p, sb[i])); b.forEach((p, i) => moveTo(p, sa[i]));
+      } else {
+        const seats = byT(a.concat(b)).map(seat);
+        const aFirst = t({ x: a.reduce((s2, p) => s2 + p.x, 0) / a.length, y: a.reduce((s2, p) => s2 + p.y, 0) / a.length }) < t({ x: tgt.cx, y: tgt.cy });
+        (aFirst ? b.concat(a) : a.concat(b)).forEach((p, i) => moveTo(p, seats[i]));
+      }
+      renderAll();
+      toast(`${A} と ${tgt.label} の席を入れかえました`, true);
+      return;
+    }
+    renderAll();
+    toast(`${A} を動かしました`);
+  }
+  function setBlocks(on) {
+    S.blocks = !!on;
+    if (on) { S.sel.clear(); S.trans = null; S.compare = null; }
+    $('modeBlocks').classList.toggle('active', S.blocks);
+    $('modeBlocks').setAttribute('aria-pressed', S.blocks ? 'true' : 'false');
+    document.body.classList.toggle('blocks-on', S.blocks);
+    renderAll();
+    if (on) toast('🧩 パートのかたまりをドラッグで動かせます。ほかのパートの上で離すと、並び順を入れかえます');
+  }
+  $('modeBlocks').onclick = () => setBlocks(!S.blocks);
 
   // ------------------------------------------------------------ 安全の確認（警告の一覧と、図の上の印）
   function renderWarnList() {
@@ -609,6 +736,7 @@
     }
     layerOverlay.innerHTML = s;
     $('layerWarn').innerHTML = warnMarksSVG(k);
+    $('layerBlocks').innerHTML = S.blocks ? blocksSVG(k) : '';
     $('layerCompare').innerHTML = S.trans ? SS.changeoverSVG(transResult(), k, doc().stage) : S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
@@ -773,6 +901,13 @@
       drag = { kind: 'pan', start, last: { x: e.clientX, y: e.clientY } };
       return;
     }
+    // パートのかたまり：かたまりをつかむ（空いている所は画面を動かす）
+    if (S.blocks && !(handle && /^stage/.test(handle.getAttribute('data-handle')))) {
+      const blk = blockAt(w);
+      if (blk) { drag = { kind: 'block', start, blk, blocks: S.blockList, orig: new Map(blk.all.map(it => [it.id, { x: it.x, y: it.y }])) }; return; }
+      drag = { kind: 'pan', start, last: { x: e.clientX, y: e.clientY } };
+      return;
+    }
     if (handle && /^stage/.test(handle.getAttribute('data-handle'))) {
       pushHistory();
       const st = doc().stage;
@@ -855,6 +990,14 @@
         drag.last = { x: e.clientX, y: e.clientY };
         if (moved) drag.didMove = true;
         applyView();
+        break;
+      }
+      case 'block': {
+        if (!drag.moved) { if (!moved) return; pushHistory(); drag.moved = true; }
+        const dx = w.x - drag.start.w.x, dy = w.y - drag.start.w.y;
+        drag.orig.forEach((o, id) => { const it = byId(id); if (it) { it.x = o.x + dx; it.y = o.y + dy; } });
+        S.blockTarget = blockTarget(drag);
+        renderSoon();
         break;
       }
       case 'move': {
@@ -963,6 +1106,14 @@
     if (drag.kind === 'dimedit') { if (Math.hypot(e.clientX - drag.start.sx, e.clientY - drag.start.sy) > 8) pendingDim = null; drag = null; return; }
     if (drag.kind === 'pinch') {
       if (pointers.size < 2) drag = null;
+      return;
+    }
+    if (drag.kind === 'block') {
+      const dg = drag;
+      drag = null; S.blockTarget = null;
+      if (dg.moved) dropBlock(dg);
+      else toast(`${dg.blk.label}（${dg.blk.members.length}人）${dg.blk.members.some(p => p.name) ? '：' + dg.blk.members.map(p => p.name || '—').join('・') : ''}。ドラッグで動かせます`);
+      render();
       return;
     }
     if (drag.kind === 'pick' && !drag.didMove && S.pick) {
@@ -3509,6 +3660,7 @@
         <li><b>3Dのパート名</b>：3Dの下の「文字 小・中・大」で大きさを変えられます。</li>
         <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」の「電気・音響」にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
         <li><b>🎙 録音・音響</b>：「部品」の「電気・音響」に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
+        <li><b>🧩 パートのかたまり</b>：舞台図の右の <b>🧩</b> で、パートごとのかたまりの表示になります。かたまりをドラッグするとパートごと動き、<b>ほかのパートの上で離すと並び順を入れかえ</b>ます（吹奏楽・ブラスバンドのかんたん編成では、ひな壇・間隔をそろえたまま並べ直し、並び方は「自分で並べかえた順」になります）。</li>
         <li><b>📑 1部・2部・3部と🔁 転換</b>：舞台図の左下の <b>「＋ 2部を作る」</b>（スマホは「もっと…」→「1部・2部・3部」）で、部ごとの配置図を作れます（「いまの部をコピーして次の部を作る」がおすすめ）。部のタブで切りかえ、開いている部のタブか「＋」で名前・順番・消す。<b>「🔁 転換」</b>を押すと、前の部から次の部へ変えるとき、<b>いすを何脚はけるか・何を出すか・何を動かすか</b>の表と、おすすめの手順（①はける ②ひな壇の組み替え ③動かす ④出す、出入り口・そでごと）が出ます。「図で見る」で次の部の上に × はける・○ 出す・→ 動かす の印を出し、直すとすぐ変わります。「文字でコピー」で係の人に送れます。</li>
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>
         <li><b>版</b>：「名前を付けて保存」のとき、<b>第何版かを1つ上げるか</b>聞きます。「📤 書き出す」の画面の「図面の情報欄」で手で直すこともできます。</li>
@@ -3627,7 +3779,7 @@
     const kitN = st.percInst === false || !['band', 'orch', 'brass'].includes(st.type) ? 0 : Object.values(SS.auto.percKitOf(st)).reduce((a, v) => a + (v || 0), 0);
     $('percBoxNow').textContent = (PERC_SHORT[st.percPlace || 'back'] || '') + (st.percInst === false ? '・楽器は置かない' : kitN ? `・楽器${kitN}${st.percKit ? '（手動）' : ''}` : '');
     const SPACE = { tight: '・間隔つめる', wide: '・間隔ゆったり' };
-    const lays = SS.auto.layoutsOf(st.type), lay2 = lays[st.layout] || lays[Object.keys(lays)[0]];
+    const lays = SS.auto.layoutsOf(st.type), lay2 = st.layout === 'custom' && st.customRows ? { name: SS.auto.CUSTOM_NAME } : lays[st.layout] || lays[Object.keys(lays)[0]];
     $('layoutBoxNow').textContent = (['band', 'brass', 'choir'].includes(st.type) ? (lay2 ? lay2.name.split('（')[0] : '') : st.type === 'bigband' ? '標準（サックス前・Tb・Tp）' : st.antiphonal ? '対向配置' : '通常配置') + (SPACE[st.space] || '');
     document.querySelectorAll('#ensSpace [data-space]').forEach(b => b.classList.toggle('on', b.getAttribute('data-space') === (st.space || 'normal')));
     $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.types && H.types.some(Boolean) ? '・段ごと' : ''}${H.curve ? '・弧' : ''}` : 'なし';
@@ -3658,11 +3810,12 @@
     const LAYS = SS.auto.layoutsOf(st.type), hasLay = ['band', 'brass', 'choir'].includes(st.type);
     $('bandLayoutWrap').hidden = !hasLay;
     $('bandLayoutLbl').textContent = `並び方（${SS.auto.ENSEMBLES[st.type].name}）`;
-    if ($('bandLayout').getAttribute('data-type') !== st.type) {
-      $('bandLayout').innerHTML = Object.keys(LAYS).map(k => `<option value="${k}">${SS.esc(LAYS[k].name)}</option>`).join('');
-      $('bandLayout').setAttribute('data-type', st.type);
+    const hasCustom = st.layout === 'custom' && !!st.customRows;
+    if ($('bandLayout').getAttribute('data-type') !== st.type + (hasCustom ? '+c' : '')) {
+      $('bandLayout').innerHTML = (hasCustom ? `<option value="custom">${SS.auto.CUSTOM_NAME}（パートのかたまりで動かした順）</option>` : '') + Object.keys(LAYS).map(k => `<option value="${k}">${SS.esc(LAYS[k].name)}</option>`).join('');
+      $('bandLayout').setAttribute('data-type', st.type + (hasCustom ? '+c' : ''));
     }
-    $('bandLayout').value = LAYS[st.layout] ? st.layout : Object.keys(LAYS)[0];
+    $('bandLayout').value = hasCustom ? 'custom' : LAYS[st.layout] ? st.layout : Object.keys(LAYS)[0];
     $('percPlace').value = st.percPlace || 'back';
     renderPercKit();
     // 打楽器の箱：打楽器のある編成だけ

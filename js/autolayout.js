@@ -352,7 +352,14 @@ window.SS = window.SS || {};
     stba: { name: 'S・T・B・A（外声を外側に）' },
   };
   A.layoutsOf = type => (type === 'brass' ? A.BRASS_LAYOUTS : type === 'choir' ? A.CHOIR_LAYOUTS : A.BAND_LAYOUTS);
-  const bandRows = st => (st.type === 'brass' ? (A.BRASS_LAYOUTS[st.layout] || A.BRASS_LAYOUTS.std) : (A.BAND_LAYOUTS[st.layout] || A.BAND_LAYOUTS.std)).rows;
+  // いまの並び方。「パートのかたまり」で並べかえたときは layout: 'custom'（列の中身は customRows、コの字などの形は customBase の並び方のまま）
+  A.CUSTOM_NAME = '自分で並べかえた順';
+  A.layOf = function (st) {
+    const L = st.type === 'brass' ? A.BRASS_LAYOUTS : A.BAND_LAYOUTS;
+    if (st.layout === 'custom' && Array.isArray(st.customRows) && st.customRows.length) return Object.assign({}, L[st.customBase] || L.std, { name: A.CUSTOM_NAME, rows: st.customRows });
+    return L[st.layout] || L.std;
+  };
+  const bandRows = st => A.layOf(st).rows;
 
   // ---------------------------------------------------------------- 打楽器の整列
   const TIMP = ['timp32', 'timp29', 'timp26', 'timp23', 'timp'];
@@ -935,6 +942,7 @@ window.SS = window.SS || {};
   // ---------------------------------------------------------------- 吹奏楽
   // 上手の外側の弧に置く低音グループ（内側→外側の順。弦バスがいちばん外）
   const LOW_GROUP = ['B.Cl', 'Euph', 'Tuba', 'St.B'];
+  A.LOW_GROUP = LOW_GROUP;
 
   // 台形のコの字（ブラスバンド）：指揮者 c を基準に、奥の辺は R だけ後ろ、腕は客席の方へひらく。
   // 下手の腕の前のはし → 奥の左の角 → 奥の右の角 → 上手の腕の前のはし（R を 1 としたときの形）
@@ -959,7 +967,7 @@ window.SS = window.SS || {};
 
   function band(st, stage, tune, lowFallback) {
     const n = st.counts;
-    const lowOn = st.lowOuter && !lowFallback && !(st.type === 'band' && (A.BAND_LAYOUTS[st.layout] || {}).noLowOuter);
+    const lowOn = st.lowOuter && !lowFallback && !(st.type === 'band' && A.layOf(st).noLowOuter);
     const c = { x: stage.w / 2, y: podiumY(stage) };
     const H = st.hina || { steps: 0 };
     const pn = SS.panelSize(H);
@@ -975,7 +983,7 @@ window.SS = window.SS || {};
     // 床の扇形
     let R0 = r0;
     // 列の中身は { v: ラベル, c: 前の列からはみ出してきたか }
-    const uShape = st.type === 'brass' && !(A.BRASS_LAYOUTS[st.layout] || {}).arc;
+    const uShape = st.type === 'brass' && !A.layOf(st).arc;
     const queue = uShape ? [] : floorRows.map(r => hornSlots(r, st.hornBox).map(v => ({ v, c: false })));
     let maxR = r0 - gap;
     if (uShape) {
