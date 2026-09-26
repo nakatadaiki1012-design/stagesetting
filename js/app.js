@@ -490,6 +490,10 @@
       x0 = Math.min(opts().dims ? -52 : -10, -16 / km); x1 = st.w + 16 / km; // 角の丸いつまみが画面からはみ出さないように
       y0 = -34 / km; y1 = SS.render.frontOuter(st) + (opts().dims ? 34 : 0) + 78 / km;
     }
+    // 舞台の外（そで・奥）に置いた出入り口も入るように
+    let dx1 = -Infinity;
+    doc().items.filter(it => it.type === 'door').forEach(it => { const b = SS.itemAABB(it, {}); x0 = Math.min(x0, b.x0 - 30); y0 = Math.min(y0, b.y0 - 30); y1 = Math.max(y1, b.y1 + 30); dx1 = Math.max(dx1, b.x1 + 30); });
+    if (dx1 > x1 - 40) x1 = Math.max(x1, x0 + ((dx1 - x0) * r.width) / (r.width - 70)); // 右は画面の右のボタン（約70px）に隠れないように
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
     S.view.k = k;
@@ -590,11 +594,13 @@
     if (pointers.size > 2) return;
     // 舞台の大きさの数字（前の幅・奥の幅・奥行）を押すと、長さを入力できる
     const dimEl = e.target.closest && e.target.closest('[data-dimedit]');
-    if (dimEl) { drag = { kind: 'dimedit', start: { sx: e.clientX, sy: e.clientY } }; pendingDim = dimEl.getAttribute('data-dimedit'); return; } // 入力の画面は click で開く（同じタップで閉じないように）
+    // 舞台の外に置いた出入り口が数字に重なっているときは、出入り口をつかむ
+    const doorEl = dimEl ? document.elementsFromPoint(e.clientX, e.clientY).map(el => el.closest && el.closest('.item')).find(el => el && (byId(el.getAttribute('data-id')) || {}).type === 'door') : null;
+    if (dimEl && !doorEl) { drag = { kind: 'dimedit', start: { sx: e.clientX, sy: e.clientY } }; pendingDim = dimEl.getAttribute('data-dimedit'); return; } // 入力の画面は click で開く（同じタップで閉じないように）
 
     const w = toWorld(e.clientX, e.clientY);
     const handle = e.target.closest && e.target.closest('[data-handle]');
-    const itemEl = e.target.closest && e.target.closest('.item');
+    const itemEl = doorEl || (e.target.closest && e.target.closest('.item'));
     const start = { sx: e.clientX, sy: e.clientY, w };
 
     if (S.pick) {
@@ -1157,16 +1163,26 @@
   function snapDoor(it) {
     const st = doc().stage, R = SS.render, h = SS.itemSize(it, {}).h;
     const [xl, xr] = R.xRange(st, it.y);
-    const cand = [{ k: 'L', d: Math.abs(it.x - xl) }, { k: 'R', d: Math.abs(it.x - xr) }, { k: 'B', d: Math.abs(it.y) }].sort((a, b) => a.d - b.d)[0];
-    if (cand.d > 250 + h / 2) return;
-    if (cand.k === 'B') { const [bl, br] = R.xRange(st, 1); it.y = h / 2; it.x = Math.max(bl + SS.itemSize(it, {}).w / 2, Math.min(br - SS.itemSize(it, {}).w / 2, it.x)); it.rot = 0; return; }
+    // 舞台の外（そで・奥の通路）に出したときは、置いた所のまま、舞台のほうを向くだけ（客席の側はそのまま）
+    const outside = !R.insideStage(st, it, 0);
+    const [bl, br] = R.xRange(st, 1);
+    const cand = outside ? { k: it.y < 0 && it.x > bl && it.x < br ? 'B' : it.x < (bl + br) / 2 ? 'L' : 'R' }
+      : [{ k: 'L', d: Math.abs(it.x - xl) }, { k: 'R', d: Math.abs(it.x - xr) }, { k: 'B', d: Math.abs(it.y) }].sort((a, b) => a.d - b.d)[0];
+    if (outside && it.y > R.frontAt(st, Math.max(1, Math.min(st.w - 1, it.x)))) return;
+    if (!outside && cand.d > 250 + h / 2) return;
+    if (cand.k === 'B') {
+      it.rot = 0;
+      if (!outside) { it.y = h / 2; it.x = Math.max(bl + SS.itemSize(it, {}).w / 2, Math.min(br - SS.itemSize(it, {}).w / 2, it.x)); }
+      return;
+    }
     const y = Math.max(20, Math.min(R.frontAt(st, it.x) - 20, it.y));
     const [a0, a1] = R.xRange(st, y - 20), [b0, b1] = R.xRange(st, y + 20);
     const tx = cand.k === 'L' ? b0 - a0 : b1 - a1, L = Math.hypot(tx, 40), t = { x: tx / L, y: 40 / L };
     const n = cand.k === 'L' ? { x: t.y, y: -t.x } : { x: -t.y, y: t.x };
+    it.rot = Math.round((Math.atan2(-n.x, n.y) * 180) / Math.PI);
+    if (outside) return;
     const wx = cand.k === 'L' ? R.xRange(st, y)[0] : R.xRange(st, y)[1];
     it.x = Math.round(wx + n.x * h / 2); it.y = Math.round(y + n.y * h / 2);
-    it.rot = Math.round((Math.atan2(-n.x, n.y) * 180) / Math.PI);
   }
 
   function addItem(type, extra, at) {
@@ -3319,7 +3335,7 @@
         <li><b>上がり段</b>：「部品」の「上がり段」を、段の横か前にくっつけて置きます（矢印の向きに上がる）。高さ40cm以上の段に人や楽器がいるのに上がる道がないと「⚠ 確認」に出ます。</li>
         <li><b>ホールの設備</b>：「かんたん編成」の「安全・ホールの設備」→「ホールの設備」に、反射板の位置・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道・<b>上手／下手の出入り口（扉）</b>を<b>分かるものだけ</b>入れると、図に描き、重なった物を「⚠ 確認」で知らせます。出入り口は扉の前 1.2m を空けておく所として描き、かんたん編成はそこを空けて並べます。</li>
         <li><b>📏 舞台図の縮尺</b>：「もっと…」→「トレース」で舞台図を読み込んだら、いちばん上の青いボタン <b>「📏 長さのわかる2点で縮尺を合わせる」</b> を押し、図の上で長さのわかる2点（平台の端から端など）をタップして、<b>1.82m（6尺）・0.91m（3尺）・1m</b> などのボタンを押すと縮尺が合います。</li>
-        <li><b>出入り口（扉）</b>：「部品」の <b>出入り口（扉）</b> を壁の近くに置くと、壁にくっついて内側を向きます。扉の前 1.2m に人や物があると「⚠ 確認」に出て、かんたん編成はそこを空けて並べます。</li>
+        <li><b>出入り口（扉）</b>：「部品」の <b>出入り口（扉）</b> を壁の近くに置くと、壁にくっついて内側を向きます。<b>舞台の外（そで・奥の通路）</b>にも置けます。外へ出すと、置いた所のまま舞台のほうを向きます（Alt を押しながらだと向きも変えません）。「全体を表示」で外の出入り口まで入ります。扉の前 1.2m に人や物があると「⚠ 確認」に出て、かんたん編成はそこを空けて並べます。</li>
         <li><b>司会・照明のテスト</b>：「部品」の「舞台の設備・その他」の <b>司会（マイクスタンド）</b> で司会の位置を決め、3D の「⋯ くわしく」→ <b>「💡 照明」</b> で、地明かりの明るさ・反射板を下から色で照らす・上から色の明かり・<b>ピンスポット</b>（当てる人・どこから・大きさ・色）をためせます。照明の設定は配置図といっしょに保存されます。</li>
         <li><b>花道（張り出し）</b>：「部品」の <b>花道（張り出し）</b> は舞台と同じ高さの床です。客席の方や舞台の横へ出して置け、長さ・幅・向きは自由です。上に置いた人は舞台の外でも「整える」で動かしません。3D にも出ます。</li>
         <li><b>✨ きれいに整える</b>：ひな壇から落ちかけている人は段に乗せ、段にかかっている床の人は降ろし、段の上の人を段の上にきちんと並べます。舞台からはみ出すひな壇・指揮台は舞台の中へ、舞台に入らない床の列は少し詰めます。花道・ピットのふたの上の人はそのままです。</li>
