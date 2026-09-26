@@ -623,6 +623,7 @@ window.SS = window.SS || {};
     if (ex.underlay && doc.underlay) s += R.underlaySVG(doc.underlay, { id: 'ex' });
     s += R.itemsSVG(doc, opts, conductor, false);
     if (ex.compare) s += R.compareSVG(R.diffItems(ex.compare.items, doc.items), k, opts);
+    if (ex.extraSVG) s += ex.extraSVG(k); // 転換の印など
     if (opts.dims) s += R.dimsSVG(doc, k, null);
     s += R.marksSVG(doc, k, opts.dims);
     return s;
@@ -1048,7 +1049,9 @@ window.SS = window.SS || {};
     delete slim.underlay;
     // ピンスポットの「当てる人」は部品の番号で覚える（共有リンクでは部品の id を省くため）
     if (slim.lighting && slim.lighting.spots) slim.lighting.spots.forEach(sp => { const i = doc.items.findIndex(it => it.id === sp.target); sp.target = i >= 0 ? '#' + i : ''; });
-    slim.items.forEach(it => { it.x = Math.round(it.x); it.y = Math.round(it.y); it.rot = Math.round(it.rot || 0); delete it.id; });
+    const slimItems = list => (list || []).forEach(it => { it.x = Math.round(it.x); it.y = Math.round(it.y); it.rot = Math.round(it.rot || 0); delete it.id; });
+    slimItems(slim.items);
+    (slim.parts || []).forEach(p => slimItems(p.items)); // 1部・2部…のほかの部
     const bytes = new TextEncoder().encode(JSON.stringify(slim));
     if (window.CompressionStream) return 'z' + b64url(await pipe(bytes, new CompressionStream('deflate-raw')));
     return 'j' + b64url(bytes);

@@ -49,6 +49,11 @@
       // コンクール提出用の図（団体名・メモ・用紙の向き・編成表を入れるか）
       contest: Object.assign({ org: '', memo: '', orient: 'landscape', legend: false }, doc.contest || {}),
     };
+    // 1部・2部…（2つ以上のときだけ）。いま開いている部の中身は items・ensemble にあり、parts の同じ番号の所は空
+    const P = Array.isArray(doc.parts) && doc.parts.length > 1 ? doc.parts : null;
+    d.parts = P ? P.map((p, i) => ({ name: String((p && p.name) || `第${i + 1}部`), items: p && Array.isArray(p.items) ? p.items.map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })) : [], ensemble: (p && p.ensemble) || null })) : null;
+    d.partIdx = P ? Math.max(0, Math.min(P.length - 1, doc.partIdx | 0)) : 0;
+    if (d.parts) { d.parts[d.partIdx].items = null; d.parts[d.partIdx].ensemble = null; }
     // 共有リンクから開いたとき：ピンスポットの「当てる人」（部品の番号）を id に戻す
     if (d.lighting && d.lighting.spots) d.lighting.spots.forEach(sp => { const m = /^#(\d+)$/.exec(sp.target || ''); if (m && d.items[+m[1]]) sp.target = d.items[+m[1]].id; });
     // 前の「コンクール用（椅子○・譜面台×）」は、「白黒◯×」に読み替える
@@ -74,7 +79,7 @@
     // 舞台図（下絵）は、画像そのものは入れず、位置・大きさ・回転などだけを記録する
     const ul = d.underlay ? Object.assign({}, d.underlay, { src: undefined }) : null;
     if (d.underlay) S.ulSrc = d.underlay.src;
-    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul });
+    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul, parts: d.parts, partIdx: d.partIdx });
   }
   function pushHistory() {
     S.undo.push(snapshot());
@@ -132,6 +137,7 @@
     S.warnings = SS.checks ? SS.checks(d) : [];
     renderWarnList();
     renderCompareBar();
+    renderPartBar();
     renderFoldSummaries();
     renderOverlay();
     scheduleSave();
@@ -139,6 +145,7 @@
 
   // ------------------------------------------------------------ 前の版・保存した配置図とくらべる
   function startCompare(name, base) {
+    S.trans = null;
     S.compare = { name, items: JSON.parse(JSON.stringify(base.items || [])) };
     closeModal();
     render();
@@ -148,6 +155,17 @@
   }
   function renderCompareBar() {
     const bar = $('cmpBar');
+    if (S.trans && doc().parts && doc().parts[S.trans.a] && doc().parts[S.trans.b]) {
+      const r = transResult();
+      // 出入り口（そで）ごとの数：「（下手 6・上手 4）」
+      const by = k => { const es = r.byExit.filter(e => e[k].length); return es.length > 1 ? `<small>（${es.map(e => `${SS.esc(e.name.replace(/のそで$/, ''))} ${e[k].length}`).join('・')}）</small>` : es.length ? `<small>（${SS.esc(es[0].name.replace(/のそで$/, ''))}）</small>` : ''; };
+      bar.hidden = false;
+      bar.innerHTML = `<span>🔁 ${SS.esc(partName(S.trans.a))} → ${SS.esc(partName(S.trans.b))} の転換：<span class="cmp-n r">×はける ${r.remove.length}</span>${by('remove')} <span class="cmp-n g">○出す ${r.add.length}</span>${by('add')} <span class="cmp-n o">→動かす ${r.move.length}</span></span><button class="btn" id="trOpen">計画を見る</button><button class="btn" id="trStop">印を消す</button>`;
+      $('trOpen').onclick = () => openTransModal(S.trans.a, S.trans.b);
+      $('trStop').onclick = () => { S.trans = null; render(); };
+      return;
+    }
+    S.trans = null;
     if (!S.compare) { bar.hidden = true; return; }
     const df = SS.render.diffItems(S.compare.items, doc().items);
     const sum = SS.render.diffSummary(df);
@@ -161,6 +179,142 @@
       renderSettings(); scheduleSave(); render();
       toast(`変更の内容を「${doc().info.changeNote}」にしました（「📤 書き出す」の画面の「図面の情報欄」で直せます）`, true);
     };
+  }
+
+  // ------------------------------------------------------------ 1部・2部・3部と、転換の計画
+  // いま開いている部の中身は doc.items・doc.ensemble にある。ほかの部は doc.parts[i].items・ensemble
+  function partItems(i) { const d = doc(); return i === d.partIdx ? d.items : (d.parts[i].items || []); }
+  const partName = i => (doc().parts && doc().parts[i] ? doc().parts[i].name : '');
+  function switchPart(j) {
+    const d = doc();
+    if (!d.parts || j === d.partIdx || !d.parts[j]) return;
+    const cur = d.parts[d.partIdx], nx = d.parts[j];
+    cur.items = d.items; cur.ensemble = d.ensemble;
+    d.items = nx.items || []; d.ensemble = nx.ensemble || null;
+    nx.items = null; nx.ensemble = null;
+    d.partIdx = j;
+    S.sel.clear();
+    if (S.trans && S.trans.b !== j) S.trans = null;
+    renderAll(); renderSteppers(); updateHallNote();
+  }
+  function addPart(copy) {
+    pushHistory();
+    const d = doc();
+    if (!d.parts) { d.parts = [{ name: '第1部', items: null, ensemble: null }]; d.partIdx = 0; }
+    // 何もない舞台：出入り口・花道・コンセントだけ残す（ホールの物）
+    const KEEP = new Set(['door', 'runway', 'outlet', 'tap']);
+    const items = JSON.parse(JSON.stringify(copy ? d.items : d.items.filter(it => KEEP.has(it.type))));
+    const name = `第${d.parts.length + 1}部`;
+    d.parts.push({ name, items, ensemble: copy && d.ensemble ? JSON.parse(JSON.stringify(d.ensemble)) : null });
+    switchPart(d.parts.length - 1);
+    toast(copy ? `「${name}」を作りました（前の部のコピー）。増える人・減る人・動く物を直してください` : `「${name}」を作りました（何もない舞台）`, true);
+  }
+  function deletePart(i) {
+    const d = doc();
+    if (!d.parts || !d.parts[i]) return;
+    pushHistory();
+    if (i === d.partIdx) switchPart(i > 0 ? i - 1 : 1);
+    d.parts.splice(i, 1);
+    if (d.partIdx > i) d.partIdx--;
+    if (d.parts.length < 2) { d.parts = null; d.partIdx = 0; }
+    S.trans = null;
+    renderAll(); renderSteppers(); updateHallNote();
+  }
+  function movePart(i, dir) {
+    const d = doc(), j = i + dir;
+    if (!d.parts || !d.parts[i] || !d.parts[j]) return;
+    pushHistory();
+    [d.parts[i], d.parts[j]] = [d.parts[j], d.parts[i]];
+    if (d.partIdx === i) d.partIdx = j; else if (d.partIdx === j) d.partIdx = i;
+    S.trans = null;
+    render();
+  }
+  // 舞台図の上の部のタブ（1つだけのときは「＋ 2部を作る」）
+  let partBarKey = '';
+  function renderPartBar() {
+    const bar = $('partBar'), d = doc();
+    const key = d.parts ? d.partIdx + '|' + d.parts.map(p => p.name).join('|') + (S.trans ? '|t' : '') : '-';
+    document.body.classList.toggle('has-parts', !!d.parts);
+    if (key === partBarKey && bar.childElementCount) return;
+    partBarKey = key;
+    if (!d.parts) {
+      bar.innerHTML = `<button class="pb-btn" id="pbNew" title="演奏会の1部・2部…を別々の配置図で作り、転換（いすを何脚はけるか・どう動かすか）の計画を立てます">＋ 2部を作る</button>`;
+      $('pbNew').onclick = openPartsModal;
+      return;
+    }
+    bar.innerHTML = d.parts.map((p, i) => `<button class="pb-tab${i === d.partIdx ? ' on' : ''}" data-part="${i}" title="${SS.esc(p.name)}">${SS.esc(p.name)}</button>`).join('') +
+      `<button class="pb-btn" id="pbManage" title="部を足す・名前・順番・消す">＋</button><button class="pb-btn pb-trans${S.trans ? ' on' : ''}" id="pbTrans" title="部と部の間の転換の計画（はける・出す・動かす）">🔁 転換</button>`;
+    bar.querySelectorAll('[data-part]').forEach(b => { b.onclick = () => { const j = +b.getAttribute('data-part'); if (j === doc().partIdx) openPartsModal(); else switchPart(j); }; });
+    $('pbManage').onclick = openPartsModal;
+    $('pbTrans').onclick = () => openTransModal();
+  }
+  function openPartsModal() {
+    const d = doc(), ps = d.parts || [{ name: '第1部' }], cur = d.parts ? d.partIdx : 0;
+    const nPl = i => (d.parts ? partItems(i) : d.items).filter(it => it.type === 'player').length;
+    openModal(`<h2>📑 1部・2部・3部</h2>
+      <p class="hint">演奏会の部ごとに配置図を作れます（舞台の大きさ・ホールの設備はどの部も同じ）。部と部の間の <b>🔁 転換</b> を押すと、<b>いすを何脚はけるか・どう動かすとよいか</b>の計画が出ます。</p>
+      <ol class="part-list">${ps.map((p, i) => `<li${i === cur ? ' class="on"' : ''}>${d.parts ? `<input type="text" data-pname="${i}" value="${SS.esc(p.name)}" aria-label="部の名前" maxlength="20">` : '<span class="pl-name">いまの配置図（第1部になります）</span>'}<span class="small">${nPl(i)}人</span>${d.parts ? `<span class="pl-btns"><button class="btn" data-popen="${i}"${i === cur ? ' disabled' : ''}>${i === cur ? '開いています' : '開く'}</button><button class="btn" data-pmove="${i}|-1"${i === 0 ? ' disabled' : ''} title="前へ" aria-label="前へ">↑</button><button class="btn" data-pmove="${i}|1"${i === ps.length - 1 ? ' disabled' : ''} title="後ろへ" aria-label="後ろへ">↓</button><button class="btn danger" data-pdel="${i}" title="この部を消す" aria-label="この部を消す">✕</button></span>` : ''}</li>`).join('')}</ol>
+      <div class="btn-row"><button class="btn primary" id="pAddCopy">＋ いまの部をコピーして次の部を作る</button><button class="btn" id="pAddBlank">＋ 何もない舞台で作る</button></div>
+      <p class="hint small">コピーして作ると、同じ配置から「増える人・減る人・動く物」だけ直せばよいので楽です。書き出す図面には部の名前が入ります。</p>`);
+    $('pAddCopy').onclick = () => { closeModal(); addPart(true); };
+    $('pAddBlank').onclick = () => { closeModal(); addPart(false); };
+    document.querySelectorAll('[data-pname]').forEach(inp => {
+      inp.addEventListener('focus', () => pushHistory());
+      inp.addEventListener('change', () => { const i = +inp.getAttribute('data-pname'); doc().parts[i].name = inp.value.trim() || `第${i + 1}部`; render(); });
+    });
+    document.querySelectorAll('[data-popen]').forEach(b => { b.onclick = () => { closeModal(); switchPart(+b.getAttribute('data-popen')); }; });
+    document.querySelectorAll('[data-pmove]').forEach(b => { b.onclick = () => { const [i, dir] = b.getAttribute('data-pmove').split('|').map(Number); movePart(i, dir); openPartsModal(); }; });
+    document.querySelectorAll('[data-pdel]').forEach(b => {
+      b.onclick = () => { const i = +b.getAttribute('data-pdel'); askConfirm(`「${partName(i)}」を消します。\n（あとで「戻す」で元に戻せます）`, '消す', () => deletePart(i)); };
+    });
+  }
+  // 転換の計画（S.trans = { a: 前の部, b: 次の部 }）。次の部を開いて、図に印を出す
+  function transResult() { return SS.changeover(partItems(S.trans.a), partItems(S.trans.b), doc().stage, renderOpts()); }
+  function transPair() {
+    const d = doc();
+    if (S.trans) return [S.trans.a, S.trans.b];
+    return d.partIdx > 0 ? [d.partIdx - 1, d.partIdx] : [0, 1];
+  }
+  function startTrans(a, b) {
+    S.compare = null;
+    S.trans = { a, b };
+    if (doc().partIdx !== b) switchPart(b); else render();
+  }
+  function openTransModal(a, b) {
+    const d = doc();
+    if (!d.parts) return;
+    if (a == null) [a, b] = transPair();
+    const sel = (id, v) => `<select id="${id}">${d.parts.map((p, i) => `<option value="${i}"${i === v ? ' selected' : ''}>${SS.esc(p.name)}</option>`).join('')}</select>`;
+    let body = '';
+    if (a === b) body = '<p class="hint">ちがう部をえらんでください。</p>';
+    else {
+      const res = SS.changeover(partItems(a), partItems(b), d.stage, renderOpts());
+      const nR = res.remove.length, nA = res.add.length, nM = res.move.length;
+      const cell = n => (n ? n : '<span class="co-zero">·</span>');
+      const chg = r => r.remove || r.add || r.move;
+      const same = res.rows.filter(r => !chg(r));
+      const T = res.tiers, nT = T.change.length + T.add.length + T.remove.length + T.move.length;
+      const rows = res.rows.filter(chg).map(r => `<tr><th>${SS.esc(r.name)}</th><td>${r.before}</td><td>${r.after}</td><td class="r">${cell(r.remove)}</td><td class="g">${cell(r.add)}</td><td class="o">${cell(r.move)}</td></tr>`).join('');
+      const pan = res.panels.map(p => `<tr class="co-pan"><th>${SS.esc(p.name)}</th><td>${p.before}</td><td>${p.after}</td><td class="r">${p.after < p.before ? p.before - p.after : cell(0)}</td><td class="g">${p.after > p.before ? p.after - p.before : cell(0)}</td><td class="o">${cell(0)}</td></tr>`).join('');
+      const steps = SS.changeoverSteps(res, d.stage);
+      body = `<p class="co-head">奏者 ${res.players.before}人 → ${res.players.after}人　／　運ぶ物：<b class="r">× はける ${nR}</b>・<b class="g">○ 出す ${nA}</b>・<b class="o">→ 動かす ${nM}</b>（そのまま ${res.keep.length}）${nT || res.panels.length ? `<br><b class="o">ひな壇の組み替えがあります</b>（${nT}段）` : ''}</p>
+        ${rows || pan ? `<div class="co-scroll"><table class="co-table"><thead><tr><th>物</th><th>${SS.esc(partName(a))}</th><th>${SS.esc(partName(b))}</th><th class="r">はける</th><th class="g">出す</th><th class="o">動かす</th></tr></thead><tbody>${rows}${pan}</tbody></table></div>` : ''}
+        ${same.length ? `<details class="co-same"><summary>変わらない物（${same.length}種類）</summary><p class="small">${same.map(r => `${SS.esc(r.name)} ${r.after}${r.unit}`).join('・')}</p></details>` : ''}
+        <h3>おすすめの手順</h3>
+        ${steps.length ? `<ol class="co-steps">${steps.map(st => `<li><b>${st.title}</b>${st.lines.map(l => `<div>${SS.esc(l)}</div>`).join('')}<div class="small">${st.note}</div></li>`).join('')}</ol>` : '<p>変えるものはありません。</p>'}
+        <p class="hint small">${res.exits.wings ? 'はける先・出す元は、近いほうのそで（下手・上手）にしています。「部品」の <b>出入り口（扉）</b> を置くと、その出入り口ごとに分けます。' : 'はける先・出す元は、いちばん近い出入り口にしています。'}いす・譜面台はどれも同じ物として、近い物どうしを組にしています（20cm以内はそのまま）。</p>`;
+    }
+    openModal(`<h2>🔁 転換の計画</h2>
+      <div class="co-pick">${sel('coA', a)}<span>→</span>${sel('coB', b)}</div>
+      ${body}
+      <div class="btn-row">${a !== b ? `<button class="btn primary" id="coShow">🗺 図で見る（${SS.esc(partName(b))}に印）</button><button class="btn" id="coCopy">📋 文字でコピー</button><button class="btn" id="coSave">⬇ 文字で保存</button>` : ''}</div>`);
+    const re = () => openTransModal(+$('coA').value, +$('coB').value);
+    $('coA').onchange = re; $('coB').onchange = re;
+    if (a === b) return;
+    const text = () => SS.changeoverText(SS.changeover(partItems(a), partItems(b), d.stage, renderOpts()), d.stage, partName(a), partName(b));
+    $('coShow').onclick = () => { closeModal(); startTrans(a, b); fitView(); toast('× はける・○ 出す・→ 動かす を図に出しました。この部を直すと、印もすぐ変わります', true); };
+    $('coCopy').onclick = async () => { try { await navigator.clipboard.writeText(text()); toast('転換の計画を文字でコピーしました'); } catch (e) { toast('コピーできませんでした。「文字で保存」を使ってください'); } };
+    $('coSave').onclick = () => SS.render.download(new Blob([text()], { type: 'text/plain;charset=utf-8' }), SS.render.safeName(`${doc().title || '転換'}_${partName(a)}から${partName(b)}`) + '.txt');
   }
 
   // ------------------------------------------------------------ 安全の確認（警告の一覧と、図の上の印）
@@ -455,7 +609,7 @@
     }
     layerOverlay.innerHTML = s;
     $('layerWarn').innerHTML = warnMarksSVG(k);
-    $('layerCompare').innerHTML = S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
+    $('layerCompare').innerHTML = S.trans ? SS.changeoverSVG(transResult(), k, doc().stage) : S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
     $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile());
@@ -2162,6 +2316,7 @@
   }
   $('tabMore').onclick = e => { e.stopPropagation(); showTabMore($('tabMoreMenu').hidden); };
   // スマホでは上の「🧊 3D」をしまったので、ここから3Dを開く
+  $('moreParts').onclick = () => { showTabMore(false); closePanels(); openPartsModal(); };
   $('more3d').onclick = () => { showTabMore(false); closePanels(); $('btn3d').click(); };
   document.addEventListener('pointerdown', e => { if (!$('tabMoreMenu').hidden && !e.target.closest('#tabMoreMenu, #tabMore')) showTabMore(false); });
   const openRightTab = id => openTab('rightPanel', id);
@@ -2214,14 +2369,15 @@
 
   function loadTemplate(t, force) {
     const hasWork = players().length > 0 && S.undo.length > 0;
-    if (hasWork && !force) {
-      askConfirm('いまの配置図を「' + t.name + '」に置き換えます。\n（あとで「戻す」で元に戻せます）', '置き換える', () => loadTemplate(t, true));
+    if ((hasWork || doc().parts) && !force) {
+      const st0 = doc().stage, st1 = t.make().stage, other = doc().parts && (st0.w !== st1.w || st0.d !== st1.d);
+      askConfirm((doc().parts ? `いまの部（${doc().parts[doc().partIdx].name}）の配置図を「` : 'いまの配置図を「') + t.name + '」に置き換えます。' + (other ? '\n舞台の大きさもひな形のものになります（ほかの部も同じ舞台です）。' : '') + '\n（あとで「戻す」で元に戻せます）', '置き換える', () => loadTemplate(t, true));
       return;
     }
     pushHistory();
     const made = t.make();
     const keep = doc();
-    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info });
+    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info, parts: keep.parts, partIdx: keep.partIdx });
     // 舞台奥の通路の幅は、設定した値のまま（ひな形は60cmで作ってあるので、違えば並べ直す）
     if (keep.stage.backAisle != null) {
       S.doc.stage.backAisle = keep.stage.backAisle;
@@ -3045,6 +3201,7 @@
         <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '白黒◯×（椅子○・譜面台×）', p.style)}</select></label>
       </div>
       ${S.compare ? `<label class="check"><input type="checkbox" id="ppCompare" checked> 「${SS.esc(S.compare.name)}」との違いの印（○＋ □− →）を入れる</label>` : ''}
+      ${S.trans ? `<label class="check"><input type="checkbox" id="ppTrans" checked> 転換の印（× はける・○ 出す・→ 動かす）を入れる</label>` : ''}
       ${doc().items.some(SS.isAudio) ? `<label class="check"><input type="checkbox" id="ppAudio"${p.audio === false ? '' : ' checked'}> 音響の機材（マイク・モニター・ケーブル）を入れる</label>` : ''}
       ${hasHina() ? `<label class="field">中身<select id="ppContent">${opt('plan', '配置図', p.content)}${opt('assembly', 'ひな壇の組み図（番号・足・部材表）', p.content)}</select></label>` : ''}
       <p id="ppWarn" class="pp-warn" hidden></p>
@@ -3066,7 +3223,10 @@
   function buildSheet(extra) {
     const p = readPaper();
     const cmp = S.compare && $('ppCompare') && $('ppCompare').checked ? S.compare : null;
-    return SS.render.sheet(doc(), sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true, audio: p.audio !== false, compare: cmp, content: p.content === 'assembly' && hasHina() ? 'assembly' : 'plan' }, extra));
+    // 1部・2部…があるときは、図面のサブタイトルに部の名前（転換の印を入れるときは「転換：第1部 → 第2部」も）
+    const d0 = doc(), tr = !!(S.trans && $('ppTrans') && $('ppTrans').checked);
+    const dd = d0.parts ? Object.assign({}, d0, { subtitle: [d0.subtitle, partName(d0.partIdx), tr ? `転換：${partName(S.trans.a)} → ${partName(S.trans.b)}（×はける・○出す・→動かす）` : ''].filter(Boolean).join('　') }) : d0;
+    return SS.render.sheet(dd, sheetOpts(p), conductor(), Object.assign({ paper: p, legend: true, audio: p.audio !== false, compare: cmp, extraSVG: tr ? (k => SS.changeoverSVG(transResult(), k, d0.stage)) : null, content: p.content === 'assembly' && hasHina() ? 'assembly' : 'plan' }, extra));
   }
   // 縮尺どおりだと用紙に入らないとき、警告と入る縮尺の案内
   function paperCheck(extra) {
@@ -3086,7 +3246,7 @@
     if (p.scale && !r.info.fits) w.className = 'pp-warn';
     return r;
   }
-  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent', 'ppAudio', 'ppCompare'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
+  const bindPaper = extra => ['ppSize', 'ppOrient', 'ppScale', 'ppStyle', 'ppContent', 'ppAudio', 'ppCompare', 'ppTrans'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => paperCheck(extra())); });
 
   // 「📤 書き出す」：画像・PDF・印刷をえらぶ
   $('btnOut').onclick = () => {
@@ -3349,6 +3509,7 @@
         <li><b>3Dのパート名</b>：3Dの下の「文字 小・中・大」で大きさを変えられます。</li>
         <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」の「電気・音響」にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
         <li><b>🎙 録音・音響</b>：「部品」の「電気・音響」に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
+        <li><b>📑 1部・2部・3部と🔁 転換</b>：舞台図の左下の <b>「＋ 2部を作る」</b>（スマホは「もっと…」→「1部・2部・3部」）で、部ごとの配置図を作れます（「いまの部をコピーして次の部を作る」がおすすめ）。部のタブで切りかえ、開いている部のタブか「＋」で名前・順番・消す。<b>「🔁 転換」</b>を押すと、前の部から次の部へ変えるとき、<b>いすを何脚はけるか・何を出すか・何を動かすか</b>の表と、おすすめの手順（①はける ②ひな壇の組み替え ③動かす ④出す、出入り口・そでごと）が出ます。「図で見る」で次の部の上に × はける・○ 出す・→ 動かす の印を出し、直すとすぐ変わります。「文字でコピー」で係の人に送れます。</li>
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>
         <li><b>版</b>：「名前を付けて保存」のとき、<b>第何版かを1つ上げるか</b>聞きます。「📤 書き出す」の画面の「図面の情報欄」で手で直すこともできます。</li>
         <li><b>保存・共有</b>：上のボタンから画像保存・印刷・共有リンクが作れます。作業中の内容は自動で保存されます。ただし保存先は<b>このブラウザの中だけ</b>なので、ブラウザのデータを消したり機種を変えたりすると消えます。大事な図は「💾 保存/開く」の<b>「⬇ ファイルに保存」</b>もしておくと安心です（初めて書き出したあとにも1回だけ案内します）。</li>

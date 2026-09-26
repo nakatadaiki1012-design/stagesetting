@@ -34,6 +34,7 @@
       <div class="tab-more-menu" id="tabMoreMenu" hidden>
         <button class="tab" data-tab="quickTab">一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
         <button class="tab" data-tab="traceTab">トレース<small>ホールの舞台図を下に重ねる</small></button>
+        <button class="more-3d" id="moreParts" type="button">📑 1部・2部・3部<small>部ごとの配置図と、転換（はける・出す・動かす）の計画</small></button>
         <button class="more-3d mobile-only" id="more3d" type="button">🧊 3Dで見る<small>立体で確認（ネット接続が必要です）</small></button>
       </div>
     </nav>
@@ -315,6 +316,7 @@
     <button class="warn-chip" id="warnChip" hidden title="安全の確認（通路・上がり段・搬入経路・ホールの設備）"></button>
     <div class="warn-list" id="warnList" hidden></div>
     <div class="cmp-bar" id="cmpBar" hidden></div>
+    <div class="part-bar" id="partBar"></div>
     <div class="tidy-bar">
       <button class="btn primary" id="btnTidy" title="列を見つけて、間隔・向きをそろえます">✨ きれいに整える</button>
     </div>
@@ -490,6 +492,7 @@
 <script src="js/trace.js"></script>
 <script src="js/io.js"></script>
 <script src="js/checks.js"></script>
+<script src="js/changeover.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
