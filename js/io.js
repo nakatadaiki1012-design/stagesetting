@@ -420,28 +420,48 @@ window.SS = window.SS || {};
     return map;
   };
 
-  R.itemsSVG = function (doc, opts, conductor, withIds) {
-    const nums = opts.showNumbers ? R.seatNumbers(doc, conductor) : null;
-    let bodies = '', texts = '';
+  // 1つの物の絵（body）・字（text）・パート名の候補（label）。ctx：席の番号・ひな壇の番号・2人で1本の組
+  R.itemCtx = function (doc, opts, conductor) {
+    return {
+      nums: opts.showNumbers ? R.seatNumbers(doc, conductor) : null,
+      hno: SS.hinaNumbers && opts.hinaDetail !== false ? SS.hinaNumbers(doc.items) : null,
+      pairs: SS.standPairs && opts.showStands !== false ? SS.standPairs(doc.items) : new Map(),
+    };
+  };
+  R.itemPart = function (it, opts, ctx) {
+    return SS.drawItem(it, Object.assign({}, opts, { number: ctx.nums ? ctx.nums.get(it) : 0, deferLabels: true, hinaNo: ctx.hno ? ctx.hno.get(it) : '', sharedStand: ctx.pairs.has(it) }));
+  };
+  // 字（名前・パート名など）の層。画面では、どの物の字か分かる印（data-tid）を付ける
+  R.itemTextsSVG = function (doc, opts, conductor, withIds, ctx) {
+    ctx = ctx || R.itemCtx(doc, opts, conductor);
+    let texts = '';
     const labels = [];
-    const hno = SS.hinaNumbers && opts.hinaDetail !== false ? SS.hinaNumbers(doc.items) : null;
+    R.sortedItems(doc.items).forEach(it => {
+      const d = R.itemPart(it, opts, ctx);
+      texts += withIds && d.text ? `<g data-tid="${it.id}">${d.text}</g>` : d.text;
+      if (d.label) labels.push(Object.assign({ it }, d.label));
+    });
+    if (opts.nameView) return `<g class="item-texts" pointer-events="none">${texts}${R.partAreaLabels(doc, conductor)}</g>`;
+    return `<g class="item-texts" pointer-events="none">${texts}${R.placeLabels(labels, doc, withIds)}</g>`;
+  };
+  R.itemBodySVG = (it, opts, ctx, withIds) => { const d = R.itemPart(it, opts, ctx); return withIds ? `<g class="item" data-id="${it.id}">${d.body}</g>` : d.body; };
+  R.sharedStandPairSVG = (a, b, opts, withIds) => (withIds ? `<g data-pa="${a.id}" data-pb="${b.id}">${SS.sharedStandSVG(a, b, opts)}</g>` : SS.sharedStandSVG(a, b, opts));
+  R.itemsSVG = function (doc, opts, conductor, withIds) {
+    const ctx = R.itemCtx(doc, opts, conductor);
+    let bodies = '';
     // 弦楽器は2人で1本の譜面台：組になった2人の譜面台は、奏者より先に1本だけ描く
-    const pairs = SS.standPairs && opts.showStands !== false ? SS.standPairs(doc.items) : new Map();
+    // （画面では、どの2人の譜面台か分かる印。ドラッグ中に、その人といっしょに動かすため）
     let standsDone = false;
     R.sortedItems(doc.items).forEach(it => {
       if (it.type === 'player' && !standsDone) {
         standsDone = true;
-        pairs.forEach((b, a) => { if (doc.items.indexOf(a) < doc.items.indexOf(b)) bodies += SS.sharedStandSVG(a, b, opts); });
+        ctx.pairs.forEach((b, a) => { if (doc.items.indexOf(a) < doc.items.indexOf(b)) bodies += R.sharedStandPairSVG(a, b, opts, withIds); });
       }
-      const d = SS.drawItem(it, Object.assign({}, opts, { number: nums ? nums.get(it) : 0, deferLabels: true, hinaNo: hno ? hno.get(it) : '', sharedStand: pairs.has(it) }));
-      if (withIds) bodies += `<g class="item" data-id="${it.id}">${d.body}</g>`;
-      else bodies += d.body;
-      texts += d.text;
-      if (d.label) labels.push(Object.assign({ it }, d.label));
+      bodies += R.itemBodySVG(it, opts, ctx, withIds);
     });
-    if (opts.nameView) return R.partAreasSVG(doc, conductor) + bodies + `<g pointer-events="none">${texts}${R.partAreaLabels(doc, conductor)}</g>`;
-    return bodies + `<g pointer-events="none">${texts}${R.placeLabels(labels, doc)}</g>`;
+    return (opts.nameView ? R.partAreasSVG(doc, conductor) : '') + bodies + R.itemTextsSVG(doc, opts, conductor, withIds, ctx);
   };
+
   // 「名前を大きく」の表示：同じパートで、となりどうし（1.5m以内）の人を1つのパートの場所にまとめる
   R.partAreas = function (doc, conductor) {
     const by = new Map();
@@ -522,7 +542,7 @@ window.SS = window.SS || {};
   };
 
   // パート名を、となりのパート名・人の頭・譜面台と重ならない候補の場所に置く
-  R.placeLabels = function (labels, doc) {
+  R.placeLabels = function (labels, doc, withIds) {
     const boxes = [];
     const box = (lb, p) => ({ x0: p.x - lb.w / 2, x1: p.x + lb.w / 2, y0: p.y - lb.h / 2, y1: p.y + lb.h / 2 });
     const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
@@ -563,7 +583,7 @@ window.SS = window.SS || {};
         cands.forEach((p, i) => { const lb = scaled(0.7); const sc = labelHits(lb, p) * 10 + headHits(lb, p) * 3 + i * 0.5; if (sc < bestScore) { bestScore = sc; pick = { lb, p }; } });
       }
       boxes.push(box(pick.lb, pick.p));
-      out += SS.labelText(pick.lb, pick.p);
+      out += withIds && lb0.it.id ? `<g data-tid="${lb0.it.id}">${SS.labelText(pick.lb, pick.p)}</g>` : SS.labelText(pick.lb, pick.p);
     });
     return out;
   };

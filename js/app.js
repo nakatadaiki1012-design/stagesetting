@@ -120,6 +120,171 @@
     return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false, nameView: !!o.nameView && !o.mono };
   }
 
+  // ------------------------------------------------------------ ドラッグ中のかるい描き直し
+  // ドラッグ中は、動かしている物（と、その物の名前・パート名の字、2人で1本の譜面台）の位置・向きだけを書きかえる。
+  // ほかの人の絵・⚠ 確認・パート名の置き場所・自動保存・「戻す」の記録は、指を離したとき（render）に1回だけ
+  let fastRaf = 0, overlayLite = false, itemsOff = { x: 0, y: 0 };
+  // group：まとめて同じだけ動かすとき（ふつうのドラッグ）。動かす物の絵と字を1つの入れ物に移して、入れ物ごと動かす
+  //（たくさん選んでも、1コマに書きかえるのは1か所だけ。ドラッグ中だけ、動かしている物がいちばん手前に見える）
+  function fastBegin(ids, group) {
+    const base = new Map();
+    const bodies = [], texts = [];
+    ids.forEach(id => {
+      const it = byId(id);
+      if (!it) return;
+      const q = CSS.escape(id), els = [...layerItems.querySelectorAll(`.item[data-id="${q}"], [data-tid="${q}"]`)];
+      els.forEach(el => (el.hasAttribute('data-tid') ? texts : bodies).push(el));
+      base.set(id, { x: it.x, y: it.y, rot: it.rot || 0, els });
+    });
+    const stands = [...layerItems.querySelectorAll('[data-pa]')].filter(el => base.has(el.getAttribute('data-pa')) || base.has(el.getAttribute('data-pb')));
+    // 2人で1本の組（指を離したときに変わっていたら、ぜんぶ描き直す）
+    const pairKey = () => { const m = SS.standPairs ? SS.standPairs(doc().items) : new Map(); return [...m].map(([a, b]) => a.id + '-' + b.id).sort().join(','); };
+    const f = { base, stands, layer: null, first: ids[0], pairKey, pairs0: pairKey() };
+    if (group && base.size > 1) {
+      // 元の場所の印（指を離したら、新しい絵をここへ戻す：描く順番を変えない）
+      base.forEach(b => b.els.forEach(el => { if (!el.hasAttribute('data-tid')) { const mk = document.createComment('m'); el.before(mk); b.mark = mk; } }));
+      const NS = 'http://www.w3.org/2000/svg', g = document.createElementNS(NS, 'g');
+      g.setAttribute('pointer-events', 'none');
+      bodies.forEach(el => g.appendChild(el));
+      // 2人とも動かす組の譜面台は、入れ物に入れる（片方だけのときは、半分ずつ動かす）
+      stands.filter(el => base.has(el.getAttribute('data-pa')) && base.has(el.getAttribute('data-pb'))).forEach(el => { const mk = document.createComment('s'); el.before(mk); el.__mark = mk; g.appendChild(el); });
+      texts.forEach(el => g.appendChild(el));
+      // 選んだ印（点線の枠）も、いっしょに動く写しを入れ物へ（ドラッグ中、元の舞台図は描き直さなくてよくなる）
+      const o = renderOpts(), k = S.view.k;
+      base.forEach((b, id) => { if (S.sel.has(id)) { const fr = document.createElementNS(NS, 'g'); fr.innerHTML = selFrameSVG(byId(id), o, k); b.frame = fr; g.appendChild(fr); } });
+      dragLayerClear();
+      dragLayer().vp.setAttribute('transform', vp.getAttribute('transform') || '');
+      dragLayer().vp.appendChild(g);
+      f.layer = g;
+      f.stands = stands.filter(el => !(base.has(el.getAttribute('data-pa')) && base.has(el.getAttribute('data-pb'))));
+    }
+    return f;
+  }
+  function fastApply(f) {
+    if (!f) return;
+    if (f.layer) {
+      // 入れ物ごと：みな同じだけ動く（向きが変わった物＝壁にくっついた出入り口などは、その物だけ向きを直す）
+      // 入れ物は舞台図の上に重ねた別の透明な紙（#dragSvg）にあり、紙ごと画面の上で動かす（絵は描き直さない）
+      const b0 = f.base.get(f.first), it0 = byId(f.first), k = S.view.k;
+      if (b0 && it0) dragLayer().el.style.transform = `translate(${(it0.x - b0.x) * k}px, ${(it0.y - b0.y) * k}px)`;
+      f.base.forEach((b, id) => {
+        const it = byId(id), r = it ? (it.rot || 0) - b.rot : 0;
+        // （小数の計算のわずかな誤差は同じとみなす）
+        if (it && (Math.abs(r) > 1e-6 || Math.abs(it.x - b.x - (it0.x - b0.x)) > 0.01 || Math.abs(it.y - b.y - (it0.y - b0.y)) > 0.01)) {
+          const ox = it0.x - b0.x, oy = it0.y - b0.y;
+          const tr = `translate(${-ox} ${-oy}) translate(${it.x} ${it.y}) rotate(${r}) translate(${-b.x} ${-b.y})`;
+          b.els.concat(b.frame || []).forEach(el => el.setAttribute('transform', tr));
+          b.odd = true;
+        } else if (b.odd) { b.els.concat(b.frame || []).forEach(el => el.removeAttribute('transform')); b.odd = false; }
+      });
+    } else f.base.forEach((b, id) => {
+      const it = byId(id);
+      if (!it) return;
+      const r = (it.rot || 0) - b.rot;
+      const tr = it.x === b.x && it.y === b.y && !r ? '' : r ? `translate(${it.x} ${it.y}) rotate(${r}) translate(${-b.x} ${-b.y})` : `translate(${it.x - b.x} ${it.y - b.y})`;
+      b.els.forEach(el => { if (tr) el.setAttribute('transform', tr); else el.removeAttribute('transform'); });
+    });
+    // 2人で1本の譜面台：2人の動いた分の半分ずつ（2人とも動けば、そのまま）
+    f.stands.forEach(el => {
+      const d = id => { const b = f.base.get(id), it = b && byId(id); return it ? { x: it.x - b.x, y: it.y - b.y } : { x: 0, y: 0 }; };
+      const a = d(el.getAttribute('data-pa')), c = d(el.getAttribute('data-pb'));
+      el.setAttribute('transform', `translate(${(a.x + c.x) / 2} ${(a.y + c.y) / 2})`);
+    });
+  }
+  // 舞台図に重ねた透明な紙（ドラッグ中だけ使う。画面の上で紙ごと動かすので、たくさん動かしても軽い）
+  let dragSvgEl = null;
+  function dragLayer() {
+    if (!dragSvgEl) {
+      // 動かすのは外側の箱（div）。中の絵（svg）の向きや大きさは変わらないので、字を並べ直さなくてよい
+      const NS = 'http://www.w3.org/2000/svg', el = document.createElement('div'), sv = document.createElementNS(NS, 'svg'), g = document.createElementNS(NS, 'g');
+      el.id = 'dragSvg';
+      el.setAttribute('aria-hidden', 'true');
+      sv.appendChild(g);
+      el.appendChild(sv);
+      svg.after(el);
+      dragSvgEl = { el, vp: g };
+    }
+    return dragSvgEl;
+  }
+  // later：見えなくするのは今、中身を捨てるのは少しあと（指を離した瞬間の処理を軽くする）
+  function dragLayerClear(later) {
+    if (!dragSvgEl) return;
+    clearTimeout(dragSvgEl.t);
+    if (later) { dragSvgEl.el.style.visibility = 'hidden'; dragSvgEl.t = setTimeout(() => dragLayerClear(), 80); return; }
+    dragSvgEl.vp.textContent = '';
+    dragSvgEl.el.style.transform = dragSvgEl.el.style.visibility = '';
+  }
+  // 1コマに1回だけ：動かしている物の位置・向き＋かるい重ね描き（選択の枠・ガイド線・寸法）
+  function dragFrame() {
+    if (fastRaf) return;
+    fastRaf = requestAnimationFrame(() => {
+      fastRaf = 0;
+      if (drag && drag.fast) fastApply(drag.fast);
+      overlayLite = true;
+      try { renderOverlay(); } finally { overlayLite = false; }
+    });
+  }
+  // 指を離したとき：動かした物の絵だけを作り直して元の順番の場所へ戻し、字（名前・パート名）の層は作り直す。
+  // ひな壇・名前を大きくの表示・2人で1本の組が変わったときなどは false（ぜんぶ描き直す）
+  function fastCommit(f) {
+    if (!f) return false;
+    const o = renderOpts();
+    if (o.nameView || S.blocks || f.pairKey() !== f.pairs0) return false;
+    const ids = [...f.base.keys()], items = ids.map(byId);
+    if (items.some(it => !it || /^(hina|riser|riser46|stairs|runway)$/.test(it.type))) return false;
+    const d = doc(), c = conductor(), ctx = SS.render.itemCtx(d, o, c);
+    const NS = 'http://www.w3.org/2000/svg';
+    const make = html => { const g = document.createElementNS(NS, 'g'); g.innerHTML = html; return g.firstElementChild; };
+    // 動かした物の絵は、まとめて1回で作る（1つずつ作るより速い）
+    const box = document.createElementNS(NS, 'g');
+    box.innerHTML = items.map(it => SS.render.itemBodySVG(it, o, ctx, true)).join('');
+    const made = [...box.children];
+    if (made.length !== items.length) return false;
+    items.forEach((it, i) => {
+      const b = f.base.get(it.id), old = b.els.find(el => !el.hasAttribute('data-tid'));
+      const nu = made[i];
+      if (!old || !nu) return;
+      // 入れ物の中の古い絵は、あとで入れ物ごと1回で消す
+      if (b.mark) { b.mark.replaceWith(nu); if (old.parentNode !== f.layer) old.remove(); } else old.replaceWith(nu);
+    });
+    // 2人で1本の譜面台：動かした人の組だけ描き直す
+    f.stands.concat(f.layer ? [...f.layer.querySelectorAll('[data-pa]')] : []).forEach(el => {
+      const a = byId(el.getAttribute('data-pa')), b = byId(el.getAttribute('data-pb'));
+      const nu = a && b ? make(SS.render.sharedStandPairSVG(a, b, o, true)) : null;
+      if (nu) { if (el.__mark) { el.__mark.replaceWith(nu); if (el.parentNode !== f.layer) el.remove(); } else el.replaceWith(nu); }
+    });
+    if (f.layer) dragLayerClear(true);
+    // 字の層は、変わった字（動かした人の名前・位置が変わったパート名）だけを入れかえる（ほかの字は並べ直さない）
+    const tg = layerItems.querySelector('.item-texts'), nt = make(SS.render.itemTextsSVG(d, o, c, true, ctx));
+    if (!tg || !nt) return false;
+    const nu = [...nt.childNodes];
+    patchKids(tg, nu, nu.map(kidStr), [...tg.childNodes].map(kidStr));
+    return true;
+  }
+  // 重ね描き（ホイールで拡大縮小など）も1コマに1回
+  let overlayRaf = 0;
+  function overlayNow() {
+    if (!overlayRaf) return;
+    cancelAnimationFrame(overlayRaf); overlayRaf = 0;
+    renderOverlay();
+  }
+  function overlaySoon() {
+    if (overlayRaf) return;
+    overlayRaf = requestAnimationFrame(() => { overlayRaf = 0; renderOverlay(); });
+  }
+  // 舞台の大きさのつまみ：舞台の絵だけ作り直し、人・物はまとめて同じだけずらして見せる
+  function stageFrame(dx, dy) {
+    itemsOff = { x: itemsOff.x + dx, y: itemsOff.y + dy };
+    if (fastRaf) return;
+    fastRaf = requestAnimationFrame(() => {
+      fastRaf = 0;
+      renderStage();
+      layerItems.setAttribute('transform', `translate(${itemsOff.x} ${itemsOff.y})`);
+      overlayLite = true;
+      try { renderOverlay(); } finally { overlayLite = false; }
+    });
+  }
+
   const layerDimsEl = () => document.getElementById('layerDims');
   // ドラッグ中は、画面の書き直しを1コマ（約1/60秒）に1回にまとめる（動きがカクカクしないように）
   let renderRaf = 0;
@@ -128,18 +293,30 @@
     renderRaf = requestAnimationFrame(() => { renderRaf = 0; render(); });
   }
   function renderNow() { if (renderRaf) { cancelAnimationFrame(renderRaf); renderRaf = 0; render(); } }
-  function render() {
+  // 舞台の絵・下絵は、変わったときだけ作り直す（形・大きさ・設備・方眼で決まる）
+  let stageKey = '', underlayKey = '';
+  function renderStage(force) {
+    const d = doc(), grid = opts().grid ? (opts().gridSize || 50) : 0;
+    const key = JSON.stringify([d.stage, grid]);
+    if (force || key !== stageKey) { layerStage.innerHTML = SS.render.stageSVG(d, grid); stageKey = key; }
+  }
+  function render(ro) {
     const d = doc();
+    if (fastRaf) { cancelAnimationFrame(fastRaf); fastRaf = 0; }
+    if (!(ro && ro.itemsDone)) dragLayerClear();
+    const itemsDone = !!(ro && ro.itemsDone);
     ['layerStage', 'layerItems', 'layerDims'].forEach(id => $(id).classList.toggle('mono', !!opts().mono));
-    layerStage.innerHTML = SS.render.stageSVG(d, opts().grid ? (opts().gridSize || 50) : 0);
+    renderStage();
     const u = d.underlay;
-    layerUnderlay.innerHTML = u ? SS.render.underlaySVG(u, { edit: S.underlayEdit, k: S.view.k, id: 'main' }) : '';
+    const uk = u ? JSON.stringify([u.x, u.y, u.w, u.h, u.rot, u.scale, u.opacity, u.flip, u.page, (u.src || '').length, u.onTop, u.crop, S.underlayEdit, S.underlayEdit ? S.view.k : 0]) : '';
+    if (uk !== underlayKey || (u && !layerUnderlay.firstChild)) { layerUnderlay.innerHTML = u ? SS.render.underlaySVG(u, { edit: S.underlayEdit, k: S.view.k, id: 'main' }) : ''; underlayKey = uk; }
     // 「図を奏者より上に」：下絵の層を部品の層の後ろ（上）に移す
     const onTop = !!(u && u.onTop);
     if (onTop !== (layerUnderlay.nextElementSibling === layerDimsEl())) {
       if (onTop) layerItems.after(layerUnderlay); else layerItems.before(layerUnderlay);
     }
-    layerItems.innerHTML = SS.render.itemsSVG(d, renderOpts(), conductor(), true);
+    if (!itemsDone) layerItems.innerHTML = SS.render.itemsSVG(d, renderOpts(), conductor(), true);
+    layerItems.removeAttribute('transform'); itemsOff = { x: 0, y: 0 };
     S.warnings = SS.checks ? SS.checks(d) : [];
     renderWarnList();
     renderCompareBar();
@@ -989,20 +1166,49 @@
     return SS.render.stageKnobs(st).map(q => knob(q.kind, q.x, q.y, q.arrow, q.title)).join('');
   }
 
+  // 中身が変わったときだけ、画面に反映する（同じなら何もしない。画面の塗り直しをへらす）
+  // 変わったときも、変わった部分（いちばん外側の1つずつ）だけを入れかえる（ほかの線・字は並べ直さない）
+  const htmlCache = new Map(), kidCache = new Map();
+  function setHTML(el, html) {
+    if (htmlCache.get(el) === html && el.firstChild !== null === (html !== '')) return;
+    htmlCache.set(el, html);
+    const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    tmp.innerHTML = html;
+    const nu = [...tmp.childNodes], str = nu.map(kidStr), old = kidCache.get(el);
+    kidCache.set(el, str);
+    if (!old || old.length !== el.childNodes.length) { el.replaceChildren(...nu); return; }
+    patchKids(el, nu, str, old);
+  }
+  const kidStr = n => n.outerHTML || n.textContent;
+  // el の子を、新しい子の並び（nu・その文字 str）と同じにする。同じ文字の子はそのまま残し、ちがう所だけ入れかえる
+  //（old：今の子の文字。並びは同じ順のまま、足りない所に入れ、いらない所を消す）
+  function patchKids(el, nu, str, old) {
+    const kids = [...el.childNodes], pos = new Map();
+    old.forEach((h, j) => { if (!pos.has(h)) pos.set(h, []); pos.get(h).push(j); });
+    let j = 0;
+    nu.forEach((n, i) => {
+      const at = (pos.get(str[i]) || []).find(x => x >= j);
+      if (at === undefined) { if (j < kids.length) kids[j].before(n); else el.appendChild(n); return; }
+      for (; j < at; j++) kids[j].remove();
+      j = at + 1;
+    });
+    for (; j < kids.length; j++) kids[j].remove();
+  }
+  // 選んだ物の点線の枠
+  function selFrameSVG(it, o, k) {
+    const sz = SS.itemSize(it, o);
+    if (it.type === 'player') return `<circle cx="${it.x}" cy="${it.y}" r="${sz.w / 2 + 6}" fill="rgba(47,111,222,.12)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/>`;
+    const bb = SS.itemBounds(it, o);
+    return `<g transform="translate(${it.x} ${it.y}) rotate(${it.rot || 0})"><rect x="${bb.x0 - 6}" y="${bb.y0 - 6}" width="${bb.x1 - bb.x0 + 12}" height="${bb.y1 - bb.y0 + 12}" fill="rgba(47,111,222,.08)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/></g>`;
+  }
   function renderOverlay(marquee) {
     const k = S.view.k;
     let s = '';
     const sel = selected();
     const o = renderOpts();
-    sel.forEach(it => {
-      const sz = SS.itemSize(it, o);
-      if (it.type === 'player') {
-        s += `<circle cx="${it.x}" cy="${it.y}" r="${sz.w / 2 + 6}" fill="rgba(47,111,222,.12)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/>`;
-      } else {
-        const bb = SS.itemBounds(it, o);
-        s += `<g transform="translate(${it.x} ${it.y}) rotate(${it.rot || 0})"><rect x="${bb.x0 - 6}" y="${bb.y0 - 6}" width="${bb.x1 - bb.x0 + 12}" height="${bb.y1 - bb.y0 + 12}" fill="rgba(47,111,222,.08)" stroke="#2f6fde" stroke-width="${2.5 / k}" stroke-dasharray="${6 / k} ${4 / k}"/></g>`;
-      }
-    });
+    // まとめて動かしている間は、選んだ印は動かす物といっしょに透明な紙の上（fastBegin）
+    const onLayer = overlayLite && drag && drag.fast && drag.fast.layer ? drag.fast.base : null;
+    sel.forEach(it => { if (!(onLayer && onLayer.has(it.id))) s += selFrameSVG(it, o, k); });
     if (sel.length === 1 && sel[0].type === 'cable') {
       // ケーブル：折れ点をドラッグで動かせる
       const it = sel[0];
@@ -1051,22 +1257,38 @@
       const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
       s += `<rect x="${x}" y="${y}" width="${Math.abs(marquee.x1 - marquee.x0)}" height="${Math.abs(marquee.y1 - marquee.y0)}" fill="rgba(47,111,222,.1)" stroke="#2f6fde" stroke-width="${1.5 / k}" stroke-dasharray="${5 / k}"/>`;
     }
-    layerOverlay.innerHTML = s;
-    $('layerWarn').innerHTML = warnMarksSVG(k);
-    $('layerBlocks').innerHTML = S.blocks ? blocksSVG(k) : '';
-    $('layerCompare').innerHTML = S.trans ? SS.changeoverSVG(transResult(), k, doc().stage) : S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
+    setHTML(layerOverlay, s);
+    // ドラッグ中（lite）は、⚠ の枠・かたまり・くらべる印は描きかえない（指を離したときに描きかえる）
+    if (!overlayLite) {
+    setHTML($('layerWarn'), warnMarksSVG(k));
+    setHTML($('layerBlocks'), S.blocks ? blocksSVG(k) : '');
+    setHTML($('layerCompare'), S.trans ? SS.changeoverSVG(transResult(), k, doc().stage) : S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '');
+    }
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile());
+    setHTML($('layerDims'), (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile()));
     positionCtxBar();
   }
 
   function applyView() {
     const v = S.view;
     vp.setAttribute('transform', `translate(${v.tx} ${v.ty}) scale(${v.k})`);
+    if (dragSvgEl && dragSvgEl.vp.firstChild) dragSvgEl.vp.setAttribute('transform', vp.getAttribute('transform'));
   }
 
+  // 舞台図の大きさは、外の箱の大きさをピクセルで書いておく（「100%」のままだと、まわりのボタンが出たり消えたりする
+  // たびに、ブラウザが舞台図の字をぜんぶ並べ直して重くなる）
+  const stageWrapEl = svg.parentElement;
+  function syncCanvasSize() {
+    const w = stageWrapEl.clientWidth, h = stageWrapEl.clientHeight;
+    if (!w || !h) { svg.style.width = svg.style.height = ''; return; }
+    if (svg.style.width !== w + 'px') svg.style.width = w + 'px';
+    if (svg.style.height !== h + 'px') svg.style.height = h + 'px';
+  }
+  if (window.ResizeObserver) new ResizeObserver(syncCanvasSize).observe(stageWrapEl);
+  syncCanvasSize();
   function fitView(extra) {
+    syncCanvasSize();
     const r0 = svg.getBoundingClientRect();
     if (!r0.width || !r0.height) return;
     // スマホで下のパネルが開いているときは、パネルに隠れていない上の部分に舞台図を合わせる
@@ -1110,7 +1332,7 @@
     v.ty = sy - (sy - v.ty) * factor;
     v.k = nk;
     applyView();
-    renderOverlay();
+    overlaySoon();
     if (S.underlayEdit) render();
   }
 
@@ -1353,9 +1575,10 @@
           const g = smartSnap(drag, dx, dy);
           dx = g.dx; dy = g.dy; drag.guides = g.guides;
         }
+        if (!drag.fast) drag.fast = fastBegin([drag.primary].concat([...drag.orig.keys()].filter(k => k !== drag.primary)), true);
         drag.orig.forEach((o, oid) => { const it = byId(oid); if (it) { it.x = o.x + dx; it.y = o.y + dy; } });
         if (primIt && primIt.type === 'door' && drag.orig.size === 1 && !e.altKey) snapDoor(primIt);
-        renderSoon();
+        dragFrame();
         break;
       }
       case 'cpt': {
@@ -1370,9 +1593,11 @@
         const it = drag.it;
         let a = Math.atan2(w.x - it.x, -(w.y - it.y)) * 180 / Math.PI;
         if (!e.shiftKey) a = Math.round(a / 15) * 15;
+        if (!drag.fast) drag.fast = fastBegin([it.id].concat((drag.gm || []).map(g => g.m.id)));
         it.rot = normAngle(a);
         if (drag.gm && drag.gm.length) turnMates(it, drag.gm, it.rot - drag.rot0);
-        render();
+        drag.turned = true;
+        dragFrame();
         renderProps(true);
         break;
       }
@@ -1426,10 +1651,32 @@
     }
   });
 
+  // 動かしたあと、段の縁にかかった人を段の上か床へ。直した人数を返す
+  function settleAfterDrag(e) {
+    if (e.altKey || !((drag.kind === 'move' && drag.moved) || (drag.it && drag.it.type === 'hina'))) return 0;
+    const movedIds = drag.orig ? [...drag.orig.keys()] : [drag.it.id];
+    const movedItems = movedIds.map(byId).filter(Boolean);
+    const tiersMoved = movedItems.filter(it => it.type === 'hina');
+    const near = players().filter(p => movedItems.includes(p) || tiersMoved.some(t => SS.hinaContains(t, p.x, p.y, 30)));
+    // 段を動かしたとき：動かす前に段の上にいなかった人（床の人）は、段から降ろすほうを先に
+    const wasFloor = p => !movedItems.includes(p) && !tiersMoved.some(t => { const o = drag.orig ? drag.orig.get(t.id) : null; return SS.hinaContains(o ? Object.assign({}, t, { x: o.x, y: o.y }) : t, p.x, p.y, 0); });
+    return settleOnTiers(near, wasFloor);
+  }
   function endPointer(e) {
     pointers.delete(e.pointerId);
     if (!drag) return;
     renderNow();
+    // かるい描き直しでドラッグしていたとき：指を離したら、ぜんぶを1回描き直す（⚠ 確認・パート名の置き場所・自動保存）
+    if (drag.fast || /^stage/.test(drag.kind)) {
+      clearTimeout(stageRAF); clearTimeout(drag.setT);
+      if (/^stage/.test(drag.kind)) { renderSettings(); updateHallNote(); }
+      if (fastRaf) { cancelAnimationFrame(fastRaf); fastRaf = 0; }
+      // 段の縁の自動調整を先に済ませて、描き直しを1回にする（動かした物以外が動いたら、ぜんぶ描き直す）
+      const pos0 = new Map(players().map(p => [p.id, p.x + ',' + p.y]));
+      drag.settled = settleAfterDrag(e);
+      const others = drag.settled && drag.fast && players().some(p => pos0.get(p.id) !== p.x + ',' + p.y && !drag.fast.base.has(p.id));
+      if (!others && drag.fast && drag.fast.base.size && fastCommit(drag.fast)) render({ itemsDone: true }); else render();
+    }
     // 寸法の数字を押しただけのときは、書き直さない（書き直すと click が届かない）。入力の画面は click で開く
     if (drag.kind === 'dimedit') { if (Math.hypot(e.clientX - drag.start.sx, e.clientY - drag.start.sy) > 8) pendingDim = null; drag = null; return; }
     if (drag.kind === 'pinch') {
@@ -1461,16 +1708,10 @@
       S.sel.clear();
     }
     // 動かしたあと、段の縁にかかった人を自動で段の上か床へ（Alt を押しながらだと、そのまま）
-    if (!e.altKey && ((drag.kind === 'move' && drag.moved) || (drag.it && drag.it.type === 'hina'))) {
-      const movedIds = drag.orig ? [...drag.orig.keys()] : [drag.it.id];
-      const movedItems = movedIds.map(byId).filter(Boolean);
-      const tiersMoved = movedItems.filter(it => it.type === 'hina');
-      const near = players().filter(p => movedItems.includes(p) || tiersMoved.some(t => SS.hinaContains(t, p.x, p.y, 30)));
-      // 段を動かしたとき：動かす前に段の上にいなかった人（床の人）は、段から降ろすほうを先に
-      const wasFloor = p => !movedItems.includes(p) && !tiersMoved.some(t => { const o = drag.orig ? drag.orig.get(t.id) : null; return SS.hinaContains(o ? Object.assign({}, t, { x: o.x, y: o.y }) : t, p.x, p.y, 0); });
-      const n = settleOnTiers(near, wasFloor);
-      if (n) { render(); toast(`段の縁にかかっていた${n}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true); }
-    }
+    //（かるい描き直しのときは、上で描き直す前に済ませてある）
+    const settled = drag.settled != null ? drag.settled : settleAfterDrag(e);
+    if (settled && drag.settled == null) render();
+    if (settled) toast(`段の縁にかかっていた${settled}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true);
     if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
       // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ
       const now = Date.now();
@@ -1494,6 +1735,7 @@
   });
   svg.addEventListener('pointercancel', endPointer);
 
+  let wheelZ = null;
   svg.addEventListener('wheel', e => {
     e.preventDefault();
     const r = svg.getBoundingClientRect();
@@ -1507,7 +1749,10 @@
       render();
       return;
     }
-    zoomAt(f, sx, sy);
+    // 細かいホイールの動きは、1コマ（約1/60秒）に1回にまとめて拡大縮小する
+    if (wheelZ) { wheelZ.f *= f; wheelZ.sx = sx; wheelZ.sy = sy; return; }
+    wheelZ = { f, sx, sy };
+    requestAnimationFrame(() => { const w = wheelZ; wheelZ = null; zoomAt(w.f, w.sx, w.sy); overlayNow(); });
   }, { passive: false });
 
   let lastTap = null;
@@ -1576,19 +1821,17 @@
     if (st.w === oldW && st.d === oldD && dr.kind !== 'stageBW' && dr.kind !== 'stageSag') return;
     doc().hall = '';
     const dx = (st.w - oldW) / 2, dy = st.d - oldD;
+    doc().items.forEach(it => { it.x += dx; it.y += dy; });
+    // 舞台の絵だけ作り直し、人・物はまとめてずらして見せる（手で置いた配置：真ん中と舞台際からの位置を保つ）
+    stageFrame(dx, dy);
     if (dr.auto) {
-      // 自動配置：いったん中心をずらして表示し、描画のタイミングで並べ直す
-      doc().items.forEach(it => { it.x += dx; it.y += dy; });
-      render();
-      cancelAnimationFrame(stageRAF);
-      stageRAF = requestAnimationFrame(() => applyAuto({ noHistory: true, quiet: true }));
-    } else {
-      // 手で置いた配置：真ん中と舞台際（指揮者）からの位置を保つ
-      doc().items.forEach(it => { it.x += dx; it.y += dy; });
-      render();
+      // 自動配置：ドラッグ中は 0.2秒に1回まで並べ直して見せる（指を離したときにも並べ直す）
+      clearTimeout(stageRAF);
+      const wait = Math.max(0, 200 - (Date.now() - (dr.lastAuto || 0)));
+      stageRAF = setTimeout(() => { if (drag !== dr) return; dr.lastAuto = Date.now(); applyAuto({ noHistory: true, quiet: true }); }, wait);
     }
-    renderSettings();
-    updateHallNote();
+    clearTimeout(dr.setT);
+    dr.setT = setTimeout(() => { renderSettings(); updateHallNote(); }, 120);
   }
 
   // 範囲・投げ縄で選ぶ。ひな壇（平台）は、ほかに何も入っていないときだけ選ぶ

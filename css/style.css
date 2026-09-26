@@ -140,7 +140,8 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 
 /* ---------- stage ---------- */
 .stage-wrap { position: relative; flex: 1 1 auto; min-width: 0; background: #e9edf3; overflow: hidden; }
-#canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+/* 舞台図は外の箱に対して位置を決める（まわりのボタンが出たり消えたりしても、舞台図の字を並べ直さない） */
+#canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
 #canvas.panning { cursor: grab; }
 #canvas.panning:active { cursor: grabbing; }
 .item { cursor: move; }
@@ -578,3 +579,6 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 
 /* 編成表：用意する物 */
 .eq-table .eq-note { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
+/* ドラッグ中だけ使う、舞台図に重ねた透明な紙（まとめて動かす物をのせて、紙ごと動かす） */
+#dragSvg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; will-change: transform; }
+#dragSvg svg { width: 100%; height: 100%; display: block; overflow: visible; }
