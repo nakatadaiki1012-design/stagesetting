@@ -145,7 +145,7 @@ async function measureHall(env) {
     console.log(`  全員をドラッグ：${f(r.dragAll)}`);
     if (r.wheel) console.log(`  ホイールで拡大縮小：${f(r.wheel)}`);
     console.log(`  手のひらで画面を動かす：${f(r.pan)}`);
-    console.log(`  ▲1回：数字 ${r.step.shown}ms・並び終わる ${r.step.done}ms`);
+    console.log(`  ▲1回：数字 ${r.step.shown}ms・並び終わる ${r.step.done}ms（押し終わるのを待つ0.25秒をふくむ。並べ直しそのものは ${Math.max(0, r.step.done - 250)}ms）`);
     if (r.template != null) console.log(`  ひな形の切りかえ：${r.template}ms`);
     if (r.hall != null) console.log(`  ホールの切りかえ（県立音楽堂）：${r.hall}ms`);
     if (r.errors.length) console.log('  画面のエラー：' + r.errors.join(' / '));

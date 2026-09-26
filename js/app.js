@@ -859,10 +859,33 @@
   // かんたん編成の設定と舞台の大きさ（「入りきりません」の案内が、今の配置のものかを見分ける）
   function fitKey() { const d = doc(), st = d.stage; return JSON.stringify([d.ensemble, st.w, st.d, st.bw, st.shape, st.sag, d.items.filter(it => !it.auto && it.type === 'door').length]); }
   const fitBad = () => !!(doc().ensemble && doc().items.some(it => it.auto) && ((S.fit && !S.fit.fits && S.fit.key === fitKey()) || S.fixFail === fitKey()));
-  // おすすめ（ひな壇を1段減らす・弦を1プルトずつ減らす・両方）を、先に試しに並べて、入るかどうかを見ておく
+  // おすすめ（ひな壇を1段減らす・弦を1プルトずつ減らす・両方）を、先に試しに並べて、入るかどうかを見ておく。
+  // 試しに並べるのは時間がかかるので、画面を先に出してから、少しずつ（1案ずつ）あとで調べる。調べ終わるまでは null
+  let fitJob = null;
   function fitSuggestions() {
     const key = fitKey();
     if (S.fitSug && S.fitSug.key === key) return S.fitSug.list;
+    if (!fitJob || fitJob.key !== key) {
+      if (fitJob) clearTimeout(fitJob.t);
+      const job = fitJob = { key, gen: fitSearch(key) };
+      // ドラッグ中や▲▼を押している間は待って、手があいたときに1案ずつ
+      const later = () => { job.t = setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(tick, { timeout: 600 }) : tick()), 30); };
+      const tick = () => {
+        if (fitJob !== job) return;
+        if (job.key !== fitKey()) { fitJob = null; return; } // 調べている間に設定が変わった
+        if (drag || S.autoPending) { later(); return; }
+        const r = job.gen.next();
+        if (!r.done) { later(); return; }
+        fitJob = null;
+        S.fitSug = { key, list: r.value };
+        if (!$('warnList').hidden && fitBad()) renderWarnList();
+      };
+      later();
+    }
+    return null;
+  }
+  // 1案試すごとに yield（ひと休み）して、ほかの操作を止めない
+  function* fitSearch() {
     const st = ens(), stage = doc().stage, list = [];
     const clone = () => JSON.parse(JSON.stringify(st));
     const tier = x => { x.hina = Object.assign({}, x.hina, { steps: Math.max(0, (x.hina.steps || 0) - 1) }); };
@@ -872,7 +895,7 @@
     if (strings) list.push({ label: '弦を1プルトずつ減らす', make: desk });
     if (strings && st.hina && st.hina.steps > 0) list.push({ label: 'ひな壇を1段減らして、弦を1プルトずつ減らす', make: x => { tier(x); desk(x); } });
     const ctx = doc().items.filter(it => !it.auto);
-    list.forEach(v => {
+    for (const v of list) {
       const x = clone(); v.make(x); v.state = x;
       SS.auto.ctxItems = ctx;
       const r = SS.auto.build(x, stage);
@@ -880,32 +903,34 @@
       const ws = SS.checks({ stage, items: r.items.concat(ctx) });
       v.fits = !!r.fits && !r.offstage && !ws.length;
       v.n = r.items.filter(it => it.type === 'player').length;
-    });
+      yield;
+    }
     // どれも入らないとき：弦を何プルト減らせば入るかを探す（4プルトまで。ひな壇も1段減らした形も）
     if (strings && !list.some(v => v.fits)) {
       for (let k = 2; k <= 4; k++) {
-        const found = [false, true].map(t2 => {
-          if (t2 && !(st.hina && st.hina.steps > 0)) return null;
+        const found = [];
+        for (const t2 of [false, true]) {
+          if (t2 && !(st.hina && st.hina.steps > 0)) continue;
           const x = clone(); for (let i = 0; i < k; i++) desk(x); if (t2) tier(x);
           SS.auto.ctxItems = ctx;
           const r = SS.auto.build(x, stage);
           SS.auto.ctxItems = null;
           const ok = !!r.fits && !r.offstage && !SS.checks({ stage, items: r.items.concat(ctx) }).length;
-          return ok ? { label: `弦を${k}プルトずつ減らす${t2 ? '（ひな壇も1段減らす）' : ''}`, state: x, fits: true, n: r.items.filter(it => it.type === 'player').length } : null;
-        }).filter(Boolean);
+          if (ok) found.push({ label: `弦を${k}プルトずつ減らす${t2 ? '（ひな壇も1段減らす）' : ''}`, state: x, fits: true, n: r.items.filter(it => it.type === 'player').length });
+          yield;
+        }
         if (found.length) { list.push(found[0]); break; }
       }
     }
     list.sort((a, b) => (b.fits ? 1 : 0) - (a.fits ? 1 : 0));
-    S.fitSug = { key, list };
     return list;
   }
   function fitCardHTML() {
-    const st = doc().stage, n = players().length, sug = fitSuggestions();
+    const st = doc().stage, n = players().length, sug = fitSuggestions() || [];
     const size = `${st.w / 100}×${st.d / 100}m`;
     return `<div class="fit-card"><b>${S.fixFail === fitKey() ? '自動では直しきれませんでした。' : ''}この舞台（${size}）では、${n}人がゆったり入りません。</b>
       <span class="small">無理に詰めると、人の重なりや、ひな壇の縁にかかる人が出ます。${S.fit && S.fit.offstage ? `入りきらない打楽器（${S.fit.offstage}台）は、下手のそでに置いています。` : ''}</span>
-      <div class="fit-sugs"><span class="small">おすすめ（押すと、その案で並べ直します）</span>
+      <div class="fit-sugs"><span class="small">${fitJob ? 'おすすめを調べています…' : 'おすすめ（押すと、その案で並べ直します）'}</span>
       ${sug.map((v, i) => `<button class="btn${v.fits && i === 0 ? ' primary' : ''}" data-fitv="${i}">${SS.esc(v.label)}<small>${v.n}人 → ${v.fits ? 'ゆったり入ります' : 'まだ入りきりません'}</small></button>`).join('')}
       <button class="btn" id="fitStage">舞台の大きさを確認する<small>ホールの図面の奥行・幅と合っているか</small></button></div></div>`;
   }
@@ -923,7 +948,8 @@
     list.querySelectorAll('[data-warn]').forEach(li => { li.onclick = () => focusWarn(+li.getAttribute('data-warn')); });
     if ($('warnFix')) $('warnFix').onclick = autoFix;
     list.querySelectorAll('[data-fitv]').forEach(b => { b.onclick = () => {
-      const v = fitSuggestions()[+b.getAttribute('data-fitv')];
+      const v = (fitSuggestions() || [])[+b.getAttribute('data-fitv')];
+      if (!v) return;
       pushHistory();
       doc().ensemble = JSON.parse(JSON.stringify(v.state));
       applyAuto({ noHistory: true, quiet: true });
@@ -2749,6 +2775,8 @@
   }
   function renderEnsTotal() {
     const c = ensCompare();
+    // ▲▼を押して、並べ直す前（押し終わるのを待っている間）は、設定の人数だけを出す
+    if (c && S.autoPending) { $('ensTotal').innerHTML = `合計 ${c.setTotal} 人`; return; }
     const stageTotal = players().length;
     if (!c || (!c.diffs.length && !c.other)) {
       $('ensTotal').innerHTML = `合計 ${stageTotal} 人`;
@@ -4198,7 +4226,7 @@
         <li><b>ホールの寸法</b>：ホールの寸法は公開されている資料からの<b>目安</b>です（△のホールは推定値）。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
         <li><b>打楽器の楽器</b>：「打楽器」の箱の「楽器（台数）」で、ティンパニ・大太鼓・小太鼓・シンバル・鍵盤などを1つずつ増やしたり減らしたりできます（「人数に合わせて自動に戻す」で元どおり）。オーケストラでは、ティンパニを最上段の真ん中に、ほかの打楽器を奥から大太鼓→小太鼓→シンバル→小物→鍵盤の順に、弦の外側を下手の前へまわりこむように並べます。</li>
-        <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。<b>すぐに自動で並べ直します</b>。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。人数が0人のパート（Es.Cl・ハープなど）は隠れているので、「＋パートを追加」で出します。最初に見えるのは<b>ホール・編成の種類・パートの人数</b>だけです。文章で指示する・並び方・打楽器・ひな壇・ステージの大きさ・安全とホールの設備は、下の<b>開け閉めできる箱</b>の中にあります（閉じていても見出しに今の設定が出ます）。</li>
+        <li><b>かんたん編成</b>：ホールを選んで、パートの人数を▲▼で変えるだけ。数字はすぐ変わり、<b>押し終わると自動で並べ直します</b>（時間がかかるときは「並べ直しています…」と出ます）。ステージは<b>音響反射板を置いたときの形</b>（前が広く奥がせまい台形）になり、はみ出さないように詰めて並べます。人数が0人のパート（Es.Cl・ハープなど）は隠れているので、「＋パートを追加」で出します。最初に見えるのは<b>ホール・編成の種類・パートの人数</b>だけです。文章で指示する・並び方・打楽器・ひな壇・ステージの大きさ・安全とホールの設備は、下の<b>開け閉めできる箱</b>の中にあります（閉じていても見出しに今の設定が出ます）。</li>
         <li><b>ひな壇</b>：「かんたん編成」の「ひな壇」の箱を開いて、段数と<b>平台の置き方</b>（よく使う 3×6の横置き・縦置き、4×6 の3つ。6×6 などは「ほかの置き方」）を決めると、後ろの列が<b>ひな壇の上にまっすぐ</b>並びます。置いた平台を選んでも、図から置き方を変えられます。高さは7寸・1尺4寸・2尺1寸…から選べ、必要な平台・箱馬の数は「編成表」に出ます。</li>
         <li><b>打楽器</b>：「かんたん編成」の「打楽器」の箱の「打楽器の場所」で<b>舞台奥・ひな壇の最上段・下手側・最上段＋下手</b>を選べます。吹奏楽の<b>「下手側」</b>は、<b>ティンパニをひな壇1段目の横に正面向き</b>で、鍵盤を床の扇形のすぐ外側の<b>前の列</b>（指揮者を向き、客席へ少しひらく）、太鼓類を<b>そのすぐ後ろの列</b>（奥から大太鼓・シンバル・小太鼓）に並べます。<b>楽器と奏者はくっついて</b>いて、楽器か奏者を動かす・回すと、いっしょに動きます（Alt を押しながらだと別々。右のパネルで「はなす／くっつける」もできます）。「🥁 打楽器を整列」でその場所に並べ直せます。（<b>上手側</b>も選べます）</li>
         <li><b>舞台の大きさ</b>：舞台の角と前の縁にある <b>↔ ↕ の丸いつまみ</b>をドラッグすると、前の幅・奥の幅・奥行をその場で変えられます（10cm単位）。自動配置なら、すぐに並べ直します。</li>
@@ -4283,11 +4311,46 @@
     if (!e.hina) e.hina = SS.auto.defaultState(e.type).hina;
     return e;
   }
+  // ▲▼：数字はすぐ変え、並べ直すのは押し終わってから（0.25秒たってから）1回だけ。
+  // 並べ直しに時間がかかる舞台（0.3秒以上）では、その間「並べ直しています…」を出す
+  let autoT = 0, autoBase = null, lastAutoMs = 0, autoFirstAt = 0, autoLastAt = 0;
+  function autoSoon() {
+    if (!S.autoPending) { autoBase = S.base; autoFirstAt = Date.now(); } // 押しはじめる前の状態（「戻す」で戻る先）
+    autoLastAt = Date.now();
+    S.autoPending = true;
+    renderEnsTotal();
+    clearTimeout(autoT);
+    autoT = setTimeout(() => {
+      if (!S.autoPending) return;
+      if (lastAutoMs < 300) { applyAuto(); return; }
+      busyNote(true);
+      requestAnimationFrame(() => setTimeout(() => { if (S.autoPending) applyAuto(); busyNote(false); }, 0));
+    }, 250);
+  }
+  // 押し終わるのを待っている間に、ほかの操作をはじめたら、先に並べ直しを済ませる
+  function flushAuto() { if (S.autoPending) applyAuto(); }
+  function busyNote(on) {
+    let el = $('busyNote');
+    if (!el) { el = document.createElement('div'); el.id = 'busyNote'; el.className = 'busy-note'; el.setAttribute('role', 'status'); el.textContent = '並べ直しています…'; $('stageWrap').appendChild(el); }
+    el.hidden = !on;
+  }
+  document.addEventListener('pointerdown', e => { if (S.autoPending && !e.target.closest('.stepper')) flushAuto(); }, true);
+  document.addEventListener('keydown', () => flushAuto(), true);
+  window.addEventListener('pagehide', () => flushAuto());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushAuto(); });
   function applyAuto(opts2) {
     opts2 = opts2 || {};
+    const t0 = performance.now();
+    // ▲▼の並べ直しを待っていたら、それもこの1回に含める（「戻す」は押しはじめる前へ）
+    // 「1秒以内はまとめて1回分」の1秒は、並べ直した時刻ではなく、押した時刻で数える（前と同じ）
+    let base = S.base, first = Date.now(), last = first;
+    if (S.autoPending) { clearTimeout(autoT); S.autoPending = false; base = autoBase || S.base; autoBase = null; first = autoFirstAt; last = autoLastAt; }
+    try { applyAuto0(opts2, base, first, last); } finally { lastAutoMs = performance.now() - t0; }
+  }
+  function applyAuto0(opts2, base, first, last) {
     const st = ens();
-    if (!opts2.noHistory && Date.now() - lastAutoPush > 1000) pushHistory(S.base); // ▲▼を続けて押したとき（1秒以内）は、まとめて1回分
-    lastAutoPush = Date.now();
+    if (!opts2.noHistory && first - lastAutoPush > 1000) pushHistory(base); // ▲▼を続けて押したとき（1秒以内）は、まとめて1回分
+    lastAutoPush = last;
     const d = doc();
     // 今の名前を、パートごとに覚えておく
     const names = {};
@@ -4488,7 +4551,7 @@
         box.classList.toggle('zero', !v);
         box.classList.add('keep'); // いま押しているパートは、0人にしても指の下から消さない
         renderPartMore();
-        applyAuto();
+        autoSoon();
       };
       // 押しっぱなしで連続して増減
       b.addEventListener('pointerdown', e => {

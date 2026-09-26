@@ -24,8 +24,22 @@ const URL = process.argv[2] || 'http://localhost:8765/index.html';
     await p.evaluate(() => { const bt = document.querySelector('.stepper[data-part="Fl"] button[data-d="1"]'); bt.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); bt.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
     await p.waitForTimeout(120);
   }
+  // 並べ直すのは押し終わってから（0.25秒後）
+  await p.waitForFunction(() => !SS.state.autoPending);
   const u1 = await p.evaluate(() => SS.state.undo.length);
   check(u1 - u0 === 1, `▲を続けて5回押すと、「戻す」1回分（${u1 - u0}回分）`);
+  // ▲を押して、並べ直す前にすぐ「戻す」→ 押す前のとおり
+  {
+    await p.waitForTimeout(1100);
+    const before = await state();
+    await p.evaluate(() => { const bt = document.querySelector('.stepper[data-part="Cl1"] button[data-d="1"]'); bt.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); bt.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
+    await p.waitForTimeout(50);
+    await p.click('#btnUndo');
+    await p.waitForTimeout(300);
+    check(await state() === before, '▲を押してすぐ「戻す」（並べ直す前）→ 押す前のとおり');
+    await p.click('#btnRedo');
+    await p.waitForTimeout(300);
+  }
   await p.waitForTimeout(1100);
   // 奏者を選んで、矢印キーで110回動かす（1回ずつ「戻す」に入る）
   await p.evaluate(() => { const it = SS.state.doc.items.find(i => i.type === 'player'); SS.state.sel = new Set([it.id]); });
