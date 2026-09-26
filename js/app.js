@@ -84,9 +84,12 @@
     if (d.underlay) S.ulSrc = d.underlay.src;
     return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul, parts: d.parts, partIdx: d.partIdx, roster: d.roster });
   }
-  function pushHistory() {
-    S.undo.push(snapshot());
-    if (S.undo.length > 150) S.undo.shift();
+  // snap：記録する状態（なければ今の状態）。設定を書きかえてから並べ直すときは、書きかえる前の状態（S.base）を記録する
+  function pushHistory(snap) {
+    snap = snap || snapshot();
+    if (S.undo.length && S.undo[S.undo.length - 1] === snap) { S.redo = []; updateUndoButtons(); return; } // 同じ状態は2回記録しない
+    S.undo.push(snap);
+    if (S.undo.length > 200) S.undo.shift(); // 「戻す」は200回まで
     S.redo = [];
     updateUndoButtons();
   }
@@ -144,6 +147,9 @@
     renderFoldSummaries();
     renderOverlay();
     scheduleSave();
+    // 画面に出ている（食いちがいのない）状態を覚えておく。▲▼・ホール・並び方などで設定を書きかえてから並べ直すとき、
+    // 「戻す」にはこの状態を記録する（設定だけ新しく図は古い、という食いちがいが「戻す」で起きないように）
+    S.base = snapshot();
   }
 
   // ------------------------------------------------------------ 前の版・保存した配置図とくらべる
@@ -3991,7 +3997,7 @@
   function applyAuto(opts2) {
     opts2 = opts2 || {};
     const st = ens();
-    if (!opts2.noHistory && Date.now() - lastAutoPush > 1500) pushHistory();
+    if (!opts2.noHistory && Date.now() - lastAutoPush > 1000) pushHistory(S.base); // ▲▼を続けて押したとき（1秒以内）は、まとめて1回分
     lastAutoPush = Date.now();
     const d = doc();
     // 今の名前を、パートごとに覚えておく
