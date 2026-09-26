@@ -34,6 +34,7 @@
       <div class="tab-more-menu" id="tabMoreMenu" hidden>
         <button class="tab" data-tab="quickTab">一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
         <button class="tab" data-tab="traceTab">トレース<small>ホールの舞台図を下に重ねる</small></button>
+        <button class="more-3d" id="moreRoster" type="button">👥 名簿・乗り番表<small>個人名・曲ごとの乗り番。Excelの様式で取り込み</small></button>
         <button class="more-3d" id="moreParts" type="button">📑 1部・2部・3部<small>部ごとの配置図と、転換（はける・出す・動かす）の計画</small></button>
         <button class="more-3d mobile-only" id="more3d" type="button">🧊 3Dで見る<small>立体で確認（ネット接続が必要です）</small></button>
       </div>
@@ -408,6 +409,7 @@
     </section>
 
     <section class="tabpane" id="countTab">
+      <button class="btn primary wide" id="btnRoster" type="button">👥 名簿・乗り番表（個人名を入れる）</button>
       <div id="countTable"></div>
     </section>
 
@@ -495,6 +497,7 @@
 <script src="js/io.js"></script>
 <script src="js/checks.js"></script>
 <script src="js/changeover.js"></script>
+<script src="js/roster.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

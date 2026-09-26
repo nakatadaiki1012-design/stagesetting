@@ -54,6 +54,9 @@
     d.parts = P ? P.map((p, i) => ({ name: String((p && p.name) || `第${i + 1}部`), items: p && Array.isArray(p.items) ? p.items.map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })) : [], ensemble: (p && p.ensemble) || null })) : null;
     d.partIdx = P ? Math.max(0, Math.min(P.length - 1, doc.partIdx | 0)) : 0;
     if (d.parts) { d.parts[d.partIdx].items = null; d.parts[d.partIdx].ensemble = null; }
+    // 名簿・乗り番表（どの部にも共通）
+    const RS = doc.roster;
+    d.roster = RS && Array.isArray(RS.members) ? { pieces: (RS.pieces || []).map(String), members: RS.members.map(m => ({ part: String(m.part || ''), name: String(m.name || ''), marks: Array.isArray(m.marks) ? m.marks.map(v => String(v == null ? '' : v)) : [] })) } : null;
     // 共有リンクから開いたとき：ピンスポットの「当てる人」（部品の番号）を id に戻す
     if (d.lighting && d.lighting.spots) d.lighting.spots.forEach(sp => { const m = /^#(\d+)$/.exec(sp.target || ''); if (m && d.items[+m[1]]) sp.target = d.items[+m[1]].id; });
     // 前の「コンクール用（椅子○・譜面台×）」は、「白黒◯×」に読み替える
@@ -79,7 +82,7 @@
     // 舞台図（下絵）は、画像そのものは入れず、位置・大きさ・回転などだけを記録する
     const ul = d.underlay ? Object.assign({}, d.underlay, { src: undefined }) : null;
     if (d.underlay) S.ulSrc = d.underlay.src;
-    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul, parts: d.parts, partIdx: d.partIdx });
+    return JSON.stringify({ title: d.title, subtitle: d.subtitle, stage: d.stage, items: d.items, options: d.options, ensemble: d.ensemble, hall: d.hall, info: d.info, ul, parts: d.parts, partIdx: d.partIdx, roster: d.roster });
   }
   function pushHistory() {
     S.undo.push(snapshot());
@@ -322,6 +325,182 @@
     $('coCopy').onclick = async () => { try { await navigator.clipboard.writeText(text()); toast('転換の計画を文字でコピーしました'); } catch (e) { toast('コピーできませんでした。「文字で保存」を使ってください'); } };
     $('coSave').onclick = () => SS.render.download(new Blob([text()], { type: 'text/plain;charset=utf-8' }), SS.render.safeName(`${doc().title || '転換'}_${partName(a)}から${partName(b)}`) + '.txt');
   }
+
+  // ------------------------------------------------------------ 名簿・乗り番表（個人名）
+  const RSx = () => SS.roster;
+  // 編成のパート名（名簿のパート名をそろえるのに使う）
+  function knownParts() {
+    const st = doc().ensemble, set = new Set();
+    if (st && SS.auto.ENSEMBLES[st.type]) SS.auto.ENSEMBLES[st.type].parts.forEach(([k]) => set.add(k));
+    players().forEach(p => { if (p.label) set.add(p.label); });
+    return [...set];
+  }
+  // いまの舞台の奏者から名簿の様式の行を作る（パートの順は編成の順、名前は前の列・下手から）
+  function stageParts() {
+    const st = doc().ensemble, order = st && SS.auto.ENSEMBLES[st.type] ? SS.auto.ENSEMBLES[st.type].parts.map(([k]) => k) : [];
+    const by = {};
+    players().forEach(p => { const k = p.label || ''; (by[k] = by[k] || []).push(p); });
+    const labs = Object.keys(by).sort((a, b) => ((order.indexOf(a) + 1) || 999) - ((order.indexOf(b) + 1) || 999));
+    return labs.filter(Boolean).map(k => { const ps = G.seatOrder(by[k], conductor()).sort((a, b) => (b.lead ? 1 : 0) - (a.lead ? 1 : 0)); return [k, ps.length, ps.map(p => p.name || '')]; });
+  }
+  const rosterFileName = () => SS.render.safeName(`${doc().title || 'メンバー'}_名簿・乗り番表`) + '.csv';
+  function downloadRoster() {
+    const rows = RSx().rows(doc().roster, stageParts());
+    SS.render.download(new Blob([RSx().toCSV(rows)], { type: 'text/csv;charset=utf-8' }), rosterFileName());
+    toast(doc().roster ? '名簿・乗り番表を保存しました（Excelで直して、また取り込めます）' : '取り込み様式を保存しました。Excelで名前を書いて、「取り込む」で読み込んでください', false);
+  }
+  // 取り込んだ名簿を入れて、舞台図に名前（と人数）を反映する
+  function importRoster(text, src) {
+    const r = RSx().parse(text, knownParts());
+    if (!r.members.length) return toast(r.error || `${src}から名前を読み取れませんでした（1列目にパート、2列目に名前）`);
+    pushHistory();
+    doc().roster = { members: r.members, pieces: r.pieces };
+    applyRoster(null, true, true);
+    openRosterModal();
+    const note = r.unknown.length ? `。編成にないパート：${r.unknown.join('・')}` : '';
+    toast(`${r.members.length}人${r.pieces.length ? `・${r.pieces.length}曲` : ''}を読み込み、舞台図に名前を入れました${note}`, true);
+  }
+  /**
+   * 名簿を舞台図に反映：j＝曲（null は全員）。withCounts：かんたん編成なら人数も名簿（その曲に乗る人数）に合わせる
+   */
+  function applyRoster(j, withCounts, noHistory) {
+    const RS = doc().roster;
+    if (!RS || !RS.members.length) return;
+    if (!noHistory) pushHistory();
+    const st = doc().ensemble, auto = st && doc().items.some(it => it.auto);
+    if (withCounts && auto) {
+      const cnt0 = RSx().onCounts(RS, j), keys = SS.auto.ENSEMBLES[st.type].parts.map(([k]) => k);
+      // 吹奏楽などの「Perc」の人数には、ティンパニ（Timp）の人も入る
+      const keyOf = p => (keys.includes(p) ? p : p === 'Timp' && keys.includes('Perc') ? 'Perc' : null);
+      const cnt = {};
+      Object.keys(cnt0).forEach(p => { const k = keyOf(p); if (k) cnt[k] = (cnt[k] || 0) + cnt0[p]; });
+      let changed = false;
+      Object.keys(cnt).forEach(p => { if ((st.counts[p] || 0) !== cnt[p]) { st.counts[p] = cnt[p]; changed = true; } });
+      if (changed) applyAuto({ noHistory: true, quiet: true });
+    }
+    const res = RSx().assign(players(), RS, j, conductor());
+    opts().showNames = true;
+    renderAll(); renderSteppers();
+    return res;
+  }
+  function rosterResultText(res) {
+    if (!res) return '';
+    const sh = Object.keys(res.short).map(k => `${k} ${res.short[k]}人`), em = Object.keys(res.empty).map(k => `${k} ${res.empty[k]}席`);
+    return `${res.placed}人の名前を入れました` + (sh.length ? `。席が足りない：${sh.join('・')}` : '') + (em.length ? `。名前のない席：${em.join('・')}` : '');
+  }
+  // 曲ごとに部を作る（1曲目はいまの部。部がすでにあれば後ろに足す）
+  function piecesToParts() {
+    const RS = doc().roster, n = RS.pieces.length;
+    askConfirm(`${n}曲それぞれの配置図を「部」として作ります（${RS.pieces.join('・')}）。\nそれぞれの曲に乗る人の人数・名前で並べます。部と部の間の「🔁 転換」で、いすを何脚はけるかの計画も見られます。`, '作る', () => {
+      const d = doc(), had = !!d.parts;
+      for (let i = 0; i < n; i++) {
+        if (i > 0 || had) addPart(true);
+        if (!d.parts) { pushHistory(); d.parts = [{ name: RS.pieces[0], items: null, ensemble: null }]; d.partIdx = 0; }
+        d.parts[d.partIdx].name = RS.pieces[i].slice(0, 20) || `${i + 1}曲目`;
+        applyRoster(i, true, true);
+      }
+      render();
+      toast(`${n}曲の部を作りました。左下のタブで切りかえ、「🔁 転換」で曲の間の計画が見られます`);
+    });
+  }
+  function printRoster() {
+    const RS = doc().roster;
+    if (!RS) return;
+    const ps = RS.pieces, esc = SS.esc;
+    const cnt = ps.map((_, j) => RSx().onMembers(RS, j).length);
+    let rows = '', last = null;
+    RS.members.forEach(m => {
+      rows += `<tr${m.part !== last ? ' class="top"' : ''}><td>${m.part !== last ? esc(m.part) : ''}</td><td>${esc(m.name)}</td>${ps.map((_, j) => `<td class="c">${esc(RSx().markText(m.marks[j]))}</td>`).join('')}</tr>`;
+      last = m.part;
+    });
+    const title = (doc().title ? doc().title + '　' : '') + (ps.length ? '乗り番表' : '名簿');
+    const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+      body{font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;margin:12mm;color:#111}
+      h1{font-size:18px;margin:0 0 8px} p{font-size:11px;color:#555;margin:0 0 8px}
+      table{border-collapse:collapse;font-size:12px;width:100%} th,td{border:1px solid #999;padding:3px 6px}
+      th{background:#eef1f6} td.c{text-align:center;min-width:3em} tr.top td{border-top:2px solid #333} tfoot td{background:#f6f6f6;font-weight:700}
+      @page{size:A4 ${ps.length > 6 ? 'landscape' : 'portrait'};margin:10mm}</style></head><body>
+      <h1>${esc(title)}</h1>${ps.length ? '<p>○＝乗り・空欄＝降り（ほかの字はメモ：持ち替えなど）</p>' : ''}
+      <table><thead><tr><th>パート</th><th>名前</th>${ps.map(p => `<th>${esc(p)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
+      ${ps.length ? `<tfoot><tr><td colspan="2">乗る人数</td>${cnt.map(n => `<td class="c">${n}</td>`).join('')}</tr></tfoot>` : ''}</table></body></html>`;
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(f);
+    f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
+    setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('印刷できませんでした。「Excel用で保存」から印刷してください'); } setTimeout(() => f.remove(), 2000); }, 300);
+  }
+  function openRosterModal() {
+    const RS = doc().roster, has = RS && RS.members.length, ps = has ? RS.pieces : [];
+    const st = doc().ensemble, auto = st && doc().items.some(it => it.auto);
+    const cell = (m, r, j) => { const t = RSx().markText(m.marks[j]); return `<td class="rs-c"><button type="button" class="rs-mark${t ? ' on' : ''}" data-mk="${r}|${j}" title="${t ? '乗り（押すと降り）' : '降り（押すと乗り）'}">${t ? SS.esc(t) : '　'}</button></td>`; };
+    let body = '';
+    if (has) {
+      let last = null;
+      const rows = RS.members.map((m, r) => {
+        const top = m.part !== last; last = m.part;
+        return `<tr${top ? ' class="rs-top"' : ''}><td><input type="text" data-rp="${r}" value="${SS.esc(m.part)}" aria-label="パート" class="rs-part"></td><td><input type="text" data-rn="${r}" value="${SS.esc(m.name)}" aria-label="名前" placeholder="名前"></td>${ps.map((_, j) => cell(m, r, j)).join('')}<td class="rs-ops"><button type="button" data-radd="${r}" title="この下に同じパートの人を足す" aria-label="人を足す">＋</button><button type="button" data-rdel="${r}" title="この人を消す" aria-label="消す">✕</button></td></tr>`;
+      }).join('');
+      const foot = ps.length ? `<tfoot><tr><td colspan="2">乗る人数</td>${ps.map((_, j) => `<td class="rs-c">${RSx().onMembers(RS, j).length}</td>`).join('')}<td></td></tr></tfoot>` : '';
+      body = `<div class="rs-apply">
+          <label class="field">舞台図に入れる人<select id="rsPiece"><option value="">全員</option>${ps.map((p, j) => `<option value="${j}">「${SS.esc(p)}」に乗る人</option>`).join('')}</select></label>
+          ${auto ? '<label class="check"><input type="checkbox" id="rsCounts" checked> 人数も名簿に合わせる（かんたん編成）</label>' : ''}
+          <div class="btn-row"><button class="btn primary" id="rsApply">舞台図に名前を入れる</button>${ps.length >= 2 ? '<button class="btn" id="rsParts">🎼 曲ごとに部を作る</button>' : ''}</div>
+        </div>
+        <div class="rs-scroll"><table class="rs-table"><thead><tr><th>パート</th><th>名前</th>${ps.map((p, j) => `<th class="rs-c"><input type="text" data-pc="${j}" value="${SS.esc(p)}" aria-label="曲名"><button type="button" data-pcdel="${j}" title="この曲を消す" aria-label="この曲を消す">✕</button></th>`).join('')}<th><button type="button" class="btn" id="rsAddPiece" title="曲（乗り番の列）を足す">＋曲</button></th></tr></thead><tbody>${rows}</tbody>${foot}</table></div>
+        <p class="hint small">${ps.length ? '○＝乗り・空欄＝降り（押すと切りかわります）。「持ち替え」などのメモは、Excelの様式で書けます。' : '「＋曲」で曲ごとの乗り番（○＝乗り・空欄＝降り）を作れます。'}名前や乗り番を直したら「舞台図に名前を入れる」で舞台図に入ります。</p>
+        <div class="btn-row"><button class="btn" id="rsCsv">⬇ Excel用（CSV）で保存</button><button class="btn" id="rsPrint">🖨 ${ps.length ? '乗り番表' : '名簿'}を印刷</button><button class="btn danger" id="rsClear">名簿を消す</button></div>`;
+    } else {
+      body = `<ol class="rs-steps"><li><b>取り込み様式</b>をダウンロード（いまの舞台のパートと人数の行ができています）</li><li>Excel・Googleスプレッドシートで開いて、<b>パートごとに名前</b>を書く（曲の列に ○＝乗り・空欄＝降り。曲名も書きかえられます）</li><li>保存して <b>「取り込む」</b>。舞台図の席に名前が入ります</li></ol>
+        <div class="btn-row"><button class="btn" id="rsFromStage">いまの舞台図から名簿を作る</button></div>`;
+    }
+    openModal(`<h2>👥 名簿・乗り番表</h2>
+      <p class="hint">パートごとに名前を入れると、舞台図の席に名前が入ります。曲ごとの乗り番（○＝乗り・空欄＝降り）から、その曲の人数・名前の舞台図も作れます。</p>
+      <div class="btn-row rs-io"><button class="btn${has ? '' : ' primary'}" id="rsTpl">⬇ ${has ? '名簿をExcel用で保存（直してまた取り込めます）' : '取り込み様式をダウンロード'}</button><label class="btn filebtn${has ? '' : ' primary'}">⬆ 取り込む<input type="file" id="rsFile" accept=".csv,.tsv,.txt,text/csv" hidden></label><button class="btn" id="rsPasteBtn">📋 Excelから貼り付け</button></div>
+      <div id="rsPasteBox" hidden><textarea id="rsPasteText" rows="6" placeholder="Excelで「パート」「名前」（と曲）の列をえらんでコピーし、ここに貼り付け"></textarea><button class="btn primary" id="rsPasteGo">読み込む</button></div>
+      ${body}`);
+    $('rsTpl').onclick = downloadRoster;
+    $('rsFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => importRoster(String(rd.result), 'ファイル'); rd.readAsText(f, 'utf-8'); };
+    $('rsPasteBtn').onclick = () => { $('rsPasteBox').hidden = !$('rsPasteBox').hidden; if (!$('rsPasteBox').hidden) $('rsPasteText').focus(); };
+    $('rsPasteGo').onclick = () => importRoster($('rsPasteText').value, '貼り付けた文');
+    if (!has) {
+      $('rsFromStage').onclick = () => {
+        const rows = RSx().rows(null, stageParts()).slice(1);
+        if (!rows.length) return toast('舞台に奏者がいません');
+        pushHistory();
+        doc().roster = { pieces: [], members: rows.map(r => ({ part: r[0], name: r[1], marks: [] })) };
+        openRosterModal();
+      };
+      return;
+    }
+    const R2 = doc().roster;
+    const edit = fn => { fn(); scheduleSave(); };
+    document.querySelectorAll('#modalBody [data-rp],#modalBody [data-rn],#modalBody [data-pc]').forEach(inp => inp.addEventListener('focus', () => pushHistory()));
+    document.querySelectorAll('[data-rp]').forEach(inp => inp.addEventListener('change', () => edit(() => { R2.members[+inp.getAttribute('data-rp')].part = RSx().matchPart(inp.value, knownParts()); })));
+    document.querySelectorAll('[data-rn]').forEach(inp => inp.addEventListener('change', () => edit(() => { R2.members[+inp.getAttribute('data-rn')].name = inp.value.trim(); })));
+    document.querySelectorAll('[data-pc]').forEach(inp => inp.addEventListener('change', () => edit(() => { R2.pieces[+inp.getAttribute('data-pc')] = inp.value.trim() || `${+inp.getAttribute('data-pc') + 1}曲目`; })));
+    document.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => {
+      const [r, j] = b.getAttribute('data-mk').split('|').map(Number), m = R2.members[r];
+      pushHistory();
+      m.marks[j] = RSx().isOn(m.marks[j]) ? '' : '○';
+      scheduleSave(); openRosterModal();
+    });
+    document.querySelectorAll('[data-radd]').forEach(b => b.onclick = () => { const r = +b.getAttribute('data-radd'); pushHistory(); R2.members.splice(r + 1, 0, { part: R2.members[r].part, name: '', marks: R2.pieces.map(() => '○') }); scheduleSave(); openRosterModal(); const inp = document.querySelector(`[data-rn="${r + 1}"]`); if (inp) inp.focus(); });
+    document.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => { pushHistory(); R2.members.splice(+b.getAttribute('data-rdel'), 1); scheduleSave(); openRosterModal(); });
+    document.querySelectorAll('[data-pcdel]').forEach(b => b.onclick = () => { const j = +b.getAttribute('data-pcdel'); pushHistory(); R2.pieces.splice(j, 1); R2.members.forEach(m => m.marks.splice(j, 1)); scheduleSave(); openRosterModal(); });
+    $('rsAddPiece').onclick = () => { pushHistory(); R2.pieces.push(`${R2.pieces.length + 1}曲目`); R2.members.forEach(m => { m.marks[R2.pieces.length - 1] = '○'; }); scheduleSave(); openRosterModal(); };
+    $('rsApply').onclick = () => {
+      const v = $('rsPiece').value, j = v === '' ? null : +v;
+      const res = applyRoster(j, $('rsCounts') ? $('rsCounts').checked : false);
+      closeModal();
+      toast(rosterResultText(res) + (j != null ? `（「${R2.pieces[j]}」）` : ''), true);
+    };
+    if ($('rsParts')) $('rsParts').onclick = () => { closeModal(); piecesToParts(); };
+    $('rsCsv').onclick = downloadRoster;
+    $('rsPrint').onclick = printRoster;
+    $('rsClear').onclick = () => askConfirm('名簿・乗り番表を消します（舞台図の名前はそのまま）。\n（あとで「戻す」で元に戻せます）', '消す', () => { pushHistory(); doc().roster = null; scheduleSave(); openRosterModal(); });
+  }
+  $('btnRoster').onclick = openRosterModal;
+  $('moreRoster').onclick = () => { showTabMore(false); closePanels(); openRosterModal(); };
 
   // ------------------------------------------------------------ パートのかたまり（パートごとに動かす・並び順を入れかえる）
   // 同じパートで、となりどうし（1.5m以内）の人を1つのかたまりにする。打楽器の楽器など、奏者といっしょに動く物も入れる
@@ -2528,7 +2707,7 @@
     pushHistory();
     const made = t.make();
     const keep = doc();
-    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info, parts: keep.parts, partIdx: keep.partIdx });
+    S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info, parts: keep.parts, partIdx: keep.partIdx, roster: keep.roster });
     // 舞台奥の通路の幅は、設定した値のまま（ひな形は60cmで作ってあるので、違えば並べ直す）
     if (keep.stage.backAisle != null) {
       S.doc.stage.backAisle = keep.stage.backAisle;
@@ -3660,6 +3839,7 @@
         <li><b>3Dのパート名</b>：3Dの下の「文字 小・中・大」で大きさを変えられます。</li>
         <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」の「電気・音響」にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
         <li><b>🎙 録音・音響</b>：「部品」の「電気・音響」に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
+        <li><b>👥 名簿・乗り番表（個人名）</b>：「編成表」の <b>「👥 名簿・乗り番表」</b>（スマホは「もっと…」から）で、<b>取り込み様式</b>（CSV。Excel・Googleスプレッドシートで開けます）をダウンロード → パートごとに名前と、曲ごとの乗り番（○＝乗り・空欄＝降り・「Picc持ち替え」などのメモ）を書く → <b>「取り込む」</b>で、舞台図の席に名前が入ります（かんたん編成なら人数も名簿に合わせます）。Excelで選んでコピーして「Excelから貼り付け」でもOK。表の中でも名前・○を直せます。「舞台図に入れる人」で曲をえらぶと、その曲に乗る人数・名前の舞台図に。<b>「🎼 曲ごとに部を作る」</b>で曲ごとの部ができ、曲の間の「🔁 転換」も見られます。乗り番表は印刷・Excel用で保存もできます。1人ずつの名前は、奏者を選んで ✏️ でも入れられます。</li>
         <li><b>🧩 パートのかたまり</b>：舞台図の右の <b>🧩</b> で、パートごとのかたまりの表示になります。かたまりをドラッグするとパートごと動き、<b>ほかのパートの上で離すと並び順を入れかえ</b>ます（吹奏楽・ブラスバンドのかんたん編成では、ひな壇・間隔をそろえたまま並べ直し、並び方は「自分で並べかえた順」になります）。</li>
         <li><b>📑 1部・2部・3部と🔁 転換</b>：舞台図の左下の <b>「＋ 2部を作る」</b>（スマホは「もっと…」→「1部・2部・3部」）で、部ごとの配置図を作れます（「いまの部をコピーして次の部を作る」がおすすめ）。部のタブで切りかえ、開いている部のタブか「＋」で名前・順番・消す。<b>「🔁 転換」</b>を押すと、前の部から次の部へ変えるとき、<b>いすを何脚はけるか・何を出すか・何を動かすか</b>の表と、おすすめの手順（①はける ②ひな壇の組み替え ③動かす ④出す、出入り口・そでごと）が出ます。「図で見る」で次の部の上に × はける・○ 出す・→ 動かす の印を出し、直すとすぐ変わります。「文字でコピー」で係の人に送れます。</li>
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>

@@ -417,6 +417,26 @@ body.modal-open .part-bar { visibility: hidden; }
 .part-list input { flex: 1 1 8em; min-width: 7em; font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .part-list .pl-btns { display: flex; gap: 4px; margin-left: auto; }
 .part-list .pl-btns .btn { padding: 4px 9px; font-size: 12.5px; }
+.rs-io { flex-wrap: wrap; }
+#rsPasteBox textarea { width: 100%; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; }
+.rs-steps { line-height: 1.8; padding-left: 1.4em; }
+.rs-apply { background: #f6f8fc; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 10px 0; }
+.rs-apply .field { margin-bottom: 6px; }
+.rs-scroll { overflow: auto; max-height: 52vh; border: 1px solid var(--line); border-radius: 8px; }
+.rs-table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.rs-table th, .rs-table td { border-bottom: 1px solid var(--line); padding: 2px 4px; white-space: nowrap; }
+.rs-table thead th { position: sticky; top: 0; background: #f4f6fa; z-index: 1; font-size: 12px; text-align: left; }
+.rs-table tr.rs-top td { border-top: 2px solid #c9d1dd; }
+.rs-table input { font: inherit; border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; width: 8em; background: transparent; }
+.rs-table input:hover, .rs-table input:focus { border-color: var(--line); background: #fff; }
+.rs-table input.rs-part { width: 4.5em; font-weight: 600; }
+.rs-table th input { width: 6em; font-weight: 600; }
+.rs-table th button, .rs-ops button { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 2px 4px; }
+.rs-c { text-align: center; }
+.rs-mark { min-width: 2.6em; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 2px 6px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--muted); }
+.rs-mark.on { background: #e9f7ee; border-color: #8fd0a6; color: #1e7a42; font-weight: 700; }
+.rs-table tfoot td { background: #f6f8fc; font-weight: 700; font-size: 12px; }
+#btnRoster { margin-bottom: 10px; }
 .co-pick { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; }
 .co-pick select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); }
 .co-head { margin: 6px 0 10px; line-height: 1.7; }

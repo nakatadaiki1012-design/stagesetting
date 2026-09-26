@@ -42,6 +42,7 @@ window.SS = window.SS || {};
     [/ハープ|hp/i, ['Hp']],
     [/ピアノ|pf/i, ['Pf']],
   ];
+  AI.PART_WORDS = PART_WORDS; // 名簿の取り込みでも使う
   const NUM = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 };
   const num = s => {
     s = String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/．/g, '.');
