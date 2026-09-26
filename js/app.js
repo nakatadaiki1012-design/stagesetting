@@ -349,53 +349,87 @@
     SS.render.download(new Blob([RSx().toCSV(rows)], { type: 'text/csv;charset=utf-8' }), rosterFileName());
     toast(doc().roster ? '名簿・乗り番表を保存しました（Excelで直して、また取り込めます）' : '取り込み様式を保存しました。Excelで名前を書いて、「取り込む」で読み込んでください', false);
   }
-  // 取り込んだ名簿を入れて、舞台図に名前（と人数）を反映する
+  // 取り込んだ名簿を入れて、舞台図に名前を入れる（席の数・編成は変えない）。結果は名簿の画面の中に出す
   function importRoster(text, src) {
     const r = RSx().parse(text, knownParts());
-    if (!r.members.length) return toast(r.error || `${src}から名前を読み取れませんでした（1列目にパート、2列目に名前）`);
+    S.rosterBad = r.bad || [];
+    if (!r.members.length) {
+      S.rosterMsg = { err: r.error || `${src}から名前を読み取れませんでした。1列目にパート、2列目に名前（「Ob 小林」「小林（Ob）」も読めます）` };
+      openRosterModal();
+      return;
+    }
     pushHistory();
     doc().roster = { members: r.members, pieces: r.pieces };
-    applyRoster(null, true, true);
+    const res = applyRoster(null, false, true);
+    S.rosterMsg = { read: r.members.length, pieces: r.pieces.length, res, unknown: r.unknown };
     openRosterModal();
-    const note = r.unknown.length ? `。編成にないパート：${r.unknown.join('・')}` : '';
-    toast(`${r.members.length}人${r.pieces.length ? `・${r.pieces.length}曲` : ''}を読み込み、舞台図に名前を入れました${note}`, true);
+  }
+  // 名簿（曲 j に乗る人）の人数に合わせたときの、かんたん編成のパートごとの人数の変化
+  function rosterCountPlan(j) {
+    const RS = doc().roster, st = doc().ensemble;
+    if (!RS || !st || !doc().items.some(it => it.auto)) return [];
+    const cnt0 = RSx().onCounts(RS, j), keys = SS.auto.ENSEMBLES[st.type].parts.map(([k]) => k);
+    // 吹奏楽などの「Perc」の人数には、ティンパニ（Timp）の人も入る
+    const keyOf = p => (keys.includes(p) ? p : p === 'Timp' && keys.includes('Perc') ? 'Perc' : null);
+    const cnt = {};
+    Object.keys(cnt0).forEach(p => { const k = keyOf(p); if (k) cnt[k] = (cnt[k] || 0) + cnt0[p]; });
+    return Object.keys(cnt).filter(p => (st.counts[p] || 0) !== cnt[p]).map(p => ({ p, from: st.counts[p] || 0, to: cnt[p] }));
   }
   /**
-   * 名簿を舞台図に反映：j＝曲（null は全員）。withCounts：かんたん編成なら人数も名簿（その曲に乗る人数）に合わせる
+   * 名簿を舞台図に反映：j＝曲（null は全員）。withCounts：かんたん編成の人数も名簿（その曲に乗る人数）に合わせる
+   * （人数が減るときは、先に rosterApplyAsk で確かめる）
    */
   function applyRoster(j, withCounts, noHistory) {
     const RS = doc().roster;
-    if (!RS || !RS.members.length) return;
+    if (!RS || !RS.members.length) return null;
     if (!noHistory) pushHistory();
-    const st = doc().ensemble, auto = st && doc().items.some(it => it.auto);
-    if (withCounts && auto) {
-      const cnt0 = RSx().onCounts(RS, j), keys = SS.auto.ENSEMBLES[st.type].parts.map(([k]) => k);
-      // 吹奏楽などの「Perc」の人数には、ティンパニ（Timp）の人も入る
-      const keyOf = p => (keys.includes(p) ? p : p === 'Timp' && keys.includes('Perc') ? 'Perc' : null);
-      const cnt = {};
-      Object.keys(cnt0).forEach(p => { const k = keyOf(p); if (k) cnt[k] = (cnt[k] || 0) + cnt0[p]; });
-      let changed = false;
-      Object.keys(cnt).forEach(p => { if ((st.counts[p] || 0) !== cnt[p]) { st.counts[p] = cnt[p]; changed = true; } });
-      if (changed) applyAuto({ noHistory: true, quiet: true });
+    if (withCounts) {
+      const plan = rosterCountPlan(j);
+      plan.forEach(c => { ens().counts[c.p] = c.to; });
+      if (plan.length) applyAuto({ noHistory: true, quiet: true });
     }
     const res = RSx().assign(players(), RS, j, conductor());
     opts().showNames = true;
     renderAll(); renderSteppers();
     return res;
   }
-  function rosterResultText(res) {
-    if (!res) return '';
-    const sh = Object.keys(res.short).map(k => `${k} ${res.short[k]}人`), em = Object.keys(res.empty).map(k => `${k} ${res.empty[k]}席`);
-    return `${res.placed}人の名前を入れました` + (sh.length ? `。席が足りない：${sh.join('・')}` : '') + (em.length ? `。名前のない席：${em.join('・')}` : '');
+  // 人数が減るときは、どのパートが何人になるかを見せてから
+  function rosterApplyAsk(j, withCounts, done) {
+    const down = withCounts ? rosterCountPlan(j).filter(c => c.to < c.from) : [];
+    if (!down.length) { done(applyRoster(j, withCounts)); return; }
+    const n = down.reduce((a, c) => a + c.from - c.to, 0);
+    askConfirm(`${down.slice(0, 5).map(c => `${c.p} ${c.from}人→${c.to}人`).join('、')}${down.length > 5 ? ' など' : ''}、合わせて${n}人減ります。\nよいですか？（あとで「戻す」で元に戻せます）`, `${n}人減らして並べ直す`, () => done(applyRoster(j, true)));
+  }
+  // 名簿の画面の中に出す結果（舞台図に入れた人数・入れられなかった名前と理由・名前のない席）
+  function rosterResultHTML(M) {
+    if (!M) return '';
+    if (M.err) return `<div class="rs-result err">⚠ ${SS.esc(M.err)}</div>`;
+    const res = M.res || { placed: 0, notPlaced: [], empty: {} };
+    const em = Object.keys(res.empty).map(k => `${SS.esc(k)} ${res.empty[k]}席`);
+    const auto = doc().ensemble && doc().items.some(it => it.auto);
+    let h = `<div class="rs-result"><b>✔ ${M.read != null ? `${M.read}人${M.pieces ? `・${M.pieces}曲` : ''}を読み込みました。` : ''}舞台図に${res.placed}人の名前を入れました</b>${M.piece ? `（「${SS.esc(M.piece)}」）` : ''}${M.counted ? '' : '<span class="small">（席の数・編成は変えていません）</span>'}`;
+    if (res.notPlaced.length) h += `<div class="rs-np"><b>舞台図に入れられなかった名前（${res.notPlaced.length}人）</b><ul>${res.notPlaced.map(x => `<li>${SS.esc(x.name)}（${SS.esc(x.part)}）：${SS.esc(x.reason)}</li>`).join('')}</ul>${auto ? '<span class="small">席を増やすときは、下の「人数も名簿に合わせる」をオンにして「舞台図に名前を入れる」を押します。</span>' : '<span class="small">席を足してから、もう一度「舞台図に名前を入れる」を押してください。</span>'}</div>`;
+    if (em.length) h += `<div class="small">名前のない席：${em.join('・')}</div>`;
+    if (M.unknown && M.unknown.length) h += `<div class="small">編成にないパート：${M.unknown.map(SS.esc).join('・')}</div>`;
+    return h + '</div>';
+  }
+  // 読めなかった行（その場でパートと名前を直して名簿に入れる）
+  function rosterBadHTML() {
+    const bad = S.rosterBad || [];
+    if (!bad.length) return '';
+    const parts = knownParts().concat(Object.keys(RSx().GROUPS));
+    const guess = line => line.replace(/[（(［\[].*?[)）］\]]/g, '').replace(/[:：]/g, ' ').trim();
+    return `<div class="rs-bad"><b>読めなかった行（${bad.length}行）</b><span class="small">パートをえらんで「名簿に入れる」を押すと直せます</span>
+      ${bad.map((b, i) => `<div class="rs-bad-row"><div><span class="rs-line">${SS.esc(b.line)}</span><small>${SS.esc(b.reason)}</small></div>
+        <div class="rs-fix"><select data-bp="${i}" aria-label="パート"><option value="">パート</option>${parts.map(p => `<option>${SS.esc(p)}</option>`).join('')}</select><input type="text" data-bn="${i}" value="${SS.esc(guess(b.line))}" aria-label="名前"><button type="button" class="btn" data-bfix="${i}">名簿に入れる</button><button type="button" class="btn" data-bskip="${i}" title="この行は使わない">✕</button></div></div>`).join('')}</div>`;
   }
   // 曲ごとに部を作る（1曲目はいまの部。部がすでにあれば後ろに足す）
   function piecesToParts() {
     const RS = doc().roster, n = RS.pieces.length;
-    askConfirm(`${n}曲それぞれの配置図を「部」として作ります（${RS.pieces.join('・')}）。\nそれぞれの曲に乗る人の人数・名前で並べます。部と部の間の「🔁 転換」で、いすを何脚はけるかの計画も見られます。`, '作る', () => {
-      const d = doc(), had = !!d.parts;
+    askConfirm(`${n}曲それぞれの配置図を「部」として、いまの配置図の後ろに作ります（${RS.pieces.join('・')}）。\nそれぞれの曲に乗る人の人数・名前で並べます（いまの配置図は変えません）。部と部の間の「🔁 転換」で、いすを何脚はけるかの計画も見られます。`, '作る', () => {
+      const d = doc();
       for (let i = 0; i < n; i++) {
-        if (i > 0 || had) addPart(true);
-        if (!d.parts) { pushHistory(); d.parts = [{ name: RS.pieces[0], items: null, ensemble: null }]; d.partIdx = 0; }
+        addPart(true);
         d.parts[d.partIdx].name = RS.pieces[i].slice(0, 20) || `${i + 1}曲目`;
         applyRoster(i, true, true);
       }
@@ -443,7 +477,7 @@
       const foot = ps.length ? `<tfoot><tr><td colspan="2">乗る人数</td>${ps.map((_, j) => `<td class="rs-c">${RSx().onMembers(RS, j).length}</td>`).join('')}<td></td></tr></tfoot>` : '';
       body = `<div class="rs-apply">
           <label class="field">舞台図に入れる人<select id="rsPiece"><option value="">全員</option>${ps.map((p, j) => `<option value="${j}">「${SS.esc(p)}」に乗る人</option>`).join('')}</select></label>
-          ${auto ? '<label class="check"><input type="checkbox" id="rsCounts" checked> 人数も名簿に合わせる（かんたん編成）</label>' : ''}
+          ${auto ? '<label class="check"><input type="checkbox" id="rsCounts"> 人数も名簿に合わせる（かんたん編成。減るときは確認します）</label>' : ''}
           <div class="btn-row"><button class="btn primary" id="rsApply">舞台図に名前を入れる</button>${ps.length >= 2 ? '<button class="btn" id="rsParts">🎼 曲ごとに部を作る</button>' : ''}</div>
         </div>
         <div class="rs-scroll"><table class="rs-table"><thead><tr><th>パート</th><th>名前</th>${ps.map((p, j) => `<th class="rs-c"><input type="text" data-pc="${j}" value="${SS.esc(p)}" aria-label="曲名"><button type="button" data-pcdel="${j}" title="この曲を消す" aria-label="この曲を消す">✕</button></th>`).join('')}<th><button type="button" class="btn" id="rsAddPiece" title="曲（乗り番の列）を足す">＋曲</button></th></tr></thead><tbody>${rows}</tbody>${foot}</table></div>
@@ -453,15 +487,32 @@
       body = `<ol class="rs-steps"><li><b>取り込み様式</b>をダウンロード（いまの舞台のパートと人数の行ができています）</li><li>Excel・Googleスプレッドシートで開いて、<b>パートごとに名前</b>を書く（曲の列に ○＝乗り・空欄＝降り。曲名も書きかえられます）</li><li>保存して <b>「取り込む」</b>。舞台図の席に名前が入ります</li></ol>
         <div class="btn-row"><button class="btn" id="rsFromStage">いまの舞台図から名簿を作る</button></div>`;
     }
+    const msg = rosterResultHTML(S.rosterMsg) + rosterBadHTML();
+    S.rosterMsg = null;
     openModal(`<h2>👥 名簿・乗り番表</h2>
+      ${msg}
       <p class="hint">パートごとに名前を入れると、舞台図の席に名前が入ります。曲ごとの乗り番（○＝乗り・空欄＝降り）から、その曲の人数・名前の舞台図も作れます。</p>
-      <div class="btn-row rs-io"><button class="btn${has ? '' : ' primary'}" id="rsTpl">⬇ ${has ? '名簿をExcel用で保存（直してまた取り込めます）' : '取り込み様式をダウンロード'}</button><label class="btn filebtn${has ? '' : ' primary'}">⬆ 取り込む<input type="file" id="rsFile" accept=".csv,.tsv,.txt,text/csv" hidden></label><button class="btn" id="rsPasteBtn">📋 Excelから貼り付け</button></div>
+      <div class="btn-row rs-io"><button class="btn${has ? '' : ' primary'}" id="rsTpl">⬇ ${has ? '名簿をExcel用で保存' : '取り込み様式をダウンロード'}</button><label class="btn filebtn${has ? '' : ' primary'}">⬆ 取り込む<input type="file" id="rsFile" accept=".csv,.tsv,.txt,text/csv" hidden></label><button class="btn" id="rsPasteBtn">📋 Excelから貼り付け</button></div>
       <div id="rsPasteBox" hidden><textarea id="rsPasteText" rows="6" placeholder="Excelで「パート」「名前」（と曲）の列をえらんでコピーし、ここに貼り付け"></textarea><button class="btn primary" id="rsPasteGo">読み込む</button></div>
       ${body}`);
     $('rsTpl').onclick = downloadRoster;
     $('rsFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => importRoster(String(rd.result), 'ファイル'); rd.readAsText(f, 'utf-8'); };
     $('rsPasteBtn').onclick = () => { $('rsPasteBox').hidden = !$('rsPasteBox').hidden; if (!$('rsPasteBox').hidden) $('rsPasteText').focus(); };
     $('rsPasteGo').onclick = () => importRoster($('rsPasteText').value, '貼り付けた文');
+    // 読めなかった行を直して名簿に入れる
+    document.querySelectorAll('[data-bfix]').forEach(b => b.onclick = () => {
+      const i = +b.getAttribute('data-bfix'), part = document.querySelector(`[data-bp="${i}"]`).value, name = document.querySelector(`[data-bn="${i}"]`).value.trim();
+      if (!part) return toast('パートをえらんでください');
+      if (!name) return toast('名前を入れてください');
+      pushHistory();
+      const RS0 = doc().roster || (doc().roster = { pieces: [], members: [] });
+      RS0.members.push({ part, name, marks: RS0.pieces.map(() => '○') });
+      S.rosterBad.splice(i, 1);
+      const res = applyRoster(null, false, true);
+      S.rosterMsg = { res, fixed: name };
+      openRosterModal();
+    });
+    document.querySelectorAll('[data-bskip]').forEach(b => b.onclick = () => { S.rosterBad.splice(+b.getAttribute('data-bskip'), 1); openRosterModal(); });
     if (!has) {
       $('rsFromStage').onclick = () => {
         const rows = RSx().rows(null, stageParts()).slice(1);
@@ -489,10 +540,8 @@
     document.querySelectorAll('[data-pcdel]').forEach(b => b.onclick = () => { const j = +b.getAttribute('data-pcdel'); pushHistory(); R2.pieces.splice(j, 1); R2.members.forEach(m => m.marks.splice(j, 1)); scheduleSave(); openRosterModal(); });
     $('rsAddPiece').onclick = () => { pushHistory(); R2.pieces.push(`${R2.pieces.length + 1}曲目`); R2.members.forEach(m => { m.marks[R2.pieces.length - 1] = '○'; }); scheduleSave(); openRosterModal(); };
     $('rsApply').onclick = () => {
-      const v = $('rsPiece').value, j = v === '' ? null : +v;
-      const res = applyRoster(j, $('rsCounts') ? $('rsCounts').checked : false);
-      closeModal();
-      toast(rosterResultText(res) + (j != null ? `（「${R2.pieces[j]}」）` : ''), true);
+      const v = $('rsPiece').value, j = v === '' ? null : +v, wc = $('rsCounts') ? $('rsCounts').checked : false;
+      rosterApplyAsk(j, wc, res => { S.rosterMsg = { res, counted: wc, piece: j != null ? R2.pieces[j] : '' }; openRosterModal(); });
     };
     if ($('rsParts')) $('rsParts').onclick = () => { closeModal(); piecesToParts(); };
     $('rsCsv').onclick = downloadRoster;
@@ -3839,7 +3888,7 @@
         <li><b>3Dのパート名</b>：3Dの下の「文字 小・中・大」で大きさを変えられます。</li>
         <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」の「電気・音響」にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
         <li><b>🎙 録音・音響</b>：「部品」の「電気・音響」に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
-        <li><b>👥 名簿・乗り番表（個人名）</b>：「編成表」の <b>「👥 名簿・乗り番表」</b>（スマホは「もっと…」から）で、<b>取り込み様式</b>（CSV。Excel・Googleスプレッドシートで開けます）をダウンロード → パートごとに名前と、曲ごとの乗り番（○＝乗り・空欄＝降り・「Picc持ち替え」などのメモ）を書く → <b>「取り込む」</b>で、舞台図の席に名前が入ります（かんたん編成なら人数も名簿に合わせます）。Excelで選んでコピーして「Excelから貼り付け」でもOK。表の中でも名前・○を直せます。「舞台図に入れる人」で曲をえらぶと、その曲に乗る人数・名前の舞台図に。<b>「🎼 曲ごとに部を作る」</b>で曲ごとの部ができ、曲の間の「🔁 転換」も見られます。乗り番表は印刷・Excel用で保存もできます。1人ずつの名前は、奏者を選んで ✏️ でも入れられます。</li>
+        <li><b>👥 名簿・乗り番表（個人名）</b>：「編成表」の <b>「👥 名簿・乗り番表」</b>（スマホは「もっと…」から）で、<b>取り込み様式</b>（CSV。Excel・Googleスプレッドシートで開けます）をダウンロード → パートごとに名前と、曲ごとの乗り番（○＝乗り・空欄＝降り・「Picc持ち替え」などのメモ）を書く → <b>「取り込む」</b>で、舞台図の席に名前が入ります（<b>席の数・編成は変えません</b>。入れられなかった名前と、読めなかった行は理由つきで名簿の画面に出て、その場で直せます）。「小林（Ob）」「Ob 小林」「サックス 伊藤」「パーカス 渡辺」のような書き方も読めます。Excelで選んでコピーして「Excelから貼り付け」でもOK。人数も名簿に合わせたいときは「人数も名簿に合わせる」をオンに（減るときは、どのパートが何人になるかを見せて確認します）。表の中でも名前・○を直せます。「舞台図に入れる人」で曲をえらぶと、その曲に乗る人数・名前の舞台図に。<b>「🎼 曲ごとに部を作る」</b>で曲ごとの部ができ、曲の間の「🔁 転換」も見られます。乗り番表は印刷・Excel用で保存もできます。1人ずつの名前は、奏者を選んで ✏️ でも入れられます。</li>
         <li><b>🧩 パートのかたまり</b>：舞台図の右の <b>🧩</b> で、パートごとのかたまりの表示になります。かたまりをドラッグするとパートごと動き、<b>ほかのパートの上で離すと並び順を入れかえ</b>ます（吹奏楽・ブラスバンドのかんたん編成では、ひな壇・間隔をそろえたまま並べ直し、並び方は「自分で並べかえた順」になります）。</li>
         <li><b>📑 1部・2部・3部と🔁 転換</b>：舞台図の左下の <b>「＋ 2部を作る」</b>（スマホは「もっと…」→「1部・2部・3部」）で、部ごとの配置図を作れます（「いまの部をコピーして次の部を作る」がおすすめ）。部のタブで切りかえ、開いている部のタブか「＋」で名前・順番・消す。<b>「🔁 転換」</b>を押すと、前の部から次の部へ変えるとき、<b>いすを何脚はけるか・何を出すか・何を動かすか</b>の表と、おすすめの手順（①はける ②ひな壇の組み替え ③動かす ④出す、出入り口・そでごと）が出ます。「図で見る」で次の部の上に × はける・○ 出す・→ 動かす の印を出し、直すとすぐ変わります。「文字でコピー」で係の人に送れます。</li>
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>

@@ -9,18 +9,27 @@
   const key = s => norm(s).toLowerCase().replace(/[\s.・_\-]/g, '');
   R.norm = norm;
 
-  // パート名をそろえる：known（編成のパート名・舞台にあるパート名）と同じ書き方ならそれ、ちがえば日本語などのよびかたから
-  R.matchPart = function (text, known) {
+  // 言いかえでまとめて書いたパート（「サックス」「クラ」）。舞台では、そのパートの空いている席の順に入れる
+  R.GROUPS = { Sax: ['A.Sx', 'T.Sx', 'B.Sx'], Cl: ['Cl1', 'Cl2', 'Cl3'] };
+  const groupName = tg => Object.keys(R.GROUPS).find(g => R.GROUPS[g].join() === tg.join()) || tg.join('・');
+  /**
+   * パート名をそろえる：known（編成のパート名・舞台にあるパート名）と同じ書き方ならそれ、
+   * ちがえば言いかえの辞書（文章での指示と同じ）から。「サックス」→ Sax、「クラ」→ Cl のようにまとめたものもある。
+   * 読めなければ ''（strict でないときは書いてあるまま）
+   */
+  R.matchPart = function (text, known, strict) {
     const t = norm(text);
     if (!t) return '';
     const k = key(t);
-    const hit = known.find(p => key(p) === k);
+    const hit = known.find(p => key(p) === k) || Object.keys(R.GROUPS).find(g => key(g) === k);
     if (hit) return hit;
-    const words = (SS.assistant && SS.assistant.PART_WORDS) || [];
-    for (const [re, cands] of words) if (re.test(t)) { const c = cands.find(x => known.includes(x)); if (c) return c; }
-    return t; // 知らないパート名は、書いてあるまま
+    const A = SS.assistant;
+    const f = A && A.partOf ? A.partOf(t, known.concat(...Object.values(R.GROUPS))) : null;
+    if (f) return f.split ? groupName(f.targets) : f.targets[0];
+    return strict ? '' : t;
   };
-
+  // 名簿のパート → 舞台の席のパート（まとめたものは中身）
+  R.partsOf = part => R.GROUPS[part] || [part];
   // 乗り番の印：空欄・×・降り・休 などは降り。○・1 などは乗り。ほかの字（「Picc持ち替え」など）は乗り（メモとして残す）
   R.isOn = m => { const t = norm(m); return !!t && !/^(×|✕|x|降|降り|休|休み|-|―|—|0|なし)$/i.test(t); };
   const ON_MARK = /^(○|◯|〇|o|1|乗|乗り|yes|y)$/i;
@@ -51,15 +60,38 @@
   const SKIP_COL = /^(no\.?|番号|席|席順|備考|メモ|学年|クラス|ふりがな|フリガナ|よみ|読み)$/i;
 
   /**
+   * 1つのセルに名前とパートがいっしょに書いてあるとき：「小林（Ob）」「小林 Ob」「Ob：小林」「Ob 小林」「Ob・小林」
+   * 戻り値 { part, name } か null
+   */
+  R.splitCell = function (cell, known) {
+    const t = norm(cell);
+    const tryPair = (a, b) => {
+      const pa = R.matchPart(a, known, true), pb = R.matchPart(b, known, true);
+      if (pa && !pb && norm(b)) return { part: pa, name: norm(b) };
+      if (pb && !pa && norm(a)) return { part: pb, name: norm(a) };
+      return null;
+    };
+    let m = /^(.+?)\s*[（(［\[]\s*(.+?)\s*[)）］\]]$/.exec(t);
+    if (m) return tryPair(m[1], m[2]);
+    m = /^(.+?)\s*[:：／/・|｜,、，]\s*(.+)$/.exec(t);
+    if (m) { const r = tryPair(m[1], m[2]); if (r) return r; }
+    const w = t.split(/\s+/);
+    if (w.length >= 2) return tryPair(w[0], w.slice(1).join(' ')) || tryPair(w.slice(0, -1).join(' '), w[w.length - 1]);
+    return null;
+  };
+
+  /**
    * 表（CSV・貼り付け）から名簿を作る。known：編成のパート名
    * 1行目に「パート」「名前」の見出しがあれば見出しで列を探す。なければ 1列目＝パート・2列目＝名前・3列目から＝曲
-   * パートの欄が空の行は、上の行と同じパート（Excel でセルを結合したときなど）
+   * （パートと名前が逆でも、パートとして読める方をパートにする。1つのセルに「小林（Ob）」のように書いてあってもよい）
+   * パートの欄が空の行は、上の行と同じパート（Excel でセルを結合したときなど）。パートだけの行は、下の行のパートの見出し
+   * 読めなかった行は bad に { line, reason } で入れる（黙って捨てない）
    */
   R.parse = function (text, known) {
     const rows = R.parseTable(text);
-    if (!rows.length) return { members: [], pieces: [], unknown: [], error: '中身がありません' };
+    if (!rows.length) return { members: [], pieces: [], unknown: [], bad: [], error: '中身がありません' };
     const h = rows[0].map(norm);
-    const isHead = h.some(c => /パート|楽器|part|名前|氏名|name/i.test(c));
+    const isHead = h.some(c => /^(パート|楽器|part|名前|氏名|name)$/i.test(c.replace(/\s/g, '')));
     let pc = 0, nc = 1;
     if (isHead) {
       const fp = h.findIndex(c => /パート|楽器|part/i.test(c)), fn = h.findIndex(c => /名前|氏名|name/i.test(c));
@@ -71,23 +103,43 @@
     const cols = [];
     for (let i = 0; i < width; i++) if (i !== pc && i !== nc && !(isHead && SKIP_COL.test(h[i] || ''))) cols.push(i);
     let pieces = cols.map((i, j) => (isHead && h[i] ? h[i] : `${j + 1}曲目`));
-    const members = [];
-    let lastPart = '';
+    const members = [], bad = [];
+    let lastPart = '', header = '';
     body.forEach(r => {
-      const name = norm(r[nc]);
-      let part = norm(r[pc]);
-      if (!part) part = lastPart;
-      if (!name && !part) return;
-      if (!name && r.every((c, i) => i === pc || !norm(c))) { lastPart = part; return; } // パートだけの見出し行
+      const line = r.filter(Boolean).join(' ');
+      const filled = r.map((c, i) => [i, norm(c)]).filter(([i, c]) => c && !cols.includes(i));
+      let part = '', name = '';
+      if (filled.length === 1) {
+        // セルが1つだけ：「小林（Ob）」のような書き方か、パートだけの見出し行か、見出しの下の名前
+        const one = filled[0][1];
+        const sp = R.splitCell(one, known);
+        if (sp) { part = sp.part; name = sp.name; }
+        else if (filled[0][0] === nc && pc !== nc && lastPart && !R.matchPart(one, known, true)) { part = lastPart; name = one; } // パートの欄が空（セルの結合など）は上の行と同じ
+        else if (R.matchPart(one, known, true)) { header = lastPart = R.matchPart(one, known, true); return; }
+        else if (header) { part = header; name = one; }
+        else { bad.push({ line, reason: 'パートが分かりません（「小林（Ob）」「Ob 小林」のように書いてください）' }); return; }
+      } else {
+        const partT = norm(r[pc]);
+        name = norm(r[nc]);
+        part = partT ? R.matchPart(partT, known, true) : '';
+        // パートと名前の列が逆
+        if (partT && !part && name) { const p2 = R.matchPart(name, known, true); if (p2) { part = p2; name = partT; } }
+        // 名前の欄に「小林（Ob）」のように書いてある
+        if (!part && !partT && name) { const sp = R.splitCell(name, known); if (sp) { part = sp.part; name = sp.name; } }
+        if (!part && partT) { bad.push({ line, reason: `「${partT}」がどのパートか分かりません` }); return; }
+        if (!part && !partT) part = lastPart; // パートの欄が空（Excel でセルを結合したときなど）は上の行と同じ
+        if (!part) { bad.push({ line, reason: 'パートが分かりません' }); return; }
+        if (!name) { bad.push({ line, reason: '名前がありません' }); return; }
+      }
       lastPart = part;
-      members.push({ part: R.matchPart(part, known), name, marks: cols.map(i => norm(r[i])) });
+      members.push({ part, name, marks: cols.map(i => norm(r[i])) });
     });
-    // 様式のままの「○曲目」の列で、全員○のもの（名前だけ書いたとき）は曲として数えない
-    const keep = pieces.map((p, j) => !(DEFAULT_PIECE.test(p) && members.every(m => R.isPlain(m.marks[j]))) && !(members.every(m => !norm(m.marks[j])) && DEFAULT_PIECE.test(p)));
+    // 様式のままの「○曲目」の列で、全員○か全員空のもの（名前だけ書いたとき）は曲として数えない
+    const keep = pieces.map((p, j) => !(DEFAULT_PIECE.test(p) && (members.every(m => R.isPlain(m.marks[j])) || members.every(m => !norm(m.marks[j])))));
     pieces = pieces.filter((_, j) => keep[j]);
     members.forEach(m => { m.marks = m.marks.filter((_, j) => keep[j]); });
-    const unknown = [...new Set(members.map(m => m.part).filter(p => p && !known.includes(p)))];
-    return { members, pieces, unknown };
+    const unknown = [...new Set(members.map(m => m.part).filter(p => p && !known.includes(p) && !R.GROUPS[p]))];
+    return { members, pieces, unknown, bad };
   };
 
   // 名簿の表（CSV の行）。roster がなければ、parts [[パート, 人数, [名前…]]] から空の様式
@@ -113,22 +165,34 @@
   };
 
   /**
-   * 舞台の奏者に名前を入れる（名簿に出てくるパートだけ。首席の★の席から、前の列・下手から順に）
-   * 戻り値 { placed, short: { パート: 席が足りない人数 }, empty: { パート: 名前のない席の数 } }
+   * 舞台の奏者に名前を入れる（首席の★の席から、前の列・下手から順に）。席の数は変えない
+   * - すでにその人の名前が入っている席は、そのまま
+   * - 残りの人は、名前のない席 → 名簿にない名前の席、の順に入れる（名簿に出てこない名前は、席が余れば消さずに残す）
+   * - 「サックス」「クラ」のようにまとめて書いた人は、そのパートの空いている席の順に入れる
+   * 戻り値 { placed, notPlaced: [{ name, part, reason }], empty: { パート: 名前のない席の数 } }
    */
   R.assign = function (players, roster, j, c) {
-    const G = SS.geo, res = { placed: 0, short: {}, empty: {} };
-    const by = {};
-    R.onMembers(roster, j).forEach(m => { (by[m.part] = by[m.part] || []).push(m); });
-    const partsIn = new Set((roster.members || []).map(m => m.part));
-    partsIn.forEach(part => {
-      const ms = by[part] || [];
-      const ps = players.filter(p => (p.label || '') === part);
-      const order = (G && G.seatOrder ? G.seatOrder(ps, c) : ps).slice().sort((a, b) => (b.lead ? 1 : 0) - (a.lead ? 1 : 0));
-      order.forEach((p, i) => { p.name = ms[i] ? ms[i].name : ''; if (ms[i] && ms[i].name) res.placed++; });
-      if (ms.length > order.length) res.short[part] = ms.length - order.length;
-      if (order.length > ms.length) res.empty[part] = order.length - ms.length;
+    const G = SS.geo, res = { placed: 0, notPlaced: [], empty: {} };
+    const ms = R.onMembers(roster, j);
+    const rosterNames = new Set((roster.members || []).map(m => m.name).filter(Boolean));
+    const seatsOf = part => { const ps = players.filter(p => (p.label || '') === part); return (G && G.seatOrder ? G.seatOrder(ps, c) : ps).slice().sort((a, b) => (b.lead ? 1 : 0) - (a.lead ? 1 : 0)); };
+    const taken = new Set();
+    // 1) その人の名前がもう入っている席
+    const rest = [];
+    ms.forEach(m => {
+      const seat = R.partsOf(m.part).flatMap(seatsOf).find(p => !taken.has(p) && p.name === m.name);
+      if (seat) { taken.add(seat); res.placed++; } else rest.push(m);
     });
+    // 2) 名前のない席 → 3) 名簿にない名前の席
+    rest.forEach(m => {
+      const seats = R.partsOf(m.part).flatMap(seatsOf).filter(p => !taken.has(p));
+      const seat = seats.find(p => !p.name) || seats.find(p => !rosterNames.has(p.name) || !ms.some(x => x.name === p.name));
+      if (seat) { seat.name = m.name; taken.add(seat); res.placed++; return; }
+      const all = R.partsOf(m.part).flatMap(seatsOf);
+      res.notPlaced.push({ name: m.name, part: m.part, reason: all.length ? `${m.part}の席が足りません（舞台に${all.length}席）` : `舞台に${m.part}の席がありません` });
+    });
+    // 名前のない席の数（名簿に出てくるパートだけ）
+    new Set(ms.flatMap(m => R.partsOf(m.part))).forEach(part => { const n = seatsOf(part).filter(p => !p.name).length; if (n) res.empty[part] = n; });
     return res;
   };
 
