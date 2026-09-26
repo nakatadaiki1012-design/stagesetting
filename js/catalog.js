@@ -150,6 +150,16 @@ window.SS = window.SS || {};
   const labelText = (lb, p) => `<text x="${p.x}" y="${p.y}" dy="0.35em" text-anchor="middle" font-size="${lb.fs.toFixed(1)}" font-weight="700" fill="#1f2733" stroke="#fff" stroke-width="${(lb.fs * 0.28).toFixed(1)}" stroke-linejoin="round" paint-order="stroke">${esc(lb.text)}</text>`;
   SS.labelText = labelText;
   SS.labelWidth = labelWidth;
+  // 長いパート名：決まった大きさ（fs）の字で、幅 maxW に入る最初の数文字＋「…」（全部の名前は、選んだときの表示と編成表で見られる）
+  function shortLabel(label, maxW, fs) {
+    const chars = [...String(label)];
+    if (labelWidth(label) * fs <= maxW) return String(label);
+    while (chars.length > 1 && labelWidth(chars.join('') + '…') * fs > maxW) chars.pop();
+    return chars.join('') + '…';
+  }
+  SS.shortLabel = shortLabel;
+  // パート名の字の大きさと、出す文字（長いときは短くする。小さすぎる字にはしない）
+  const partLabel = (lab, maxW, base, minFs) => { const fs = Math.max(minFs, fitFont(lab, maxW, base)); return { fs, text: shortLabel(lab, maxW * 1.15, fs) }; };
   function fitFont(label, maxW, base) {
     const len = Math.max(1, [...String(label)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1.0 : 0.6), 0));
     return Math.max(7, Math.min(base, maxW / len));
@@ -188,10 +198,11 @@ window.SS = window.SS || {};
         const a = rot * Math.PI / 180;
         const at = off => ({ x: +(x + Math.sin(a) * off).toFixed(1), y: +(y - Math.cos(a) * off).toFixed(1) });
         const side = off => ({ x: +(x + Math.cos(a) * off).toFixed(1), y: +(y + Math.sin(a) * off).toFixed(1) });
-        const fs = fitFont(lab, 72, 26);
-        label = { text: lab, fs, w: labelWidth(lab) * fs + 8, h: fs * 1.15, cands: [at(38), side(-40), side(40), at(56)] };
+        const pl = partLabel(lab, 72, 26, 17), fs = pl.fs;
+        if (pl.text !== lab) body += `<title>${esc(lab)}</title>`;
+        label = { text: pl.text, fs, w: labelWidth(pl.text) * fs + 8, h: fs * 1.15, cands: [at(38), side(-40), side(40), at(56)] };
         if (!opts.deferLabels) text += labelText(label, label.cands[0]);
-      } else if (lab) text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fitFont(lab, 34, 15).toFixed(1)}" font-weight="700" fill="#111">${esc(lab)}</text>`;
+      } else if (lab) { const pl = partLabel(lab, 34, 15, 11); text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${pl.fs.toFixed(1)}" font-weight="700" fill="#111">${esc(pl.text)}</text>`; }
       if (opts.showNames !== false && it.name) {
         const a = rot * Math.PI / 180;
         const nx = x + Math.sin(a) * 33, ny = y - Math.cos(a) * 33;
@@ -209,10 +220,11 @@ window.SS = window.SS || {};
       const lab = it.label || '';
       // パート名：椅子の上（体のすぐ後ろ）に大きめの字で。となりと重なるときは itemsSVG が別の候補へずらす
       if (lab) {
-        const fs = fitFont(lab, 74, 28);
+        const pl = partLabel(lab, 74, 28, 18), fs = pl.fs;
+        if (pl.text !== lab) body += `<title>${esc(lab)}</title>`;
         const side = off => ({ x: +(x + Math.cos(a) * off).toFixed(1), y: +(y + Math.sin(a) * off).toFixed(1) });
         const cands = fig.standing ? [at(24), at(40), side(-40), side(40)] : [at(20), at(36), side(-40), side(40), at(52)];
-        label = { text: lab, fs, w: labelWidth(lab) * fs + 8, h: fs * 1.15, cands };
+        label = { text: pl.text, fs, w: labelWidth(pl.text) * fs + 8, h: fs * 1.15, cands };
         if (!opts.deferLabels) text += labelText(label, cands[0]);
       }
       if (opts.showNames !== false && it.name) {
@@ -232,8 +244,9 @@ window.SS = window.SS || {};
       body += `<circle r="${r}" fill="${fill}" stroke="#39414d" stroke-width="2"/>`;
       const lab = it.label || '';
       if (lab) {
-        const fs = fitFont(lab, r * 1.8, r * 0.62);
-        text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${textColorFor(fill)}">${esc(lab)}</text>`;
+        const pl = partLabel(lab, r * 1.8, r * 0.62, r * 0.42);
+        if (pl.text !== lab) body += `<title>${esc(lab)}</title>`;
+        text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${pl.fs.toFixed(1)}" font-weight="700" fill="${textColorFor(fill)}">${esc(pl.text)}</text>`;
       }
       if (opts.showNames !== false && it.name) {
         // 名前は譜面台と反対側（後ろ側）に表示する
