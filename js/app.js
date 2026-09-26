@@ -301,6 +301,7 @@
     if (force || key !== stageKey) { layerStage.innerHTML = SS.render.stageSVG(d, grid); stageKey = key; }
   }
   function render(ro) {
+    if (relFn && !(ro && ro.itemsDone)) flushRelease(); // 指を離したあとの残りを先に
     const d = doc();
     if (fastRaf) { cancelAnimationFrame(fastRaf); fastRaf = 0; }
     if (!(ro && ro.itemsDone)) dragLayerClear();
@@ -1675,7 +1676,9 @@
       const pos0 = new Map(players().map(p => [p.id, p.x + ',' + p.y]));
       drag.settled = settleAfterDrag(e);
       const others = drag.settled && drag.fast && players().some(p => pos0.get(p.id) !== p.x + ',' + p.y && !drag.fast.base.has(p.id));
-      if (!others && drag.fast && drag.fast.base.size && fastCommit(drag.fast)) render({ itemsDone: true }); else render();
+      // かるい描き直しで済んだときは、⚠ 確認・右の表・自動保存は次のひと区切りで（指を離した瞬間を軽く）
+      if (!others && drag.fast && drag.fast.base.size && fastCommit(drag.fast)) afterRelease(() => { render({ itemsDone: true }); renderOverlay(); renderProps(); renderCounts(); });
+      else render();
     }
     // 寸法の数字を押しただけのときは、書き直さない（書き直すと click が届かない）。入力の画面は click で開く
     if (drag.kind === 'dimedit') { if (Math.hypot(e.clientX - drag.start.sx, e.clientY - drag.start.sy) > 8) pendingDim = null; drag = null; return; }
@@ -1724,10 +1727,18 @@
       }
     }
     drag = null;
+    if (relFn) return; // 残りは afterRelease でまとめて
     renderOverlay();
     renderProps();
     renderCounts();
   }
+  // 指を離したあとの残りの描き直し（次のひと区切りで1回）。その前にほかの操作がはじまったら、先に済ませる
+  let relT = 0, relFn = null;
+  function afterRelease(fn) { clearTimeout(relT); relFn = fn; relT = setTimeout(flushRelease, 0); }
+  function flushRelease() { if (!relFn) return; clearTimeout(relT); const f = relFn; relFn = null; f(); }
+  document.addEventListener('pointerdown', flushRelease, true);
+  document.addEventListener('keydown', flushRelease, true);
+  window.addEventListener('pagehide', flushRelease);
   svg.addEventListener('pointerup', endPointer);
   let pendingDim = null;
   svg.addEventListener('click', () => {
