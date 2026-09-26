@@ -1795,13 +1795,22 @@ window.SS = window.SS || {};
     markLeads(r.items, r.c, st.type);
     // 指揮台（ビッグバンドは指揮者なし、合唱は自分で置く）
     if (st.type !== 'bigband' && st.type !== 'choir') r.items.push({ type: 'podium', x: r.c.x, y: r.c.y, rot: 0 });
-    // それでもはみ出したものはステージの内側に寄せる
+    // それでもはみ出したものはステージの内側に寄せる（ピアノと奏者は、いっしょに同じだけ動かす：奏者が鍵盤の前からずれないように）
+    const clampD = it => { const sz = SS.itemSize(it, {}); const m = it.type === 'player' ? 28 : Math.min(sz.w, sz.h) / 2 + 5; const q = R().clampToStage(stage, it, m); return { x: q.x - it.x, y: q.y - it.y }; };
+    const paired = new Set();
+    r.items.filter(it => it.type === 'piano' || it.type === 'pianoFull').forEach(pi => {
+      const pf = r.items.filter(o => o.type === 'player' && o.label === 'Pf' && !paired.has(o) && Math.hypot(o.x - pi.x, o.y - pi.y) < 200)[0];
+      if (!pf) return;
+      const a = clampD(pi), b = clampD(pf), big = (u, v) => (Math.abs(u) > Math.abs(v) ? u : v);
+      const dx = big(a.x, b.x), dy = big(a.y, b.y);
+      [pi, pf].forEach(o => { o.x += dx; o.y += dy; paired.add(o); });
+    });
     r.items.forEach(it => {
       it.auto = true;
       delete it.pair; delete it.straight;
       const sz = SS.itemSize(it, {});
       const m = it.type === 'player' ? 28 : Math.min(sz.w, sz.h) / 2 + 5;
-      if (it.type !== 'hina') Object.assign(it, R().clampToStage(stage, it, m));
+      if (it.type !== 'hina' && !paired.has(it)) Object.assign(it, R().clampToStage(stage, it, m));
       it.x = Math.round(it.x); it.y = Math.round(it.y);
     });
     r.fits = r.score <= 1;
