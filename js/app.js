@@ -458,7 +458,7 @@
     $('layerCompare').innerHTML = S.compare ? SS.render.compareSVG(SS.render.diffItems(S.compare.items, doc().items), k, renderOpts()) : '';
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile() }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile());
+    $('layerDims').innerHTML = (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile());
     positionCtxBar();
   }
 
@@ -588,6 +588,9 @@
       return;
     }
     if (pointers.size > 2) return;
+    // 舞台の大きさの数字（前の幅・奥の幅・奥行）を押すと、長さを入力できる
+    const dimEl = e.target.closest && e.target.closest('[data-dimedit]');
+    if (dimEl) { drag = { kind: 'dimedit', start: { sx: e.clientX, sy: e.clientY } }; pendingDim = dimEl.getAttribute('data-dimedit'); return; } // 入力の画面は click で開く（同じタップで閉じないように）
 
     const w = toWorld(e.clientX, e.clientY);
     const handle = e.target.closest && e.target.closest('[data-handle]');
@@ -796,6 +799,8 @@
     pointers.delete(e.pointerId);
     if (!drag) return;
     renderNow();
+    // 寸法の数字を押しただけのときは、書き直さない（書き直すと click が届かない）。入力の画面は click で開く
+    if (drag.kind === 'dimedit') { if (Math.hypot(e.clientX - drag.start.sx, e.clientY - drag.start.sy) > 8) pendingDim = null; drag = null; return; }
     if (drag.kind === 'pinch') {
       if (pointers.size < 2) drag = null;
       return;
@@ -844,6 +849,10 @@
     renderCounts();
   }
   svg.addEventListener('pointerup', endPointer);
+  let pendingDim = null;
+  svg.addEventListener('click', () => {
+    if (pendingDim) { const k = pendingDim; pendingDim = null; editStageDim(k); }
+  });
   svg.addEventListener('pointercancel', endPointer);
 
   svg.addEventListener('wheel', e => {
@@ -866,6 +875,41 @@
 
   // 舞台のつまみをドラッグ：10cm単位。自動配置ならその場で並べ直す
   let stageRAF = 0;
+  // 舞台の大きさを数字で決める（スマホで指で引っぱると、中の配置もいっしょに動いてブルブルするので）
+  function editStageDim(kind) {
+    const st = doc().stage, R = SS.render;
+    const cur = kind === 'w' ? st.w : kind === 'bw' ? R.backWidth(st) : st.d;
+    const name = kind === 'w' ? (R.isCurved(st) ? '最大の幅' : R.backWidth(st) < st.w - 1 ? '前の幅' : '幅') : kind === 'bw' ? '奥の幅' : (R.isCurved(st) ? '奥行（中央）' : '奥行');
+    const [lo, hi] = kind === 'd' ? [2, 50] : [kind === 'bw' ? 2 : 4, 60];
+    openModal(`<h2>📏 舞台の${name}</h2>
+      <label class="field">${name}（m）<input id="dimVal" type="number" inputmode="decimal" step="0.1" min="${lo}" max="${hi}" value="${(Math.round(cur) / 100).toFixed(2).replace(/0$/, '')}"></label>
+      <p class="hint small">${lo}〜${hi}m。かんたん編成で並べた配置は、この大きさで並べ直します。</p>
+      <div class="btn-row"><button class="btn primary" id="dimOk">この長さにする</button><button class="btn" id="dimNo">やめる</button></div>`);
+    setTimeout(() => { const el = $('dimVal'); if (el) { el.focus(); el.select(); } }, 50);
+    $('dimNo').onclick = closeModal;
+    const apply = () => {
+      const v = +$('dimVal').value;
+      if (!(v >= lo && v <= hi)) { toast(`${lo}〜${hi}m で入れてください`); return; }
+      const cm = Math.round(v * 100);
+      closeModal();
+      pushHistory();
+      const oldW = st.w, oldD = st.d;
+      if (kind === 'w') { st.w = cm; if (st.bw) st.bw = Math.min(st.bw, st.w); }
+      else if (kind === 'bw') { st.bw = Math.min(st.w, cm); }
+      else { if (st.shape === 'arc') { const sg = R.arcSag(st); st.sag = Math.min(sg, cm); } st.d = cm; }
+      doc().hall = '';
+      const hadAuto = doc().items.some(it => it.auto);
+      if (hadAuto) applyAuto({ noHistory: true, quiet: true });
+      else { const dx = (st.w - oldW) / 2, dy = st.d - oldD; doc().items.forEach(it => { it.x += dx; it.y += dy; }); }
+      updateHallNote();
+      renderAll();
+      fitView();
+      toast(`舞台：${name} ${v}m にしました（「戻す」で元に戻せます）`, true);
+    };
+    $('dimOk').onclick = apply;
+    $('dimVal').addEventListener('keydown', ev => { if (ev.key === 'Enter') apply(); });
+  }
+
   function dragStage(dr, w) {
     const st = doc().stage;
     const oldW = st.w, oldD = st.d;

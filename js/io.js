@@ -297,7 +297,8 @@ window.SS = window.SS || {};
   const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
   let placed = null; // この回に描いた寸法の文字の四角（重なりを避けるため）
   // pos を渡すと、文字をその位置に置き、線の真ん中から細い引き出し線を引く
-  function dimLine(x1, y1, x2, y2, label, color, k, side, at, pos) {
+  // edit：押すと長さを入力できる寸法（'w' 前の幅・'bw' 奥の幅・'d' 奥行）。画面だけ（書き出しでは使わない）
+  function dimLine(x1, y1, x2, y2, label, color, k, side, at, pos, edit) {
     const sw = 1.6 / k, tk = 9 / k, fs = (13 * DS) / k;
     const vert = Math.abs(x2 - x1) < Math.abs(y2 - y1);
     let s = `<g class="dim" pointer-events="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}"/>`;
@@ -313,8 +314,9 @@ window.SS = window.SS || {};
       s += `<line x1="${mx}" y1="${my}" x2="${ex}" y2="${ey}" stroke="${color}" stroke-width="${1 / k}" stroke-dasharray="${3 / k} ${2 / k}"/>`;
     }
     if (placed) placed.push({ x0: lx - tw / 2, x1: lx + tw / 2, y0: ly - th / 2, y1: ly + th / 2 });
-    s += `<rect x="${lx - tw / 2}" y="${ly - th / 2}" width="${tw}" height="${th}" rx="${4 / k}" fill="#fff" fill-opacity=".92" stroke="${color}" stroke-width="${1 / k}"/>`;
-    s += `<text x="${lx}" y="${ly}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${color}">${label}</text></g>`;
+    const ed = edit ? ` data-dimedit="${edit}" pointer-events="all" style="cursor:pointer"` : '';
+    s += `<rect x="${lx - tw / 2}" y="${ly - th / 2}" width="${tw}" height="${th}" rx="${4 / k}" fill="#fff" fill-opacity=".92" stroke="${color}" stroke-width="${(edit ? 1.6 : 1) / k}"${ed}/>`;
+    s += `<text x="${lx}" y="${ly}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="700" fill="${color}"${ed}>${label}${edit ? ' ✎' : ''}</text></g>`;
     return s;
   }
   // 部品の外形（回転が90°くらいなら幅と奥行を入れかえる）
@@ -341,11 +343,11 @@ window.SS = window.SS || {};
     let s = '';
     const b = R.backWidth(st);
     const shaped = b < st.w - 1;
-    s += dimLine(0, R.frontOuter(st) + 34, st.w, R.frontOuter(st) + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1);
+    s += dimLine(0, R.frontOuter(st) + 34, st.w, R.frontOuter(st) + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1, null, null, opt.editable ? 'w' : null);
     // スマホ（opt.basic）では「前の幅」と「奥行」だけにする
-    if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1);
+    if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1, null, null, opt.editable ? 'bw' : null);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
-    s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1);
+    s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1, null, opt.editable ? 'd' : null);
     const pod = doc.items.find(it => it.type === 'podium');
     if (sel && sel.type !== 'player' && sel.type !== 'text' && sel.type !== 'cable') {
       const bb = bboxOf(sel);
