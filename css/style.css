@@ -158,9 +158,10 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 }
 .drop-hint.show { display: flex; }
 .toast {
-  position: absolute; left: 50%; top: 14px; transform: translateX(-50%) translateY(-20px);
+  position: fixed; left: 50%; top: 60px; transform: translateX(-50%) translateY(-20px);
   background: rgba(31,39,51,.92); color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 13px;
   opacity: 0; pointer-events: none; transition: all .25s; max-width: 90%; text-align: center;
+  z-index: 300; /* お知らせは、いつもいちばん手前（開いている画面・一覧より上）。「元に戻す」も隠れない */
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -189,7 +190,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 }
 .place-hint button { font: inherit; border: none; background: rgba(255,255,255,.22); color: #fff; border-radius: 16px; padding: 4px 12px; cursor: pointer; }
 #canvas.placing { cursor: crosshair; }
-.toast.has-btn { pointer-events: auto; }
+.toast.has-btn.show { pointer-events: auto; } /* 消えているお知らせが、下の物の操作をじゃましないように */
 .toast-undo { font: inherit; font-size: 12.5px; margin-left: 10px; background: #fff; color: #1f2733; border: none; border-radius: 12px; padding: 3px 10px; cursor: pointer; font-weight: 700; }
 .pal-item span { display: flex; flex-direction: column; }
 .pal-item small { color: var(--muted); font-size: 10.5px; }
@@ -391,6 +392,12 @@ details.fold-more[open] > summary { margin-bottom: 4px; }
 /* 安全の確認（警告の一覧） */
 .warn-chip { position: absolute; left: 12px; top: 12px; z-index: 22; border: 0; border-radius: 18px; padding: 7px 14px; font: inherit; font-size: 13.5px; font-weight: 700; background: #d63031; color: #fff; box-shadow: 0 4px 14px rgba(214,48,49,.35); cursor: pointer; }
 .warn-chip[hidden], .warn-list[hidden] { display: none; }
+.warn-result { margin: 6px 4px; padding: 6px 8px; background: #eef5ff; border-radius: 8px; font-size: 13px; }
+.fit-card { background: #fff4e5; border: 1.5px solid #f0b060; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; line-height: 1.6; }
+.fit-card > b { display: block; color: #8a4b00; font-size: 14px; }
+.fit-card .small { display: block; color: #6b5a40; font-size: 12px; }
+.fit-sugs { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.fit-sugs .btn { display: block; width: 100%; text-align: left; white-space: normal; line-height: 1.4; padding: 6px 10px; } .fit-sugs .btn small { display: block; font-weight: 400; font-size: 11.5px; opacity: .85; }
 .warn-list { position: absolute; left: 12px; top: 52px; z-index: 23; width: min(420px, calc(100% - 24px)); max-height: min(60vh, calc(100% - 70px)); overflow: auto; background: #fff; border: 1.5px solid #f0b4b4; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 8px; font-size: 13px; }
 .warn-list h4 { margin: 2px 4px 6px; font-size: 14px; }
 .warn-list ol { margin: 0; padding: 0; list-style: none; }

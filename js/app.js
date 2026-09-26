@@ -673,16 +673,89 @@
   $('modeBlocks').onclick = () => setBlocks(!S.blocks);
 
   // ------------------------------------------------------------ 安全の確認（警告の一覧と、図の上の印）
+  // かんたん編成の設定と舞台の大きさ（「入りきりません」の案内が、今の配置のものかを見分ける）
+  function fitKey() { const d = doc(), st = d.stage; return JSON.stringify([d.ensemble, st.w, st.d, st.bw, st.shape, st.sag, d.items.filter(it => !it.auto && it.type === 'door').length]); }
+  const fitBad = () => !!(doc().ensemble && doc().items.some(it => it.auto) && ((S.fit && !S.fit.fits && S.fit.key === fitKey()) || S.fixFail === fitKey()));
+  // おすすめ（ひな壇を1段減らす・弦を1プルトずつ減らす・両方）を、先に試しに並べて、入るかどうかを見ておく
+  function fitSuggestions() {
+    const key = fitKey();
+    if (S.fitSug && S.fitSug.key === key) return S.fitSug.list;
+    const st = ens(), stage = doc().stage, list = [];
+    const clone = () => JSON.parse(JSON.stringify(st));
+    const tier = x => { x.hina = Object.assign({}, x.hina, { steps: Math.max(0, (x.hina.steps || 0) - 1) }); };
+    const desk = x => { ['Vn1', 'Vn2', 'Va', 'Vc'].forEach(k => { if (x.counts[k]) x.counts[k] = Math.max(2, x.counts[k] - 2); }); if (x.counts.Cb) x.counts.Cb = Math.max(1, x.counts.Cb - 1); };
+    const strings = ['orch', 'strings'].includes(st.type);
+    if (st.hina && st.hina.steps > 0) list.push({ label: 'ひな壇を1段減らす', make: tier });
+    if (strings) list.push({ label: '弦を1プルトずつ減らす', make: desk });
+    if (strings && st.hina && st.hina.steps > 0) list.push({ label: 'ひな壇を1段減らして、弦を1プルトずつ減らす', make: x => { tier(x); desk(x); } });
+    const ctx = doc().items.filter(it => !it.auto);
+    list.forEach(v => {
+      const x = clone(); v.make(x); v.state = x;
+      SS.auto.ctxItems = ctx;
+      const r = SS.auto.build(x, stage);
+      SS.auto.ctxItems = null;
+      const ws = SS.checks({ stage, items: r.items.concat(ctx) });
+      v.fits = !!r.fits && !r.offstage && !ws.length;
+      v.n = r.items.filter(it => it.type === 'player').length;
+    });
+    // どれも入らないとき：弦を何プルト減らせば入るかを探す（4プルトまで。ひな壇も1段減らした形も）
+    if (strings && !list.some(v => v.fits)) {
+      for (let k = 2; k <= 4; k++) {
+        const found = [false, true].map(t2 => {
+          if (t2 && !(st.hina && st.hina.steps > 0)) return null;
+          const x = clone(); for (let i = 0; i < k; i++) desk(x); if (t2) tier(x);
+          SS.auto.ctxItems = ctx;
+          const r = SS.auto.build(x, stage);
+          SS.auto.ctxItems = null;
+          const ok = !!r.fits && !r.offstage && !SS.checks({ stage, items: r.items.concat(ctx) }).length;
+          return ok ? { label: `弦を${k}プルトずつ減らす${t2 ? '（ひな壇も1段減らす）' : ''}`, state: x, fits: true, n: r.items.filter(it => it.type === 'player').length } : null;
+        }).filter(Boolean);
+        if (found.length) { list.push(found[0]); break; }
+      }
+    }
+    list.sort((a, b) => (b.fits ? 1 : 0) - (a.fits ? 1 : 0));
+    S.fitSug = { key, list };
+    return list;
+  }
+  function fitCardHTML() {
+    const st = doc().stage, n = players().length, sug = fitSuggestions();
+    const size = `${st.w / 100}×${st.d / 100}m`;
+    return `<div class="fit-card"><b>${S.fixFail === fitKey() ? '自動では直しきれませんでした。' : ''}この舞台（${size}）では、${n}人がゆったり入りません。</b>
+      <span class="small">無理に詰めると、人の重なりや、ひな壇の縁にかかる人が出ます。${S.fit && S.fit.offstage ? `入りきらない打楽器（${S.fit.offstage}台）は、下手のそでに置いています。` : ''}</span>
+      <div class="fit-sugs"><span class="small">おすすめ（押すと、その案で並べ直します）</span>
+      ${sug.map((v, i) => `<button class="btn${v.fits && i === 0 ? ' primary' : ''}" data-fitv="${i}">${SS.esc(v.label)}<small>${v.n}人 → ${v.fits ? 'ゆったり入ります' : 'まだ入りきりません'}</small></button>`).join('')}
+      <button class="btn" id="fitStage">舞台の大きさを確認する<small>ホールの図面の奥行・幅と合っているか</small></button></div></div>`;
+  }
   function renderWarnList() {
     const ws = S.warnings || [];
-    const chip = $('warnChip'), list = $('warnList');
-    chip.hidden = !ws.length;
-    chip.textContent = `⚠ 確認 ${ws.length}件`;
-    if (!ws.length) { list.hidden = true; return; }
+    const chip = $('warnChip'), list = $('warnList'), bad = fitBad();
+    chip.hidden = !ws.length && !bad;
+    chip.textContent = bad ? `⚠ 入りきりません${ws.length ? `（確認 ${ws.length}件）` : ''}` : `⚠ 確認 ${ws.length}件`;
+    if (!ws.length && !bad) { list.hidden = true; return; }
     if (list.hidden) return;
-    list.innerHTML = `<h4>確認してほしいところ（${ws.length}件）</h4><button class="btn primary wide" id="warnFix">🔧 自動で直す</button><div id="warnFixOut"></div><ol>${ws.map((w, i) => `<li data-warn="${i}"><span class="wn">${i + 1}</span><span>${SS.esc(w.msg)}</span></li>`).join('')}</ol><p class="small">押すと、その場所を図の上で示します（赤い点線の枠）。</p>`;
+    const auto = doc().ensemble && doc().items.some(it => it.auto);
+    const out = (S.warnMsg ? `<p class="warn-result">${SS.esc(S.warnMsg)}</p>` : '') + (S.warnReauto && auto ? `<button class="btn wide" id="warnReauto">↻ かんたん編成の設定で並べ直す（手で動かした所は元に戻ります）</button>` : '');
+    list.innerHTML = (bad ? fitCardHTML() : '') + (ws.length ? `<h4>確認してほしいところ（${ws.length}件）</h4><button class="btn primary wide" id="warnFix">🔧 自動で直す</button>` : '') + `<div id="warnFixOut">${out}</div>` + (!ws.length ? '' : `<ol>${ws.map((w, i) => `<li data-warn="${i}"><span class="wn">${i + 1}</span><span>${SS.esc(w.msg)}</span></li>`).join('')}</ol><p class="small">押すと、その場所を図の上で示します（赤い点線の枠）。</p>`);
+    if ($('warnReauto')) $('warnReauto').onclick = () => { applyAuto({ quiet: true }); const n = SS.checks(doc()).length; S.warnReauto = false; $('warnList').hidden = !n && !fitBad(); warnOut(n ? `並べ直しました（⚠ ${n}件）` : '並べ直しました。⚠ はありません'); };
     list.querySelectorAll('[data-warn]').forEach(li => { li.onclick = () => focusWarn(+li.getAttribute('data-warn')); });
-    $('warnFix').onclick = autoFix;
+    if ($('warnFix')) $('warnFix').onclick = autoFix;
+    list.querySelectorAll('[data-fitv]').forEach(b => { b.onclick = () => {
+      const v = fitSuggestions()[+b.getAttribute('data-fitv')];
+      pushHistory();
+      doc().ensemble = JSON.parse(JSON.stringify(v.state));
+      applyAuto({ noHistory: true, quiet: true });
+      renderSteppers();
+      const n = SS.checks(doc()).length;
+      $('warnList').hidden = false;
+      warnOut(`「${v.label}」で並べ直しました（${players().length}人${fitBad() ? '・まだ入りきりません' : n ? `・⚠ ${n}件` : '・⚠ なし'}）。「戻す」で元に戻せます。`);
+    }; });
+    if ($('fitStage')) $('fitStage').onclick = () => editStageDim('d');
+  }
+  // ⚠ 確認の一覧の中に結果を書く（お知らせが一覧の後ろに隠れないように）
+  function warnOut(msg) {
+    if (!$('warnList').hidden) { S.warnMsg = msg; renderWarnList(); return; }
+    S.warnMsg = null;
+    toast(msg, true);
   }
 
   /**
@@ -844,28 +917,29 @@
       if (!SS.checks(d).length) break;
     }
     const after = SS.checks(d);
+    // 弦楽器がひな壇の縁にかかったまま・人が重なったままのときは、「入りきりません」の案内を出す
+    const STR = /^(vn\s*1|vn\s*2|va|vc|cb)$/i;
+    const stuck = ws2 => ws2.some(w => (w.kind === 'tieredge' || w.kind === 'overlap') && players().some(p => STR.test(p.label || '') && w.spots.some(b => p.x >= b.x0 - 30 && p.x <= b.x1 + 30 && p.y >= b.y0 - 30 && p.y <= b.y1 + 30)));
     if (count() > score0) {
       const back = JSON.parse(keep);
       d.items = back;
+      if (stuck(SS.checks(d))) S.fixFail = fitKey();
+      S.warnReauto = false;
       renderAll();
-      return toast('自動では直せませんでした（かえって増えるので、元のままにしました）。赤い枠の所を手で直してください');
+      $('warnList').hidden = false;
+      return warnOut('自動では直せませんでした（かえって増えるので、元のままにしました）。赤い枠の所を手で直してください');
     }
-    renderAll();
-    $('warnList').hidden = !after.length;
-    renderWarnList();
+    if (after.length && stuck(after)) S.fixFail = fitKey();
     const auto = d.ensemble && d.items.some(it => it.auto);
-    const out = $('warnFixOut');
-    if (!after.length) { toast(`⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）`, true); return; }
-    if (out) {
-      out.innerHTML = `<p class="small" style="margin:6px 4px">${after.length < before ? `⚠ ${before}件 → ${after.length}件になりました。残りは` : 'ここは自動では直せませんでした。'}下の一覧を押して、赤い枠の所を手で直してください。</p>` +
-        (auto ? `<button class="btn wide" id="warnReauto">↻ かんたん編成の設定で並べ直す（手で動かした所は元に戻ります）</button>` : '');
-      if ($('warnReauto')) $('warnReauto').onclick = () => { applyAuto(); const n = SS.checks(doc()).length; $('warnList').hidden = !n; renderWarnList(); toast(n ? `並べ直しました（⚠ ${n}件）` : '並べ直しました。⚠ はありません', true); };
-    }
-    if (after.length < before) toast(`⚠ ${before}件 → ${after.length}件になりました（「戻す」で元に戻せます）`, true);
+    S.warnReauto = !!(after.length && auto);
+    renderAll();
+    $('warnList').hidden = !after.length && !fitBad();
+    if (!after.length && !fitBad()) { S.warnMsg = null; toast(`⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）`, true); return; }
+    warnOut(!after.length ? `⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）` : `${after.length < before ? `⚠ ${before}件 → ${after.length}件になりました（「戻す」で元に戻せます）。残りは` : 'ここは自動では直せませんでした。'}下の一覧を押して、赤い枠の所を手で直してください。`);
   }
   // 「選択中」タブの ✨ きれいに整える（下のボタンと同じ）
   $('selTidy').onclick = () => $('btnTidy').click();
-  $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; renderWarnList(); };
+  $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; if ($('warnList').hidden) { S.warnMsg = null; S.warnReauto = false; } renderWarnList(); };
   function warnMarksSVG(k) {
     const ws = S.warnings || [];
     let s = '';
@@ -1000,9 +1074,9 @@
       x0 = Math.min(opts().dims ? -52 : -10, -16 / km); x1 = st.w + 16 / km; // 角の丸いつまみが画面からはみ出さないように
       y0 = -34 / km; y1 = SS.render.frontOuter(st) + (opts().dims ? 34 : 0) + 78 / km;
     }
-    // 舞台の外（そで・奥）に置いた出入り口も入るように
+    // 舞台の外（そで・奥）に置いた出入り口・入りきらずにそでに置いた打楽器も入るように
     let dx1 = -Infinity;
-    doc().items.filter(it => it.type === 'door').forEach(it => { const b = SS.itemAABB(it, {}); x0 = Math.min(x0, b.x0 - 30); y0 = Math.min(y0, b.y0 - 30); y1 = Math.max(y1, b.y1 + 30); dx1 = Math.max(dx1, b.x1 + 30); });
+    doc().items.filter(it => it.type === 'door' || it.offstage).forEach(it => { const b = SS.itemAABB(it, {}); x0 = Math.min(x0, b.x0 - 30); y0 = Math.min(y0, b.y0 - 30); y1 = Math.max(y1, b.y1 + 30); dx1 = Math.max(dx1, b.x1 + 30); });
     if (dx1 > x1 - 40) x1 = Math.max(x1, x0 + ((dx1 - x0) * r.width) / (r.width - 70)); // 右は画面の右のボタン（約70px）に隠れないように
     if (extra) { x0 = Math.min(x0, extra.x0 - 30); y0 = Math.min(y0, extra.y0 - 30); x1 = Math.max(x1, extra.x1 + 30); y1 = Math.max(y1, extra.y1 + 30); }
     const k = Math.min(r.width / (x1 - x0), (r.height - 60) / (y1 - y0));
@@ -3873,7 +3947,7 @@
         <li><b>トレース</b>：「もっと…」→「トレース」で、いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
         <li><b>舞台図面として配る</b>：上の「📤 書き出す」で <b>画像（PNG・SVG）・PDF・印刷</b> をえらべます。<b>用紙（A4・A3、縦・横）と縮尺（1/50・1/100・1/200・用紙に合わせる）</b>をえらぶと、紙の上の長さが実際の寸法どおりになります（1/100 なら 1m が 1cm）。図には<b>上手・下手・客席・センター</b>、スケールバー、右下に<b>情報欄</b>（公演名・会場・日付・版・作った人・縮尺・メモ）が入ります。情報欄の中身は、この画面の「図面の情報欄」で入れます。舞台が用紙に入らないときは、入る縮尺を教えてくれます。印刷は倍率「100%」で。</li>
         <li><b>白黒◯×</b>：「設定」の奏者の表し方、または「📤 書き出す」の画像・PDF・印刷の画面の「表示」で <b>白黒◯×（椅子○・譜面台×）</b> をえらぶと、コピーやFAXでも読める白黒の線の図になります（前の「コンクール用」「図面用」は、これ1つにまとめました）。</li>
-        <li><b>⚠ 確認</b>：舞台奥の通路が狭い・<b>指揮台の前が1mより狭い</b>・<b>椅子・譜面台・楽器が重なっている</b>・<b>ひな壇の縁にかかっている</b>・高い段に上がり段がない・重い楽器を段に上げる通路（幅1.2m）がない・緞帳線や迫りの上に物がある、などを見つけると、舞台図の左上に <b>「⚠ 確認 ○件」</b> が出ます。押すと一覧が開き、1つ押すとその場所を<b>赤い点線の枠</b>で示します。一覧のいちばん上の<b>「🔧 自動で直す」</b>を押すと、指揮台の前・舞台奥の通路・ひな壇の縁・重なり・上がり段を、形をくずさずに直します。いくつかの直し方を試して ⚠ がいちばん少ないものを使い、残った所は、枠にかかっている物を楽器と奏者のまとまりごと少しずつ動かして探します（出入り口・緞帳線・迫りなども）。⚠ が増える手直しは残しません（「戻す」で元に戻せます）。直せなかった所は一覧に残ります。</li>
+        <li><b>⚠ 確認</b>：舞台奥の通路が狭い・<b>指揮台の前が1mより狭い</b>・<b>椅子・譜面台・楽器が重なっている</b>・<b>ひな壇の縁にかかっている</b>・高い段に上がり段がない・重い楽器を段に上げる通路（幅1.2m）がない・緞帳線や迫りの上に物がある、などを見つけると、舞台図の左上に <b>「⚠ 確認 ○件」</b> が出ます。押すと一覧が開き、1つ押すとその場所を<b>赤い点線の枠</b>で示します。一覧のいちばん上の<b>「🔧 自動で直す」</b>を押すと、指揮台の前・舞台奥の通路・ひな壇の縁・重なり・上がり段を、形をくずさずに直します。舞台に物理的に入りきらないときは、一覧のいちばん上に<b>「この舞台では◯人がゆったり入りません」</b>と出し、おすすめ（ひな壇を1段減らす・弦を1プルトずつ減らす・舞台の大きさを確認する）をボタンで選べます（押したあと何人になり、入るかどうかも書いてあります）。打楽器は、入りきらないときでも弦楽器のすぐ横の床には置きません。いくつかの直し方を試して ⚠ がいちばん少ないものを使い、残った所は、枠にかかっている物を楽器と奏者のまとまりごと少しずつ動かして探します（出入り口・緞帳線・迫りなども）。⚠ が増える手直しは残しません（「戻す」で元に戻せます）。直せなかった所は一覧に残ります。</li>
         <li><b>舞台奥の通路</b>：反射板とひな壇・楽器のあいだを空けます（はじめは60cm）。幅は「かんたん編成」の「安全・ホールの設備」の「舞台奥の通路」で変えられ、かんたん編成・ひな形はこの幅を空けて並べます。</li>
         <li><b>ひな壇の組み図</b>：ひな壇には平台1枚ずつの<b>番号</b>（1-3 ＝ 1段目の、前の列の下手から3枚目）と<b>足（箱馬）の位置</b>が出ます。番号は「編成表」の部材の表と同じです。「📤 書き出す」の画面の<b>「中身」で「ひな壇の組み図」</b>をえらぶと、組み図と部材の表だけを1枚にして出せます。</li>
         <li><b>上がり段</b>：「部品」の「上がり段」を、段の横か前にくっつけて置きます（矢印の向きに上がる）。高さ40cm以上の段に人や楽器がいるのに上がる道がないと「⚠ 確認」に出ます。</li>
@@ -3944,10 +4018,14 @@
     S.sel.clear();
     renderAll();
     renderEnsNow();
+    // 入りきらないとき：⚠ 確認の一覧のいちばん上に「入りきりません」とおすすめを出す（無理に詰めたことを隠さない）
+    S.fit = { fits: !!r.fits && !r.offstage, offstage: r.offstage || 0, key: fitKey() };
+    S.fixFail = null;
+    if (!S.fit.fits) { $('warnList').hidden = false; renderWarnList(); }
     if (opts2.fit) fitView();
     if (opts2.quiet) return;
-    if (!r.fits) toast('このステージには入りきりません。ひな壇の段数か人数を減らすか、打楽器を別の場所に置いてください（はみ出した人は端に寄せています）');
-    else if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
+    if (!S.fit.fits) return;
+    if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
     else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
     else if (r.curveFallback) toast('舞台からはみ出す・床の人とぶつかる段は、弧にせず、まっすぐのままにしました');
