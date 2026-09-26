@@ -3445,7 +3445,7 @@
     const lays = SS.auto.layoutsOf(st.type), lay2 = lays[st.layout] || lays[Object.keys(lays)[0]];
     $('layoutBoxNow').textContent = (['band', 'brass', 'choir'].includes(st.type) ? (lay2 ? lay2.name.split('（')[0] : '') : st.type === 'bigband' ? '標準（サックス前・Tb・Tp）' : st.antiphonal ? '対向配置' : '通常配置') + (SPACE[st.space] || '');
     document.querySelectorAll('#ensSpace [data-space]').forEach(b => b.classList.toggle('on', b.getAttribute('data-space') === (st.space || 'normal')));
-    $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.curve ? '・弧' : ''}` : 'なし';
+    $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.types && H.types.some(Boolean) ? '・段ごと' : ''}${H.curve ? '・弧' : ''}` : 'なし';
   }
   function renderSteppers() {
     const st = ens();
@@ -3510,9 +3510,21 @@
     $('hinaHeightsLbl').hidden = !H.steps;
     $('hinaHeights').innerHTML = Array.from({ length: H.steps || 0 }, (_, i) => {
       const v = (H.heights && H.heights[i]) || std[i];
-      return `<label><b>${i + 1}段</b><select data-hstep="${i}" title="${SS.esc(howOf(v))}">${SS.RISER_HEIGHTS.map(h => `<option value="${h.v}"${Math.abs(h.v - v) < 0.6 ? ' selected' : ''}>${h.name}</option>`).join('')}</select><small class="how">${SS.esc(howOf(v))}</small></label>`;
+      // 段ごとの平台の置き方（決めていなければ、上の「1段の平台の置き方」と同じ）
+      const ti = (H.types && H.types[i]) || '';
+      const typeSel = `<select data-tstep="${i}" title="この段の平台の置き方"><option value="">置き方：上と同じ${cur ? '（' + SS.esc(cur.name) + '）' : ''}</option>${SS.HINA_TYPES.map(t => `<option value="${t.id}"${ti === t.id ? ' selected' : ''}>置き方：${SS.esc(t.name)}（奥行${Math.round(SS.hinaTypeDepth(t))}cm）</option>`).join('')}</select>`;
+      return `<label><b>${i + 1}段</b><select data-hstep="${i}" title="${SS.esc(howOf(v))}">${SS.RISER_HEIGHTS.map(h => `<option value="${h.v}"${Math.abs(h.v - v) < 0.6 ? ' selected' : ''}>${h.name}</option>`).join('')}</select><small class="how">${SS.esc(howOf(v))}</small>${typeSel}</label>`;
     }).join('');
-    $('hinaHeights').querySelectorAll('select').forEach(sel => {
+    $('hinaHeights').querySelectorAll('[data-tstep]').forEach(sel => {
+      sel.onchange = () => {
+        const i = +sel.getAttribute('data-tstep'), hh = ens().hina;
+        hh.types = (hh.types || []).slice();
+        hh.types[i] = sel.value || null;
+        if (!hh.types.some(Boolean)) delete hh.types;
+        applyAuto();
+      };
+    });
+    $('hinaHeights').querySelectorAll('[data-hstep]').forEach(sel => {
       sel.onchange = () => {
         const i = +sel.getAttribute('data-hstep');
         const hh = ens().hina;

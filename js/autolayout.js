@@ -65,6 +65,11 @@ window.SS = window.SS || {};
     { id: '36h3', panel: '36', orient: 'h', deep: 3, name: '3×6 横・3列', hint: '3×6尺を横向きに奥へ3枚。打楽器の段' },
   ];
   SS.hinaTypeDepth = t => SS.panelSize(t).d * t.deep;
+  // 段ごとの平台の置き方（H.types[i] に型の id。決めていない段は、ひな壇全体の置き方）
+  SS.tierHina = function (H, i) {
+    const t = H && H.types && H.types[i] ? SS.HINA_TYPES.find(x => x.id === H.types[i]) : null;
+    return t ? Object.assign({}, H, { panel: t.panel, orient: t.orient, deep: t.deep }) : H;
+  };
   SS.hinaTypeOf = o => SS.HINA_TYPES.find(t => t.panel === (o.panel || '36') && t.orient === (o.orient || 'h') && t.deep === (o.deep || 1)) || null;
   // 型の小さな図（平台の並びと寸法）
   SS.hinaTypeSVG = function (t) {
@@ -890,7 +895,8 @@ window.SS = window.SS || {};
     if (hasTopPerc) {
       const i = rows.length;
       const hgt = (H.heights && H.heights[i]) || std[Math.min(i, 3)];
-      out.tiers.push({ type: 'hina', x: cx, y: yFront - percD / 2, w: W, h: percD, hgt, panel: H.panel || '36', orient: H.orient || 'h', step: i + 1, rot: 0 });
+      const Hp = SS.tierHina(H, i);
+      out.tiers.push({ type: 'hina', x: cx, y: yFront - percD / 2, w: W, h: percD, hgt, panel: Hp.panel || '36', orient: Hp.orient || 'h', step: i + 1, rot: 0 });
       A.arrangePerc(parts.top, stage, { yTop: yFront - percD + 12, x0: cx - W / 2 + 15, x1: cx + W / 2 - 15 });
       out.items.push(...parts.top);
       yFront -= percD;
@@ -1017,12 +1023,14 @@ window.SS = window.SS || {};
     const rowSpecs = tierRows.map((row0, ti) => {
       const row = hornSlots(row0, st.hornBox);
       const hasBox = row.some(l => typeof l === 'object');
-      const depth = hasBox ? Math.max(tierD, 182 + pn.d) : tierD;
+      // この段の平台の置き方（段ごとに変えられる）
+      const Ht = SS.tierHina(H, ti), pt = SS.panelSize(Ht), tD = pt.d * (Ht.deep || 1);
+      const depth = hasBox ? Math.max(tD, 182 + pt.d) : tD;
       const cap = W => Math.max(2, Math.floor((W - 70) / 70) + 1);
       return {
-        depth, want: row.length * sp + 60,
+        depth, want: row.length * sp + 60, panel: Ht.panel, orient: Ht.orient,
         // 横幅に入りきらない列は、段の上で2列にする
-        need: W => (row.length > cap(W) && !hasBox ? Math.max(depth, Math.ceil(205 / pn.d) * pn.d) : depth),
+        need: W => (row.length > cap(W) && !hasBox ? Math.max(depth, Math.ceil(205 / pt.d) * pt.d) : depth),
         hgt: (H.heights && H.heights[ti]) || std[Math.min(ti, 3)],
         place: (cx, yFront, d, W) => {
           const labels = row.map(l => (typeof l === 'object' ? 'Hr#box' : l));
@@ -1249,14 +1257,19 @@ window.SS = window.SS || {};
     const maxLen = Math.max(...rows.map(r => r.length));
     const W = Math.ceil(((maxLen - 1) * sp + sp + 80) / pn.w) * pn.w;
     const std = [21.2, 42.4, 63.6, 84.8];
+    let feNext = yFront - 60;
     rows.forEach((r, ri) => {
       let yr = yFront;
       if (ri > 0) {
-        const fe = yFront - 60 - (ri - 1) * D, yc = fe - D / 2;
+        // この段の平台の置き方（段ごとに変えられる）
+        const Ht = SS.tierHina(H, ri - 1), ptc = SS.panelSize(Ht);
+        const D = Math.max(ptc.d * (Ht.deep || 1), 76), pn = ptc;
+        const fe = feNext, yc = fe - D / 2;
+        feNext -= D;
         const hgt = (H.heights && H.heights[ri - 1]) || std[Math.min(ri - 1, 3)];
         // いちばん後ろの高い段（40cm以上）は、平台を1列足して、立つ人のうしろに段を残す（後ろに落ちないように。奥行が足りればだけ）
         const extra = ri === rowsN - 1 && hgt >= 40 && fe - D - pn.d >= AISLE + 5 ? pn.d : 0;
-        tiers.push({ type: 'hina', x: c.x, y: fe - (D + extra) / 2, w: W, h: D + extra, hgt, panel: H.panel || '36', orient: H.orient || 'h', step: ri, rot: 0 });
+        tiers.push({ type: 'hina', x: c.x, y: fe - (D + extra) / 2, w: W, h: D + extra, hgt, panel: Ht.panel || '36', orient: Ht.orient || 'h', step: ri, rot: 0 });
         yr = yc;
       }
       const off = ri % 2 ? sp / 2 : 0;
@@ -1397,8 +1410,9 @@ window.SS = window.SS || {};
       [...rep('Picc', n.Picc), ...rep('Fl', n.Fl), ...rep('Ob', n.Ob), ...rep('E.H.', n['E.H.'])],
       [...rep('Cl', n.Cl), ...rep('B.Cl', n['B.Cl']), ...rep('Fg', n.Fg), ...rep('C.Fg', n['C.Fg'])],
     ].filter(r => r.length);
+    const tierHD = i => { const Ht = SS.tierHina(H, i); return { d: Math.max(121, SS.panelSize(Ht).d * (Ht.deep || 1)), panel: Ht.panel, orient: Ht.orient }; };
     const specs = rowsW.map((row, i) => ({
-      depth: tierD, want: row.length * sp + 60,
+      depth: tierHD(i).d, panel: tierHD(i).panel, orient: tierHD(i).orient, want: row.length * sp + 60,
       hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[i]) : 0,
       place: (cx, yFront, d, W) => lineRow(row, yFront - Math.max(rowFront(row), d / 2 - 8), cx, sp, W - 70),
     }));
@@ -1436,8 +1450,8 @@ window.SS = window.SS || {};
       const wh = hrSlots * sp, wb = brass.length * sp, mid = timpOnTop ? TW : 90;
       specs.push({
         // ティンパニの段は 3×6尺を横2列（奥行182cm）：ティンパニ4台と奏者が入る
-        depth: timpOnTop ? Math.max(tierD, 182) : box ? Math.max(tierD, ROW_FRONT + 80 + 45) : tierD,
-        panel: timpOnTop && tierD < 182 ? '36' : undefined, orient: timpOnTop && tierD < 182 ? 'h' : undefined,
+        depth: timpOnTop ? Math.max(tierHD(i).d, 182) : box ? Math.max(tierHD(i).d, ROW_FRONT + 80 + 45) : tierHD(i).d,
+        panel: timpOnTop && tierHD(i).d < 182 ? '36' : tierHD(i).panel, orient: timpOnTop && tierHD(i).d < 182 ? 'h' : tierHD(i).orient,
         want: wh + mid + wb + 60,
         hgt: H.steps > i ? ((H.heights && H.heights[i]) || std[Math.min(i, 3)]) : 0,
         place: (cx, yFront, d, W) => {
@@ -1642,8 +1656,12 @@ window.SS = window.SS || {};
     const tunes = st.space === 'wide' ? TUNES.map(t => scaleTune(t, 1.1)).concat(TUNES) : st.space === 'tight' ? TUNES.map(t => scaleTune(t, 0.92)) : TUNES;
     for (const tune of tunes) {
       let s3 = s2;
-      if (tune.slim && s2.hina && (SS.panelSize(s2.hina).d * (s2.hina.deep || 1)) > 121) {
-        s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, { panel: '46', orient: 'h', deep: 1 }) });
+      // 奥行が足りないときの詰めた並べ方：奥行121cmより深い段（段ごとの置き方もふくむ）は 4×6尺1枚に
+      const deepT = id => { const t = SS.HINA_TYPES.find(x => x.id === id); return t && SS.hinaTypeDepth(t) > 121; };
+      if (tune.slim && s2.hina && ((SS.panelSize(s2.hina).d * (s2.hina.deep || 1)) > 121 || (s2.hina.types || []).some(deepT))) {
+        const types = (s2.hina.types || []).map(id => (deepT(id) ? '46h1' : id));
+        const deepAll = (SS.panelSize(s2.hina).d * (s2.hina.deep || 1)) > 121;
+        s3 = Object.assign({}, s2, { hina: Object.assign({}, s2.hina, deepAll ? { panel: '46', orient: 'h', deep: 1 } : {}, types.length ? { types } : {}) });
       }
       const r = f(s3, stage, tune);
       keepFromEdge(r.items, stage);
