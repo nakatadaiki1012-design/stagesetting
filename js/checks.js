@@ -117,6 +117,23 @@ window.SS = window.SS || {};
     return out;
   };
 
+  // ひな壇の縁にかかっているかを、いすの実際の形で見る
+  // いす：幅45cm、座る所の真ん中から後ろ（背もたれ）へ28cm・前へ20cm（図の人の形と同じ）。立つ人は足もと（半径14cm）
+  // 段の上に「はっきり入っている角」と「はっきり外に出ている角」があれば、縁にかかっている（±3cmはゆるす）
+  const STANDING_KIND = ['voice', 'perc', 'bass', 'mc'];
+  SS.chairCorners = function (p) {
+    const kind = SS.instrumentKind ? SS.instrumentKind(p.label) : '';
+    const a = ((p.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const pts = STANDING_KIND.includes(kind) && !/^tim/i.test(p.label || '')
+      ? [[-14, 0], [14, 0], [0, -14], [0, 14], [-10, -10], [10, -10], [-10, 10], [10, 10]]
+      : [[-22, -27], [22, -27], [22, 19], [-22, 19], [0, -27], [0, 19], [-22, -4], [22, -4]];
+    return pts.map(([x, y]) => ({ x: p.x + x * c - y * s, y: p.y + x * s + y * c }));
+  };
+  SS.tierStraddle = function (p, tiers) {
+    const cs = SS.chairCorners(p);
+    return tiers.find(t => cs.some(q => SS.hinaContains(t, q.x, q.y, -3)) && cs.some(q => !SS.hinaContains(t, q.x, q.y, 3))) || null;
+  };
+
   // 花道（部品）の上か（向きを変えた花道も）
   SS.onRunway = function (items, p) {
     return (items || []).some(r => {
@@ -319,8 +336,7 @@ window.SS = window.SS || {};
     const edge = [];
     const tierOf = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
     shapes.forEach(sh => {
-      const r = sh.kind === 'chair' ? 18 : 8;
-      if (tiers.some(t => SS.hinaContains(t, sh.x, sh.y, r) && !SS.hinaContains(t, sh.x, sh.y, -r))) edge.push(sh);
+      if (sh.kind === 'chair' ? SS.tierStraddle(sh.it, tiers) : tiers.some(t => SS.hinaContains(t, sh.x, sh.y, 8) && !SS.hinaContains(t, sh.x, sh.y, -8))) edge.push(sh);
       // 奏者は段の上なのに、譜面台が段から落ちている（段の前の床に立っている）
       else if (sh.kind === 'stand') { const t = tierOf(sh.it.x, sh.it.y); if (t && tierOf(sh.x, sh.y) !== t && !(sh.it2 && tierOf(sh.it2.x, sh.it2.y) !== t)) edge.push(sh); }
     });

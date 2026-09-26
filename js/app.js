@@ -1247,7 +1247,7 @@
     const top = (x, y, m) => tiers.filter(t => SS.hinaContains(t, x, y, m)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
     const straddle = (x, y, r) => tiers.some(t => SS.hinaContains(t, x, y, r) && !SS.hinaContains(t, x, y, -r));
     const ok = p => {
-      if (straddle(p.x, p.y, 18)) return false;
+      if (SS.tierStraddle(p, tiers)) return false;
       if (NO_STAND.includes(SS.instrumentKind(p.label))) return true;
       const sp = SS.standPoint(p, fig), t = top(p.x, p.y, 0);
       if (straddle(sp.x, sp.y, 8)) return false;
@@ -1257,18 +1257,21 @@
     const done = new Set();
     list.filter(it => it.type === 'player' && !onExtension(it)).forEach(p => {
       if (done.has(p) || ok(p)) return;
-      const t = top(p.x, p.y, 18);
+      const t = SS.tierStraddle(p, tiers) || top(p.x, p.y, 30);
       if (!t) return;
       const cands = [];
       const onto = () => {
         const q = { x: p.x, y: p.y, rot: p.rot, label: p.label };
         G.clampOnTier(q, t, 26);
+        // いすの背もたれまで段に乗るよう、向きの前へ少しずつ（背もたれが後ろの縁からはみ出すとき）
+        const a0 = ((p.rot || 0) * Math.PI) / 180;
+        for (let k = 0; k < 8 && SS.tierStraddle(q, [t]); k++) { q.x -= Math.sin(a0) * 3; q.y += Math.cos(a0) * 3; }
         // 譜面台が段から落ちるときは、向きの反対（後ろ）へ少しずつ
         const a = ((p.rot || 0) * Math.PI) / 180;
         for (let k = 0; k < 16 && !ok(q) && SS.hinaContains(t, q.x, q.y, -26); k++) { q.x += Math.sin(a) * 6; q.y -= Math.cos(a) * 6; }
         return q;
       };
-      const off = () => { const q = { x: p.x, y: p.y, rot: p.rot, label: p.label }; G.pushOffTier(q, t, 30); return q; };
+      const off = () => { const q = { x: p.x, y: p.y, rot: p.rot, label: p.label }; G.pushOffTier(q, t, 30); for (let k = 0; k < 6 && SS.tierStraddle(q, [t]); k++) G.pushOffTier(q, t, 30 + (k + 1) * 6); return q; };
       if (SS.hinaContains(t, p.x, p.y, 0) && !(floorFirst && floorFirst(p))) cands.push(onto(), off()); else cands.push(off(), onto());
       const best = cands.find(q => ok(q) && SS.render.insideStage(doc().stage, q, 20));
       if (!best) return;
