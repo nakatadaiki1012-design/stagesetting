@@ -31,6 +31,17 @@ const CASES = [
   ['打楽器4人', { Perc: 4 }],
   ['ペット5人、ボーン4人', { Tp: 5, Tb: 4 }],
   ['弦バス2人', { 'St.B': 2 }],
+  ['サックス5人、パーカス4人', { 'A.Sx': 3, 'T.Sx': 1, 'B.Sx': 1, Perc: 4 }],
+  ['金管だけ', { Fl: 0, Cl1: 0, 'A.Sx': 0, Perc: 0, Hr: 4, Tp: 4, Tb: 3, Tuba: 2 }],
+  ['木管だけ', { Hr: 0, Tp: 0, Tuba: 0, Perc: 0, Fl: 4, Cl1: 3, 'A.Sx': 2 }],
+];
+// 人数以外（打楽器の場所・ひな形）
+const OTHER = [
+  ['打楽器は上手に', r => r.changes.percPlace === 'right'],
+  ['打楽器は下手、低音は上手', r => r.changes.percPlace === 'left'],
+  ['パーカスは上手', r => r.changes.percPlace === 'right'],
+  ['Aの部 高校55人', r => /コンクールA/.test(r.said.join()) && Object.values(r.changes.counts || {}).reduce((a, v) => a + v, 0) === 55],
+  ['A部門55人', r => /コンクールA/.test(r.said.join()) && Object.values(r.changes.counts || {}).reduce((a, v) => a + v, 0) === 55],
 ];
 
 (async () => {
@@ -48,6 +59,12 @@ const CASES = [
     const bad = Object.keys(want).filter(k => r.c[k] !== want[k]).map(k => `${k}=${r.c[k]}（${want[k]}のはず）`);
     // クラ・サックスの合計
     if (bad.length) { ng++; console.log(`NG 「${text}」 ${bad.join(' ')} ／ ${r.said}`); } else console.log(`OK 「${text}」 ${r.said}`);
+  }
+  for (const [text, ok] of OTHER) {
+    const r = await p.evaluate(text => SS.assistant.parseLocal(text, SS.auto.defaultState('band')), text);
+    const good = ok(r);
+    if (!good) ng++;
+    console.log(`${good ? 'OK' : 'NG'} 「${text}」 ${r.said.join('／')}`);
   }
   if (errs.length) { ng++; console.log('NG 画面のエラー：' + errs.join(' / ')); }
   console.log(ng ? `${ng}件 NG` : 'すべて OK');

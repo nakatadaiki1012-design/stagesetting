@@ -425,6 +425,7 @@ body.modal-open .part-bar { visibility: hidden; }
 .part-list .pl-btns { display: flex; gap: 4px; margin-left: auto; }
 .part-list .pl-btns .btn { padding: 4px 9px; font-size: 12.5px; }
 .rs-io { flex-wrap: wrap; }
+.ai-ex-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .ai-ex-row .btn { font-size: 12px; padding: 3px 8px; }
 .rs-result { background: #eaf7ef; border: 1px solid #9bd3ae; border-radius: 10px; padding: 8px 10px; margin: 6px 0 10px; font-size: 13.5px; line-height: 1.6; }
 .rs-result.err { background: #fff1f0; border-color: #f0a3a0; color: #9b2c2c; }
 .rs-result .small, .rs-bad .small { display: block; color: var(--muted); font-size: 12px; }

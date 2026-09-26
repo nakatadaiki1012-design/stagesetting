@@ -2169,7 +2169,7 @@
         pushHistory();
         const place = (doc().ensemble && doc().ensemble.percPlace) || 'back';
         SS.auto.arrangePercIn(doc().items, doc().stage, place, { side: !['orch', 'strings'].includes((doc().ensemble || {}).type) });
-        toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側（扇形の外側、前から）に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
+        toast({ back: '打楽器を舞台奥に並べました', top: '打楽器をひな壇の最上段に並べました', left: '打楽器を下手側（扇形の外側、前から）に並べました', right: '打楽器を上手側（扇形の外側、前から）に並べました', both: 'ティンパニ・鍵盤を最上段、太鼓類を下手に並べました' }[place], true);
         break;
       }
       case 'spreadOut': case 'spreadIn': {
@@ -4035,7 +4035,7 @@
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;
   const HINA_MAIN = ['36h2', '36v1', '46h1']; // よく使う平台の置き方
-  const PERC_SHORT = { back: '舞台の奥', top: 'ひな壇の最上段', left: '下手', both: '最上段＋下手', timpTop: 'ティンパニ最上段＋下手' };
+  const PERC_SHORT = { back: '舞台の奥', top: 'ひな壇の最上段', left: '下手', right: '上手', both: '最上段＋下手', timpTop: 'ティンパニ最上段＋下手' };
   // 人数0のパートは、ふだんは隠して「＋パートを追加」で出す
   let showZeroParts = false;
   function renderPartMore() {
@@ -4379,7 +4379,11 @@
   function aiLocal(text, note) {
     const r = SS.assistant.parseLocal(text, ens());
     if (r.unknown) {
-      aiShow((note ? note + '\n' : '') + '読み取れませんでした。「フルート6人」「打楽器は下手」「ひな壇2段」「ホルンをボックス型に」「ミューザで」のように書いてみてください。', true);
+      aiShow((note ? note + '\n' : '') + '読み取れませんでした。下の例を押すと、そのまま入力されます（書きかえてから「並べ直す」）。', true);
+      // 例の文をボタンに（押すと入力欄に入る）
+      const EX = ['フルート6人、クラ10人', 'サックス5人、パーカス4人', '打楽器は上手に', 'ひな壇2段、ホルンをボックス型に', 'A部門55人', '金管だけ', 'ミューザで'];
+      $('aiOut').insertAdjacentHTML('beforeend', `<span class="ai-ex-row">${EX.map(x => `<button type="button" class="btn" data-aiex="${SS.esc(x)}">${SS.esc(x)}</button>`).join('')}</span>`);
+      $('aiOut').querySelectorAll('[data-aiex]').forEach(b => { b.onclick = () => { $('aiText').value = b.getAttribute('data-aiex'); $('aiText').focus(); }; });
       return;
     }
     confirmDrop(r.changes, () => {

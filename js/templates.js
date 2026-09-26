@@ -43,7 +43,7 @@ window.SS = window.SS || {};
     },
     {
       id: 'band-contest',
-      words: ['コンクールA', 'A編成', 'A部門', '大編成'], // AI・読み取りで、このひな形を指すことば
+      words: ['コンクールA', 'A編成', 'A部門', 'Aの部', 'A部', '大編成'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽コンクールA（55人）',
       desc: '大きめの舞台（20×12.5m）。ひな壇2段＋打楽器段。打楽器はいちばん奥の打楽器段に1か所にまとめる',
       make: auto('band', SHELL_L, { layout: 'std', percPlace: 'back' },
@@ -69,7 +69,7 @@ window.SS = window.SS || {};
     },
     {
       id: 'band-small',
-      words: ['小編成', 'コンクールB', 'B編成', 'B部門'], // AI・読み取りで、このひな形を指すことば
+      words: ['小編成', 'コンクールB', 'B編成', 'B部門', 'Bの部', 'B部'], // AI・読み取りで、このひな形を指すことば
       name: '吹奏楽（小編成・約25人）',
       desc: 'コンクール小編成向け。ひな壇2段、打楽器は下手',
       make: auto('band', SHELL_S, { layout: 'std', percPlace: 'left', hina: { steps: 2 } },

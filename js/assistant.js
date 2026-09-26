@@ -212,6 +212,18 @@ window.SS = window.SS || {};
     }
     if (/(?:ハープ|hp)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Hp == null) counts.Hp = 1;
     if (/(?:ピアノ|pf)(?:も|を)?(?:入れ|使|あり)/i.test(t) && counts.Pf == null) counts.Pf = 1;
+    // 「金管だけ」「木管だけ」：その楽器だけの編成（ほかのパートは0人。残すパートは今の人数、0人ならはじめの人数）
+    const only = /(金管|木管)(?:楽器)?\s*(?:だけ|のみ|アンサンブル)/.exec(t);
+    if (only) {
+      const BR = ['Hr', 'Tp', 'Tb', 'B.Tb', 'Euph', 'Tuba'];
+      const WW = ['Picc', 'Fl', 'Ob', 'E.H.', 'Fg', 'C.Fg', 'Es.Cl', 'Cl1', 'Cl2', 'Cl3', 'Cl', 'B.Cl', 'A.Sx', 'T.Sx', 'B.Sx'];
+      const keep = only[1] === '金管' ? BR : WW, def = SS.auto.defaultState(type).counts;
+      const cur = (ch.counts) || (type === ((st && st.type) || 'band') && st ? st.counts : def);
+      const o = {};
+      allParts.forEach(p => { o[p] = !keep.includes(p) ? 0 : counts[p] != null ? counts[p] : cur[p] || def[p] || 0; });
+      ch.counts = Object.assign(ch.counts || {}, o);
+      said.push(`${only[1]}だけの編成（${Object.values(o).reduce((a, v) => a + v, 0)}人）`);
+    }
     if (counts.Hp === 1 && !countSaid.some(x => /^Hp /.test(x))) countSaid.push('Hp 1人');
     if (counts.Pf === 1 && !countSaid.some(x => /^Pf /.test(x))) countSaid.push('Pf 1人');
     if (Object.keys(counts).length) { ch.counts = Object.assign(ch.counts || {}, counts); said.push('人数：' + countSaid.join('、')); }
@@ -223,12 +235,15 @@ window.SS = window.SS || {};
     else if (/標準|ふつう|一般/.test(t) && /並び|配置/.test(t)) lay = 'std';
     if (lay) { ch.layout = lay; said.push('並び方：' + SS.auto.BAND_LAYOUTS[lay].name); }
     // 打楽器の場所
-    if (/打楽器|パーカッション|ティンパニ/.test(t)) {
-      if (/両方|最上段.*下手|下手.*最上段/.test(t)) ch.percPlace = 'both';
-      else if (/下手|左/.test(t)) ch.percPlace = 'left';
-      else if (/最上段|上の段|ひな壇の上/.test(t)) ch.percPlace = 'top';
-      else if (/奥|後ろ|うしろ/.test(t)) ch.percPlace = 'back';
-      if (ch.percPlace) said.push('打楽器の場所：' + { both: '最上段＋下手', left: '下手', top: 'ひな壇の最上段', back: '舞台の奥' }[ch.percPlace]);
+    if (/打楽器|パーカッション|パーカス|ティンパニ/.test(t)) {
+      // 打楽器のことばのすぐ後ろ（「打楽器は上手に」）の場所を先に見る（「低音は上手」などと取りちがえない）
+      const near = (/(?:打楽器|パーカッション|パーカス|ティンパニ)[^。、,]{0,8}?(上手|下手|右|左|最上段|上の段|ひな壇の上|奥|後ろ|うしろ|両方)/.exec(t) || [])[1] || '';
+      if (/両方/.test(near) || /最上段.*下手|下手.*最上段/.test(t)) ch.percPlace = 'both';
+      else if (/上手|右/.test(near)) ch.percPlace = 'right';
+      else if (/下手|左/.test(near)) ch.percPlace = 'left';
+      else if (/最上段|上の段|ひな壇の上/.test(near)) ch.percPlace = 'top';
+      else if (/奥|後ろ|うしろ/.test(near)) ch.percPlace = 'back';
+      if (ch.percPlace) said.push('打楽器の場所：' + { both: '最上段＋下手', left: '下手', right: '上手', top: 'ひな壇の最上段', back: '舞台の奥' }[ch.percPlace]);
       if (/楽器(?:は|を)?(?:置かない|なし|いらない)/.test(t)) { ch.percInst = false; said.push('打楽器の楽器は置かない'); }
     }
     // ホルン・低音・対向
@@ -278,7 +293,7 @@ window.SS = window.SS || {};
       '  "type": "band" | "orch" | "strings",',
       '  "counts": { "パート名": 人数, ... },   // パート名は下の一覧のもの。0〜40',
       '  "layout": "std" | "clLeft" | "classic" | "german",   // 吹奏楽の並び方',
-      '  "percPlace": "back" | "top" | "left" | "both",       // 打楽器：舞台奥／ひな壇最上段／下手／最上段＋下手',
+      '  "percPlace": "back" | "top" | "left" | "right" | "both",       // 打楽器：舞台奥／ひな壇最上段／下手／上手／最上段＋下手',
       '  "percInst": true | false,  // 打楽器の楽器も置くか',
       '  "hornBox": true | false,   // ホルンをボックス型に',
       '  "lowOuter": true | false,  // 吹奏楽の低音(B.Cl・Euph・Tuba・弦バス)を上手の外側の弧に',
@@ -323,7 +338,7 @@ window.SS = window.SS || {};
     }
     void type;
     if (SS.auto.BAND_LAYOUTS[r.layout]) out.layout = r.layout;
-    if (['back', 'top', 'left', 'both'].includes(r.percPlace)) out.percPlace = r.percPlace;
+    if (['back', 'top', 'left', 'right', 'both', 'timpTop'].includes(r.percPlace)) out.percPlace = r.percPlace;
     ['percInst', 'hornBox', 'lowOuter', 'antiphonal'].forEach(k => { if (typeof r[k] === 'boolean') out[k] = r[k]; });
     if (r.hina && typeof r.hina === 'object') {
       const h = {};

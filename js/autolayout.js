@@ -1310,7 +1310,8 @@ window.SS = window.SS || {};
     const n = st.counts;
     const c = { x: stage.w / 2, y: podiumY(stage) };
     const anti = st.antiphonal;
-    const order = anti ? ['Vn1', 'Vc', 'Va', 'Vn2'] : ['Vn1', 'Vn2', 'Va', 'Vc'];
+    let order = anti ? ['Vn1', 'Vc', 'Va', 'Vn2'] : ['Vn1', 'Vn2', 'Va', 'Vc'];
+    if (st._mirror) order = order.slice().reverse(); // 打楽器を上手にするとき（あとで左右反転する）
     const gapDeg = 6; // パートの境目のすき間（Vn1・Vn2・Va・Vc のかたまりが見て分かるように）
     // 扇を左右に広げるとき（tune.span が1より大きい）は、180°より少し広く使う
     const fan = 180 * Math.max(1, tune.span);
@@ -1384,10 +1385,12 @@ window.SS = window.SS || {};
     void t; void avail; void sumN;
     if (n.Cb) {
       // コントラバスはチェロの後ろ（上手寄り）に、90cm 間隔で
-      const vr = secRange.Vc || [60, 88];
+      // 打楽器を上手にするとき（左右を入れかえて並べる）は、角度も入れかえて、ふだんと同じ計算にする
+      const flip = st._mirror ? -1 : 1;
+      const vr = secRange.Vc ? (flip < 0 ? [-secRange.Vc[1], -secRange.Vc[0]] : secRange.Vc) : [60, 88];
       const midD = Math.min((vr[0] + vr[1]) / 2 - 4, 66);
       // その方向（チェロの角度の範囲の少し外まで）で、いちばん後ろにいる弦の人より後ろに
-      const inDir = it => { const a = (Math.atan2(it.x - c.x, c.y - it.y) * 180) / Math.PI; return a >= vr[0] - 12 && a <= vr[1] + 12; };
+      const inDir = it => { const a = (flip * Math.atan2(it.x - c.x, c.y - it.y) * 180) / Math.PI; return a >= vr[0] - 12 && a <= vr[1] + 12; };
       const behind = Math.max(secR.Vc || 0, ...items.filter(inDir).map(it => Math.hypot(it.x - c.x, it.y - c.y)));
       // コントラバスの譜面台は約78cm前にあるので、前の列（チェロ）から25cm多めに離す
       let left = n.Cb, R = (behind || maxR) + gapR + 25, cbDesk = 0;
@@ -1400,7 +1403,7 @@ window.SS = window.SS || {};
         // チェロが下手側（対向配置）のときは、下手の外側へ寄せる（真ん中の奥に来ると、ひな壇が奥へ下がる）
         const mid = midD >= 0 ? Math.min(rad(midD), edge - half) : -edge + half;
         deskRow(m, 95, 84).forEach(([off, dn]) => {
-          const p = G().fromPolar(R, mid + off / R, c);
+          const p = G().fromPolar(R, flip * (mid + off / R), c);
           items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `Cb-${cbDesk + dn}` });
         });
         cbDesk += Math.ceil(m / 2);
@@ -1417,7 +1420,7 @@ window.SS = window.SS || {};
     const rowsW = [
       [...rep('Picc', n.Picc), ...rep('Fl', n.Fl), ...rep('Ob', n.Ob), ...rep('E.H.', n['E.H.'])],
       [...rep('Cl', n.Cl), ...rep('B.Cl', n['B.Cl']), ...rep('Fg', n.Fg), ...rep('C.Fg', n['C.Fg'])],
-    ].filter(r => r.length);
+    ].filter(r => r.length).map(r => (st._mirror ? r.slice().reverse() : r));
     const tierHD = i => { const Ht = SS.tierHina(H, i); return { d: Math.max(121, SS.panelSize(Ht).d * (Ht.deep || 1)), panel: Ht.panel, orient: Ht.orient }; };
     const specs = rowsW.map((row, i) => ({
       depth: tierHD(i).d, panel: tierHD(i).panel, orient: tierHD(i).orient, want: row.length * sp + 60,
@@ -1487,6 +1490,8 @@ window.SS = window.SS || {};
             if (topPerc.length) A.arrangePerc(topPerc, stage, { yTop: yFront - d + 12 + 45, x0: zc - TW / 2, x1: zc + TW / 2 - tw });
             out.push(...timpSet, ...topPerc);
           }
+          // 打楽器を上手にするとき（あとで全体を左右反転する）は、段の上も左右を入れかえておく
+          if (st._mirror) out.forEach(o => { o.x = 2 * cx - o.x; if (o.type !== 'player') o.rot = -(o.rot || 0); });
           return out;
         },
       });
@@ -1510,6 +1515,11 @@ window.SS = window.SS || {};
   // 今の配置図の打楽器を、指定の場所に並べ直す（「打楽器を整列」ボタン）
   // opt.side：吹奏楽の「下手」（扇形の外側に、前から指揮者の方を向けて）
   A.arrangePercIn = function (items, stage, place, opt) {
+    if (place === 'right') {
+      // 上手：左右を入れかえて「下手」に並べ、元に戻す
+      items.forEach(it => mirrorItem(it, stage.w));
+      try { return A.arrangePercIn(items, mirrorStage(stage), 'left', opt); } finally { items.forEach(it => mirrorItem(it, stage.w)); }
+    }
     AISLE = backLimit(stage);
     const list = items.filter(it => PERC_TYPES.has(it.type) || (it.type === 'player' && SS.partGroup(it.label).id === 'perc'));
     if (!list.length) return false;
@@ -1649,7 +1659,35 @@ window.SS = window.SS || {};
     return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || w.kind === 'rail' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
   }
 
+  // 左右を入れかえる（「打楽器は上手」のときに使う）
+  const mirrorItem = (it, W) => { it.x = W - it.x; it.rot = -(it.rot || 0); if (Math.abs(it.rot) < 1e-9) it.rot = 0; return it; };
+  function mirrorStage(stage) {
+    const s2 = JSON.parse(JSON.stringify(stage)), f = s2.fixtures;
+    if (f) {
+      (f.doors || []).forEach(d => { d.side = d.side === 'L' ? 'R' : d.side === 'R' ? 'L' : d.side; });
+      if (f.hanamichi && f.hanamichi.x != null) f.hanamichi.x = s2.w - f.hanamichi.x;
+      (f.lifts || []).forEach(l => { if (l.x != null) l.x = s2.w - l.x - (+l.w || 0); });
+    }
+    return s2;
+  }
   A.build = function (st, stage) {
+    // 打楽器を上手に：左右を入れかえた並び方で「下手」として並べ、最後に全体を左右反転する（パートの並びはそのまま、打楽器だけ上手に）
+    if (st.percPlace === 'right' && !st._mirror) {
+      const W = stage.w, ctx0 = A.ctxItems;
+      A.ctxItems = ctx0 ? ctx0.map(o => mirrorItem(Object.assign({}, o), W)) : ctx0;
+      const s2 = Object.assign({}, st, { percPlace: 'left', _mirror: true });
+      if (st.type === 'band' || st.type === 'brass') {
+        s2.layout = 'custom';
+        s2.customBase = st.layout === 'custom' ? st.customBase : st.layout;
+        s2.customRows = A.layOf(st).rows.map(r => r.slice().reverse());
+      }
+      let r;
+      try { r = A.build(s2, mirrorStage(stage)); } finally { A.ctxItems = ctx0; }
+      r.items.forEach(it => mirrorItem(it, W));
+      if (r.c) r.c = { x: W - r.c.x, y: r.c.y };
+      if (r.percMoved === 'left') r.percMoved = 'right';
+      return r;
+    }
     const r = buildInner(st, stage);
     if (r && r.items) { A.groupStations(r.items); keepPercFromStrings(r, stage); }
     return r;
@@ -1684,6 +1722,7 @@ window.SS = window.SS || {};
       const ok = (dx, dy) => g.every(o => {
         const q = { x: o.x + dx, y: o.y + dy }, b = boxAt(o, dx, dy);
         if (!inside(stage, q, o.type === 'player' ? 28 : 20) || b.y0 < AISLE) return false;
+        if (b.y1 > Math.min(R().frontAt(stage, b.x0), R().frontAt(stage, b.x1)) - EDGE_CLEAR - 2) return false; // 舞台の前の縁から1m以上
         if (tierBoxes.some(tb => hit(b, tb, 5))) return false;
         if (nearStr(q)) return false;
         return !otherBoxes.some(ob => hit(b, ob, 4));
