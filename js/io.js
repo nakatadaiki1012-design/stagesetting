@@ -439,7 +439,86 @@ window.SS = window.SS || {};
       texts += d.text;
       if (d.label) labels.push(Object.assign({ it }, d.label));
     });
+    if (opts.nameView) return R.partAreasSVG(doc, conductor) + bodies + `<g pointer-events="none">${texts}${R.partAreaLabels(doc, conductor)}</g>`;
     return bodies + `<g pointer-events="none">${texts}${R.placeLabels(labels, doc)}</g>`;
+  };
+  // 「名前を大きく」の表示：同じパートで、となりどうし（1.5m以内）の人を1つのパートの場所にまとめる
+  R.partAreas = function (doc, conductor) {
+    const by = new Map();
+    doc.items.filter(it => it.type === 'player' && it.label).forEach(p => { if (!by.has(p.label)) by.set(p.label, []); by.get(p.label).push(p); });
+    const out = [];
+    by.forEach((ps, label) => {
+      const left = new Set(ps);
+      while (left.size) {
+        const first = left.values().next().value, g = [first];
+        left.delete(first);
+        for (let i = 0; i < g.length; i++) left.forEach(q => { if (Math.hypot(q.x - g[i].x, q.y - g[i].y) <= 150) { g.push(q); left.delete(q); } });
+        out.push({ label, members: g });
+      }
+    });
+    const c = conductor || { x: doc.stage.w / 2, y: doc.stage.d };
+    out.forEach(a => {
+      a.cx = a.members.reduce((s, p) => s + p.x, 0) / a.members.length;
+      a.cy = a.members.reduce((s, p) => s + p.y, 0) / a.members.length;
+      // パート名の場所：指揮者から見て、かたまりのいちばん外側（後ろ）のさらに外
+      const dx = a.cx - c.x, dy = a.cy - c.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+      const far = Math.max(...a.members.map(p => (p.x - c.x) * ux + (p.y - c.y) * uy));
+      const along = (a.cx - c.x) * ux + (a.cy - c.y) * uy;
+      a.lx = a.cx + ux * (far - along + 62);
+      a.ly = a.cy + uy * (far - along + 62);
+    });
+    return out;
+  };
+  const hullPts = pts => {
+    const P = pts.map(p => [p.x, p.y]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (P.length < 3) return P;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    P.forEach(p => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    P.slice().reverse().forEach(p => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); });
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  };
+  // パートの場所（うすい色の囲み）
+  R.partAreasSVG = function (doc, conductor) {
+    return R.partAreas(doc, conductor).map(a => {
+      const h = hullPts(a.members), col = SS.partGroup ? SS.partGroup(a.label).color : '#6b7686';
+      const d = h.length === 1 ? `M${h[0][0]} ${h[0][1]}h0.1` : 'M' + h.map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L') + 'Z';
+      return `<path d="${d}" fill="${col}" fill-opacity=".16" stroke="${col}" stroke-opacity=".32" stroke-width="84" stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>`;
+    }).join('');
+  };
+  // パート名（パートの場所ごとに1つ。重なるときは外へずらす）
+  R.partAreaLabels = function (doc, conductor) {
+    // 人の席（と大きく出した名前）の上にはかぶせない
+    const seats = doc.items.filter(it => it.type === 'player').map(p => ({ x0: p.x - 40, x1: p.x + 40, y0: p.y - 28, y1: p.y + 28 }));
+    const boxes = [];
+    const c = conductor || { x: doc.stage.w / 2, y: doc.stage.d };
+    const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    return R.partAreas(doc, conductor).map(a => {
+      const lab = a.label, fs = 34, w = SS.labelWidth(lab + ' 00') * fs * 0.9 + 24, h = fs * 1.25;
+      const dx = a.lx - c.x, dy = a.ly - c.y, L = Math.hypot(dx, dy) || 1;
+      // 候補：かたまりの外側（後ろ）→ 横の端（左右）→ 内側（前）の順に、かたまりの近くから。どこも空いていなければ、外側の少し遠く
+      const ux = dx / L, uy = dy / L, tx = -uy, ty = ux;
+      const al = p => (p.x - c.x) * ux + (p.y - c.y) * uy, tg = p => (p.x - a.cx) * tx + (p.y - a.cy) * ty;
+      const near = Math.min(...a.members.map(al)), mid = al({ x: a.cx, y: a.cy });
+      const tMin = Math.min(...a.members.map(tg)), tMax = Math.max(...a.members.map(tg));
+      const cands = [];
+      [0, 20, 40, 60].forEach(d => cands.push({ x: a.lx + ux * d, y: a.ly + uy * d }));
+      [0, 25, 50].forEach(d => { cands.push({ x: a.cx + tx * (tMax + w / 2 + 30 + d), y: a.cy + ty * (tMax + w / 2 + 30 + d) }); cands.push({ x: a.cx + tx * (tMin - w / 2 - 30 - d), y: a.cy + ty * (tMin - w / 2 - 30 - d) }); });
+      [0, 20, 40].forEach(d => { const k = near - mid - 62 - d; cands.push({ x: a.cx + ux * k, y: a.cy + uy * k }); });
+      [80, 110, 140, 180].forEach(d => cands.push({ x: a.lx + ux * d, y: a.ly + uy * d }));
+      // 空いている最初の候補。なければ、ほかのパート名との重なり（重い）と席との重なりがいちばん少ない候補
+      let pick = null, best = Infinity;
+      for (const q of cands) {
+        const bx = { x0: q.x - w / 2, x1: q.x + w / 2, y0: q.y - h / 2, y1: q.y + h / 2 };
+        const bad = boxes.filter(b => hit(bx, b)).length * 10 + seats.filter(b => hit(bx, b)).length;
+        if (bad < best) { best = bad; pick = { x: q.x, y: q.y, bx }; }
+        if (!bad) break;
+      }
+      boxes.push(pick.bx);
+      const x = pick.x, y = pick.y;
+      const col = SS.partGroup ? SS.partGroup(lab).color : '#6b7686';
+      return `<rect x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${(h / 2).toFixed(1)}" fill="#fff" stroke="${col}" stroke-width="4"/><text x="${x.toFixed(1)}" y="${y.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#1f2733">${SS.esc(lab)}<tspan font-size="${fs * 0.62}" font-weight="600" fill="#6b7686"> ${a.members.length}</tspan></text>`;
+    }).join('');
   };
 
   // パート名を、となりのパート名・人の頭・譜面台と重ならない候補の場所に置く

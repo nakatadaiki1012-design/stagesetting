@@ -117,7 +117,7 @@
   function renderOpts() {
     const o = opts();
     // 白黒◯×：奏者は椅子○・譜面台×で描き、色は使わない
-    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false };
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false, nameView: !!o.nameView && !o.mono };
   }
 
   const layerDimsEl = () => document.getElementById('layerDims');
@@ -414,6 +414,7 @@
     if (res.notPlaced.length) h += `<div class="rs-np"><b>舞台図に入れられなかった名前（${res.notPlaced.length}人）</b><ul>${res.notPlaced.map(x => `<li>${SS.esc(x.name)}（${SS.esc(x.part)}）：${SS.esc(x.reason)}</li>`).join('')}</ul>${auto ? '<span class="small">席を増やすときは、下の「人数も名簿に合わせる」をオンにして「舞台図に名前を入れる」を押します。</span>' : '<span class="small">席を足してから、もう一度「舞台図に名前を入れる」を押してください。</span>'}</div>`;
     if (em.length) h += `<div class="small">名前のない席：${em.join('・')}</div>`;
     if (M.unknown && M.unknown.length) h += `<div class="small">編成にないパート：${M.unknown.map(SS.esc).join('・')}</div>`;
+    if (!opts().nameView && res.placed) h += `<button type="button" class="btn" id="rsNameView" style="margin-top:6px">🔠 名前を大きく表示する（パート名はパートごとにまとめて）</button>`;
     return h + '</div>';
   }
   // 読めなかった行（その場でパートと名前を直して名簿に入れる）
@@ -502,6 +503,7 @@
     $('rsFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => importRoster(String(rd.result), 'ファイル'); rd.readAsText(f, 'utf-8'); };
     $('rsPasteBtn').onclick = () => { $('rsPasteBox').hidden = !$('rsPasteBox').hidden; if (!$('rsPasteBox').hidden) $('rsPasteText').focus(); };
     $('rsPasteGo').onclick = () => importRoster($('rsPasteText').value, '貼り付けた文');
+    if ($('rsNameView')) $('rsNameView').onclick = () => { opts().nameView = true; opts().mono = false; opts().figure = false; opts().showNames = true; renderSettings(); renderAll(); closeModal(); toast('名前を大きく表示しました（「設定」の「奏者の表し方」で元に戻せます）'); };
     // 読めなかった行を直して名簿に入れる
     document.querySelectorAll('[data-bfix]').forEach(b => b.onclick = () => {
       const i = +b.getAttribute('data-bfix'), part = document.querySelector(`[data-bp="${i}"]`).value, name = document.querySelector(`[data-bn="${i}"]`).value.trim();
@@ -2583,7 +2585,7 @@
     $('optStandLegs').checked = o.standLegs !== false;
     $('optNumbers').checked = o.showNumbers;
     $('optGrid').value = o.grid ? String(o.gridSize || 50) : '0';
-    $('optStyle').value = o.mono || o.contest ? 'mono' : o.figure ? 'figure' : 'circle';
+    $('optStyle').value = o.nameView && !o.mono ? 'names' : o.mono || o.contest ? 'mono' : o.figure ? 'figure' : 'circle';
     $('optSnap').checked = o.snap;
     $('optColor').checked = o.colorBy;
     $('optSeatSize').value = o.seatR;
@@ -2652,7 +2654,11 @@
   bindSetting('optStandLegs', 'change', el => { opts().standLegs = el.checked; });
   bindSetting('optNumbers', 'change', el => { opts().showNumbers = el.checked; });
   bindSetting('optGrid', 'change', el => { const v = +el.value; opts().grid = v > 0; if (v) opts().gridSize = v; });
-  bindSetting('optStyle', 'change', el => { opts().mono = el.value === 'mono'; opts().contest = false; opts().figure = el.value === 'figure'; renderSettings(); });
+  bindSetting('optStyle', 'change', el => {
+    opts().mono = el.value === 'mono'; opts().contest = false; opts().figure = el.value === 'figure'; opts().nameView = el.value === 'names';
+    if (opts().nameView) opts().showNames = true;
+    renderSettings();
+  });
   bindSetting('optSnap', 'change', el => { opts().snap = el.checked; });
   bindSetting('optColor', 'change', el => { opts().colorBy = el.checked; });
   bindSetting('optSeatSize', 'input', el => { opts().seatR = +el.value; });
@@ -3676,7 +3682,7 @@
       </div>
       <div class="row2">
         <label class="field">縮尺<select id="ppScale">${opt(0, '用紙に合わせる', p.scale)}${opt(50, '1/50', p.scale)}${opt(100, '1/100', p.scale)}${opt(200, '1/200', p.scale)}</select></label>
-        <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '白黒◯×（椅子○・譜面台×）', p.style)}</select></label>
+        <label class="field">表示<select id="ppStyle">${opt('screen', '画面と同じ', p.style)}${opt('mono', '白黒◯×（椅子○・譜面台×）', p.style)}${opt('names', '名前を大きく（パート名はまとめて）', p.style)}</select></label>
       </div>
       ${S.compare ? `<label class="check"><input type="checkbox" id="ppCompare" checked> 「${SS.esc(S.compare.name)}」との違いの印（○＋ □− →）を入れる</label>` : ''}
       ${S.trans ? `<label class="check"><input type="checkbox" id="ppTrans" checked> 転換の印（× はける・○ 出す・→ 動かす）を入れる</label>` : ''}
@@ -3695,7 +3701,8 @@
   // 書き出し用の表示の設定（「白黒◯×」をえらんだときは白黒の線だけ）
   function sheetOpts(p) {
     const o = renderOpts();
-    if (p.style === 'mono') Object.assign(o, { mono: true, contest: true, figure: false, colorBy: false });
+    if (p.style === 'mono') Object.assign(o, { mono: true, contest: true, figure: false, colorBy: false, nameView: false });
+    if (p.style === 'names') Object.assign(o, { mono: false, contest: false, figure: false, nameView: true, showNames: true });
     return o;
   }
   function buildSheet(extra) {
@@ -3961,6 +3968,7 @@
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>↶ 戻す</b>：200回まで戻せます。▲▼を続けて押したとき（1秒以内）は1回分にまとめます。</li>
         <li><b>スマホで選ぶ</b>：奏者が小さく見えても、指のまわり（約44px）まで当たりです。近くに何人もいるときは指にいちばん近い人を選び、青い丸とパート名の札で示します。</li>
+        <li><b>🔠 名前を大きく</b>：「設定」の「奏者の表し方」で <b>「名前を大きく（パート名はパートごとにまとめて）」</b>をえらぶと、席には個人名を大きく出し、パート名はパートの場所（うすい色の囲み）ごとに1つだけ、かたまりのそばに出します。名簿を取り込んだあとの画面のボタンからも切りかえられます。「📤 書き出す」の「表示」でもえらべます。</li>
         <li><b>長いパート名</b>：奏者のそばに、最初の数文字＋「…」で出します。全部の名前は「選択中」と「編成表」で見られます。</li>
         <li><b>📏 寸法の表示</b>：舞台の<b>前の幅・奥の幅・奥行</b>、指揮台〜舞台際が常に出ます。平台などを選んだり動かしたりすると、<b>指揮台まで・舞台際まで・奥まで・下手／上手まで</b>の距離がその場で出ます（「設定」で消せます）。</li>
         <li><b>低音を上手の外側に・ホルンのボックス</b>：左のタブの「もっと…」→「一括作成」の「配置のくふう」のチェックで、B.Cl・ユーフォ・チューバ・弦バスを<b>上手側の外側の弧</b>にまとめて置きます（弦バスがいちばん外）。ホルンを2人ずつ前後に並べるボックス型もここで選べます。</li>

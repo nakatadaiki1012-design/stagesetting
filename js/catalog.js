@@ -235,6 +235,23 @@ window.SS = window.SS || {};
         text += `<text x="${x + 22}" y="${y - 18}" text-anchor="middle" font-size="13" fill="#b03030" font-weight="700" stroke="#fff" stroke-width="3" paint-order="stroke">${opts.number}</text>`;
       }
       text += leadText(it, x, y, opts, 16, -26);
+    } else if (it.type === 'player' && opts.nameView) {
+      // 名前を大きく：席（パートの色のうすい○）の上に個人名を大きく。パート名は1人ずつには出さず、パートごとにまとめて（itemsSVG）
+      const r = opts.seatR || SS.PLAYER_R;
+      if (opts.showStands !== false && !opts.sharedStand) body += `<rect x="${-r * 1.05}" y="${r + 9}" width="${r * 2.1}" height="7" rx="2" fill="#5b6472"/>`;
+      body += `<circle r="${r}" fill="${fill}" fill-opacity=".35" stroke="#39414d" stroke-width="1.5"/>`;
+      if (it.name) {
+        // となりの席との間隔（約80cm）いっぱいまで大きく
+        const fs = Math.max(20, fitFont(it.name, 80, 36));
+        const nm = shortLabel(it.name, 96, fs);
+        if (nm !== it.name) body += `<title>${esc(it.name)}</title>`;
+        text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="800" fill="#111" stroke="#fff" stroke-width="${(fs * 0.24).toFixed(1)}" stroke-linejoin="round" paint-order="stroke">${esc(nm)}</text>`;
+      } else if (it.label) {
+        // 名前のない席は、パート名を小さくうすく（どの席か分かるように）
+        const pl = partLabel(it.label, r * 1.7, r * 0.5, r * 0.36);
+        text += `<text x="${x}" y="${y}" dy="0.35em" text-anchor="middle" font-size="${pl.fs.toFixed(1)}" fill="#6b7686">${esc(pl.text)}</text>`;
+      }
+      text += leadText(it, x, y, opts, r * 0.55, -r * 0.95);
     } else if (it.type === 'player') {
       const r = opts.seatR || SS.PLAYER_R;
       if (opts.showStands !== false && !opts.sharedStand) {
