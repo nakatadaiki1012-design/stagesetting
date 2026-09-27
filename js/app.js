@@ -117,7 +117,7 @@
   function renderOpts() {
     const o = opts();
     // 白黒◯×：奏者は椅子○・譜面台×で描き、色は使わない
-    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false, nameView: !!o.nameView && !o.mono };
+    return { showNames: o.showNames, showStands: o.showStands, standLegs: o.standLegs, showNumbers: o.showNumbers, colorBy: o.colorBy && !o.mono, seatR: o.seatR, grid: o.grid, gridSize: o.gridSize, figure: o.figure && !o.mono, contest: o.contest || o.mono, mono: !!o.mono, dims: o.dims, hinaDetail: o.hinaDetail !== false, showLeads: o.showLeads !== false, nameView: !!o.nameView && !o.mono, pfDot: doc().contest.pfDot !== false };
   }
 
   // ------------------------------------------------------------ ドラッグ中のかるい描き直し
@@ -2842,7 +2842,7 @@
     if (eq.length) {
       h += '<h3 style="margin-top:16px">用意する物（目安）</h3><table class="count-table eq-table">';
       eq.forEach(e => { h += `<tr><td>${SS.esc(e.name)}${e.note ? `<span class="small eq-note">${SS.esc(e.note)}</span>` : ''}</td><td>${e.n}</td></tr>`; });
-      h += '</table><p class="hint small">図に置いた人・物から数えた目安です。ホールの備品の数と、予備も確かめてください。画像・PDF にも「用意する物の表を入れる」で入れられます。</p>';
+      h += '</table><p class="hint small">図に置いた人・物から数えた目安です。ホールの備品の数と、予備も確かめてください。画像・PDF・印刷にも「必要ないす・譜面台などの数を入れる」で入れられます。</p>';
     }
     const sm = SS.hinaSummary(doc().items);
     if (sm.rows.length) {
@@ -4046,7 +4046,7 @@
   $('btnOut').onclick = () => {
     openModal(`
       <h2>書き出す</h2>
-      <button class="btn primary out-contest" id="outContest"><span>🎺</span><b>コンクール提出用（白黒◯×）</b><small>A4・紙いっぱい。団体名とメモを入れて、PDFかPNGをすぐ作れます</small></button>
+      <button class="btn primary out-contest" id="outContest"><span>🎺</span><b>コンクール提出用（白黒◯×）</b><small>A4・紙いっぱい。演奏会名・団体名・ひな壇ごとのいす・譜面台の数などを入れて、PDFかPNGをすぐ作れます</small></button>
       <p class="hint" style="margin:14px 0 6px">ほかの形で出す</p>
       <div class="out-choices">
         <button class="btn out-choice" id="outImage"><span>🖼</span><b>画像</b><small>PNG・SVG。LINEやメールで送る・資料に貼る</small></button>
@@ -4060,14 +4060,45 @@
     $('outPrint').onclick = openPrint;
   };
 
+  // コンクール提出用の「図の下に入れる項目」のうち、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数える行）。
+  // 自動の行は key を持ち、配置が変わると中身を数え直す（中身を書きかえた行・消した行はそのまま）。reset：自動の行を作り直す
+  function contestRowsSync(c, reset) {
+    const tc = SS.render.tierCounts(doc());
+    const txt = r => `いす${r.chairs}・譜面台${r.stands}`;
+    const auto = tc.map(r => ({ key: 'auto:' + r.key, label: r.label, text: txt(r), on: true, auto: true }));
+    if (tc.length > 1) {
+      const sum = tc.reduce((a, r) => ({ chairs: a.chairs + r.chairs, stands: a.stands + r.stands }), { chairs: 0, stands: 0 });
+      auto.push({ key: 'auto:合計', label: '合計', text: txt(sum), on: true, auto: true });
+    }
+    if (reset) { c.dropped = []; c.rows = (c.rows || []).filter(r => !r.key); }
+    if (!c.rows) c.rows = [];
+    const dropped = new Set(c.dropped || []), have = new Map(c.rows.filter(r => r.key).map(r => [r.key, r]));
+    auto.forEach(a => {
+      const r = have.get(a.key);
+      if (r) { if (r.auto !== false) r.text = a.text; } else if (!dropped.has(a.key)) {
+        // 新しく出てきた段は、自動の行の最後（合計の前）に入れる
+        const last = c.rows.map(q => q.key || '').lastIndexOf('auto:合計');
+        if (a.key !== 'auto:合計' && last >= 0) c.rows.splice(last, 0, a); else c.rows.push(a);
+      }
+    });
+    // なくなった段の自動の行（書きかえていないもの）は消す
+    const keys = new Set(auto.map(a => a.key));
+    c.rows = c.rows.filter(r => !r.key || keys.has(r.key) || r.auto === false);
+  }
   // 🎺 コンクール提出用：白黒◯×・A4・紙いっぱい。入れるのは団体名とメモだけ（どちらも空でも作れる）
   function openContest() {
     const c = doc().contest;
     const sel = (v, t) => `<option value="${v}"${c.orient === v ? ' selected' : ''}>${t}</option>`;
     openModal(`
       <h2>🎺 コンクール提出用（白黒◯×）</h2>
+      <label class="field">演奏会名・大会名<input id="ctEvent" value="${SS.esc(c.event || '')}" placeholder="例: 第○回 ○○県吹奏楽コンクール"></label>
       <label class="field">団体名（学校名）<input id="ctOrg" value="${SS.esc(c.org)}" placeholder="例: ○○市立○○中学校 吹奏楽部"></label>
       <label class="field">メモ（部門・出演順など自由に）<input id="ctMemo" value="${SS.esc(c.memo)}" placeholder="例: A部門・出演順12番"></label>
+      <details class="fold-more ct-fields"${(c.rows || []).some(r => r.on !== false) ? ' open' : ''}><summary>図の下に入れる項目（ひな壇ごとのいす・譜面台の数 など）</summary>
+        <p class="hint small">左の□で入れる・入れないを選べます。項目の名前も中身も書きかえられます（ひな壇ごとの数は、配置を変えると自動で数え直します。中身を書きかえた行は、そのまま残します）。</p>
+        <div id="ctRows"></div>
+        <div class="ct-row-btns"><button type="button" class="btn" id="ctAddRow">＋ 行を足す</button><button type="button" class="btn" id="ctRecount">↻ ひな壇ごとの数を数え直す</button></div>
+      </details>
       <div class="modal-actions contest-actions">
         <button class="btn primary big" id="ctPdf">📄 PDFを作る</button>
         <button class="btn big" id="ctPng">🖼 PNG画像を作る</button>
@@ -4078,24 +4109,40 @@
       </div>
       <label class="check"><input type="checkbox" id="ctKey"${c.key !== false ? ' checked' : ''}> 記号の見方（◯＝いす・×＝譜面台 など）を図の下に入れる</label>
       <label class="check"><input type="checkbox" id="ctLeads"${c.leads ? ' checked' : ''}> ★（パートのトップ・首席）を入れる</label>
+      <label class="check"><input type="checkbox" id="ctPfDot"${c.pfDot !== false ? ' checked' : ''}> ピアノ椅子を●（黒丸）で表す</label>
       <p class="hint small">椅子は○、譜面台は×、パート名は◯の中の白黒の図です（★ パートのトップは、選んだときだけ入ります）。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
       <div id="ctResult"></div>
     `);
     let pushed = false;
     const save = () => {
       if (!pushed) { pushHistory(); pushed = true; }
-      Object.assign(doc().contest, { org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked, key: $('ctKey').checked, leads: $('ctLeads').checked });
+      Object.assign(doc().contest, { event: $('ctEvent').value, org: $('ctOrg').value, memo: $('ctMemo').value, orient: $('ctOrient').value, legend: $('ctLegend').checked, key: $('ctKey').checked, leads: $('ctLeads').checked, pfDot: $('ctPfDot').checked });
       scheduleSave();
       $('ctResult').innerHTML = '';
     };
-    ['ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
-    ['ctOrient', 'ctLegend', 'ctKey', 'ctLeads'].forEach(id => $(id).addEventListener('change', save));
+    ['ctEvent', 'ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
+    ['ctOrient', 'ctLegend', 'ctKey', 'ctLeads', 'ctPfDot'].forEach(id => $(id).addEventListener('change', () => { save(); if (id === 'ctPfDot') render(); }));
+    // 図の下に入れる項目（表）
+    contestRowsSync(c);
+    const drawRows = () => {
+      const rows = c.rows || [];
+      $('ctRows').innerHTML = rows.length ? rows.map((r, i) => `<div class="ct-row"><input type="checkbox" data-on="${i}"${r.on !== false ? ' checked' : ''} aria-label="入れる"><input data-lab="${i}" value="${SS.esc(r.label || '')}" placeholder="項目（例: 出演順）"><input data-txt="${i}" value="${SS.esc(r.text || '')}" placeholder="中身（例: 12番）"><button type="button" class="btn" data-del="${i}" aria-label="この行を消す">×</button></div>`).join('') : '<p class="hint small">項目はありません。「＋ 行を足す」で足せます。</p>';
+      $('ctRows').querySelectorAll('[data-on]').forEach(el => { el.onchange = () => { save(); rows[+el.dataset.on].on = el.checked; }; });
+      $('ctRows').querySelectorAll('[data-lab]').forEach(el => { el.oninput = () => { save(); rows[+el.dataset.lab].label = el.value; }; });
+      $('ctRows').querySelectorAll('[data-txt]').forEach(el => { el.oninput = () => { save(); const r = rows[+el.dataset.txt]; r.text = el.value; r.auto = false; }; });
+      $('ctRows').querySelectorAll('[data-del]').forEach(el => { el.onclick = () => { save(); const r = rows.splice(+el.dataset.del, 1)[0]; if (r && r.key) (c.dropped = c.dropped || []).push(r.key); drawRows(); }; });
+    };
+    drawRows();
+    $('ctAddRow').onclick = () => { save(); (c.rows = c.rows || []).push({ label: '', text: '', on: true }); drawRows(); const l = $('ctRows').querySelectorAll('[data-lab]'); if (l.length) l[l.length - 1].focus(); };
+    $('ctRecount').onclick = () => { save(); contestRowsSync(c, true); drawRows(); toast('ひな壇ごとのいす・譜面台の数を数え直しました'); };
     const sheet = pxPerMm => {
       save();
       const cc = doc().contest;
       // ★（パートのトップ）は、選んだときだけ入れる（はじめは入れない）
       const o = Object.assign(renderOpts(), { mono: true, contest: true, figure: false, colorBy: false, showLeads: !!cc.leads });
-      return SS.render.sheet(doc(), o, conductor(), { content: 'contest', org: cc.org, memo: cc.memo, legend: cc.legend, keyLegend: cc.key !== false, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
+      o.pfDot = cc.pfDot !== false;
+      contestRowsSync(cc);
+      return SS.render.sheet(doc(), o, conductor(), { content: 'contest', event: cc.event, org: cc.org, memo: cc.memo, fields: cc.rows, legend: cc.legend, keyLegend: cc.key !== false, paper: { size: 'A4', orient: cc.orient, scale: 0 }, pxPerMm });
     };
     const name = () => SS.render.safeName((doc().contest.org || doc().title || '配置図') + '_コンクール提出用');
     $('ctPdf').onclick = async () => {
@@ -4130,7 +4177,7 @@
       ${infoFieldsHTML()}
       ${paperFieldsHTML()}
       <label class="check"><input type="checkbox" id="exLegend" checked> 編成表（人数）を入れる</label>
-      <label class="check"><input type="checkbox" id="exEquip"> 用意する物の表（いす・譜面台・平台・箱馬など）を入れる</label>
+      <label class="check"><input type="checkbox" id="exEquip"${opts().equipOut ? ' checked' : ''}> 必要ないす・譜面台などの数（用意する物の表：いす・譜面台・平台・箱馬など）を入れる</label>
       <label class="check"><input type="checkbox" id="exGrid"> 方眼を入れる</label>
       ${doc().underlay ? '<label class="check"><input type="checkbox" id="exUnderlay"> 舞台図（下絵）を重ねて入れる</label><label class="check"><input type="checkbox" id="exUnderlayAll" checked> 舞台図がはみ出す部分まで入れる</label>' : ''}
       <label class="field" style="margin-top:10px">画質（PNG・PDF）
@@ -4145,6 +4192,7 @@
       </div>
     `);
     const extra = () => ({ legend: $('exLegend').checked, equip: $('exEquip').checked, grid: $('exGrid').checked, underlay: !!($('exUnderlay') && $('exUnderlay').checked), underlayAll: !!($('exUnderlayAll') && $('exUnderlayAll').checked) });
+    $('exEquip').addEventListener('change', () => { opts().equipOut = $('exEquip').checked; scheduleSave(); });
     bindTitleFields(() => { $('exResult').innerHTML = ''; });
     bindInfoFields(() => { $('exResult').innerHTML = ''; });
     bindPaper(extra);
@@ -4187,14 +4235,17 @@
       ${titleFieldsHTML()}
       ${infoFieldsHTML()}
       ${paperFieldsHTML()}
+      <label class="check"><input type="checkbox" id="prEquip"${opts().equipOut ? ' checked' : ''}> 必要ないす・譜面台などの数（用意する物の表）を入れる</label>
       <p class="hint small">編成表（人数）と情報欄も入ります。縮尺どおりに印刷するには、印刷の画面で <b>倍率を「100%」（実際のサイズ）</b> にしてください。PDFにしたいときは、印刷の画面で <b>「PDFに保存」</b> をえらびます。</p>
       <div class="modal-actions"><button class="btn primary" id="prGo">🖨 印刷する</button><button class="btn" id="prNo">やめる</button></div>
     `);
-    const extra = () => ({ legend: true, grid: false, underlay: false });
+    const extra = () => ({ legend: true, equip: $('prEquip').checked, grid: false, underlay: false });
     bindTitleFields();
     bindInfoFields();
     bindPaper(extra);
     paperCheck(extra());
+    // 入れる・入れないを覚えておく（画像・PDF の画面とも同じ）
+    $('prEquip').onchange = () => { opts().equipOut = $('prEquip').checked; scheduleSave(); paperCheck(extra()); };
     $('prNo').onclick = closeModal;
     $('prGo').onclick = () => {
       const r = buildSheet(extra());
@@ -4271,9 +4322,9 @@
         <li><b>ひな壇の段ごとの置き方</b>：「ひな壇」の箱で、段ごとに平台の置き方を選べます（例：1段目は横・2段目は縦）。</li>
         <li><b>細かく動かす</b>：ドラッグはマウスどおりに動きます（そろう所に線が出るだけ）。矢印キーは5cm、Shift で25cm、Alt で1cm ずつ動きます。</li>
         <li><b>段の縁の自動の手直し</b>：人や段をドラッグして離すと、ひな壇の縁にかかった人を、段の上か床に自動できちんと置き直します（打楽器は楽器ごと）。そのままにしたいときは Alt を押しながら動かします。</li>
-        <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF にも「用意する物の表を入れる」で入れられます。</li>
+        <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF・印刷にも「必要ないす・譜面台などの数を入れる」で入れられます。</li>
         <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
-        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは団体名とメモ（部門・出演順など）だけ。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
+        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは演奏会名（大会名）・団体名・メモ（部門・出演順など）。「図の下に入れる項目」で、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数えます）や、指揮者・出演順などを、書きかえ・足す・消す・入れる／入れないを選べます。ピアノ椅子は●（黒丸）にもできます。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>↶ 戻す</b>：200回まで戻せます。▲▼を続けて押したとき（1秒以内）は1回分にまとめます。</li>
         <li><b>スマホで選ぶ</b>：奏者が小さく見えても、指のまわり（約44px）まで当たりです。近くに何人もいるときは指にいちばん近い人を選び、青い丸とパート名の札で示します。</li>

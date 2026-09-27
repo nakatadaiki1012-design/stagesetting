@@ -699,7 +699,7 @@ window.SS = window.SS || {};
   R.MONO_CSS = `.mono [fill]:not([fill="none"]):not([fill="transparent"]):not(text):not(image){fill:#fff !important}
 .mono [stroke]:not([stroke="none"]):not([stroke="transparent"]):not(text){stroke:#000 !important}
 .mono text{fill:#000 !important}.mono text[stroke]{stroke:#fff !important}
-.mono .grid path{stroke:#b0b0b0 !important}.mono g.hina-legs.hina-legs[fill]:not([fill="none"]){fill:#000 !important}.mono .item-hina rect:first-child{fill:#fff !important}`;
+.mono .grid path{stroke:#b0b0b0 !important}.mono circle.pf-dot.pf-dot.pf-dot.pf-dot{fill:#000 !important}.mono text.on-dot.on-dot{fill:#fff !important}.mono g.hina-legs.hina-legs[fill]:not([fill="none"]){fill:#000 !important}.mono .item-hina rect:first-child{fill:#fff !important}`;
 
   const MM_TEXT = 2.8; // 寸法などの文字の大きさ（紙の上の mm）
   // 紙の上で見た目の文字の大きさを一定にするための k（dimsSVG・marksSVG 用）。f = 1cm が紙の上で何 mm か
@@ -786,9 +786,11 @@ window.SS = window.SS || {};
       xs.push(best);
     });
     let body = '';
+    // ピアノ椅子は●（黒丸）にもできる（opts.pfDot）
+    const dot = it => opts && opts.pfDot && SS.instrumentKind(it.label) === 'pf';
     ps.forEach(it => {
       const kind = SS.instrumentKind(it.label);
-      body += `<circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${SEAT_R}" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
+      body += `<circle${dot(it) ? ' class="pf-dot"' : ''} cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${SEAT_R}" fill="${dot(it) ? '#111' : '#fff'}" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
     });
     xs.forEach(p => { body += `<path transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${p.rot.toFixed(1)})" d="M-11 -11L11 11M11 -11L-11 11" stroke="#111" stroke-width="3.4" stroke-linecap="round" fill="none"/>`; });
     // 2) パート名：どの◯の名前か迷わないよう、いつも◯の中に。入りきらないときは字を小さく、それでも入らなければ略して（例：Trombone → Tb）
@@ -800,12 +802,37 @@ window.SS = window.SS || {};
         let t = lab, fs = fit(t);
         if (fs < 10.5) { const ab = R.shortPart(lab); if (ab !== lab) { t = ab; fs = fit(t); } }
         fs = Math.max(7, fs);
-        text += `<text x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="#111">${SS.esc(t)}</text>`;
+        text += `<text${dot(it) ? ' class="on-dot"' : ''} x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" dy="0.36em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="700" fill="${dot(it) ? '#fff' : '#111'}">${SS.esc(t)}</text>`;
       }
       // 首席の★（◯の右上）
       if (it.lead && showLeads) text += `<text x="${(it.x + SEAT_R * 0.62).toFixed(1)}" y="${(it.y - SEAT_R * 0.95).toFixed(1)}" dy="0.35em" font-size="14" font-weight="700" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${SS.leadMark(it)}</text>`;
     });
     return body + `<g pointer-events="none">${text}</g>`;
+  };
+  // ひな壇ごと（と床）の、いす・譜面台の数。[{ key, label, chairs, stands }]（最後に床。段がなければ床だけ）
+  R.tierCounts = function (doc) {
+    const items = doc.items, tiers = items.filter(it => it.type === 'hina');
+    const hno = SS.hinaNumbers ? SS.hinaNumbers(items) : new Map();
+    const tierAt = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
+    const nameOf = t => (t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `ひな壇${hno.get(t)}段目` : `ひな壇${hno.get(t) || ''}`);
+    const rows = new Map();
+    const row = t => { const key = t ? nameOf(t) : '床'; if (!rows.has(key)) rows.set(key, { key, label: key, chairs: 0, stands: 0, hgt: t ? t.hgt || 0 : -1, y: t ? t.y : Infinity }); return rows.get(key); };
+    tiers.forEach(t => row(t));
+    const ps = items.filter(it => it.type === 'player');
+    const STANDING = ['voice', 'perc', 'bass'];
+    ps.forEach(p => { if (!STANDING.includes(SS.instrumentKind(p.label)) || /^tim/i.test(p.label || '')) row(tierAt(p.x, p.y)).chairs++; });
+    // 譜面台（2人で1本の組は1本。2人の真ん中で数える）
+    const pairs = SS.standPairs ? SS.standPairs(items) : new Map(), done = new Set(), fig = { figure: true };
+    ps.filter(SS.hasStand).forEach(p => {
+      if (done.has(p)) return;
+      const m = pairs.get(p), a = SS.standPoint(p, fig), b = m ? SS.standPoint(m, fig) : a;
+      done.add(p); if (m) done.add(m);
+      row(tierAt((a.x + b.x) / 2, (a.y + b.y) / 2)).stands++;
+    });
+    items.filter(it => it.type === 'chair').forEach(c => row(tierAt(c.x, c.y)).chairs++);
+    items.filter(it => it.type === 'stand').forEach(c => row(tierAt(c.x, c.y)).stands++);
+    // 前（客席側）の段から。床はいちばん最後
+    return [...rows.values()].filter(r => r.chairs || r.stands).sort((a, b) => (a.hgt < 0) - (b.hgt < 0) || a.hgt - b.hgt || b.y - a.y);
   };
   R.contestMarksSVG = function (doc, k) {
     const st = doc.stage, cx = st.w / 2, col = '#111';
@@ -874,7 +901,9 @@ window.SS = window.SS || {};
     const assembly = ex.content === 'assembly';
     const title = contest ? (ex.org || '').trim() : doc.title;
     const subtitle = contest ? (ex.memo || '').trim() : assembly ? [doc.subtitle, 'ひな壇の組み図'].filter(Boolean).join('　') : doc.subtitle;
-    const headH = title || subtitle ? (title ? 11 : 0) + (subtitle ? 6 : 0) + 3 : 0;
+    // コンクール提出用：いちばん上に演奏会名（大会名）
+    const event = contest ? (ex.event || '').trim() : '';
+    const headH = title || subtitle || event ? (event ? 6.5 : 0) + (title ? 11 : 0) + (subtitle ? 6 : 0) + 3 : 0;
     // 情報欄（右下）と編成表（左下）
     const TBW = contest ? 0 : Math.min(128, PW - 2 * M), rowH = 5.4;
     const rows = [
@@ -928,7 +957,11 @@ window.SS = window.SS || {};
     // コンクール提出用：記号の見方（凡例）を図のすぐ下に1行で
     const keyOn = contest && ex.keyLegend !== false;
     const keyH = keyOn ? 7 : 0;
-    const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0) + keyH;
+    // コンクール提出用：自由に書ける項目（「ひな壇1段目：いす8・譜面台8」「出演順：12番」など）を、図の下に2列で
+    const fields = contest ? (ex.fields || []).filter(r => r && r.on !== false && ((r.label || '').trim() || (r.text || '').trim())) : [];
+    const fCols = fields.length > 3 && PW - 2 * M > 150 ? 2 : 1, fRow = 5;
+    const fieldsH = fields.length ? Math.ceil(fields.length / fCols) * fRow + 3 : 0;
+    const bandH = Math.max(TBH, legendBeside ? legendH : 0) + (legendBeside ? 0 : legendH ? legendH + 3 : 0) + keyH + fieldsH;
     const draw = { x: M, y: M + headH, w: PW - 2 * M, h: PH - 2 * M - headH - bandH - (contest ? 0 : 4) };
     const SB = contest ? 0 : 9; // 縮尺のものさしの高さ
 
@@ -962,6 +995,7 @@ window.SS = window.SS || {};
     out += `<rect x="0" y="0" width="${PW}" height="${PH}" fill="#fff"/>`;
     // 見出し
     let hy = M;
+    if (event) { out += `<text x="${PW / 2}" y="${hy + 4.6}" text-anchor="middle" font-size="4.6" font-weight="700" fill="#111">${SS.esc(event)}</text>`; hy += 6.5; }
     if (title) { out += `<text x="${PW / 2}" y="${hy + 7.5}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#111">${SS.esc(title)}</text>`; hy += 11; }
     if (subtitle) out += `<text x="${PW / 2}" y="${hy + 4}" text-anchor="middle" font-size="4.2" fill="#333">${SS.esc(subtitle)}</text>`;
     // 図（縮尺どおり。はみ出す分は図の枠で切る）
@@ -1016,6 +1050,7 @@ window.SS = window.SS || {};
       const item = (sym, label) => { g += sym(kx) + `<text x="${(kx + 4.4).toFixed(2)}" y="${ky}" dy="0.35em">${label}</text>`; kx += 4.4 + textLen(label) * fs2 * 0.98 + 5; };
       item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35"/>`, 'いす');
       item(x => `<path d="M${x + 0.4} ${ky - 1.4}l2.8 2.8M${x + 3.2} ${ky - 1.4}l-2.8 2.8" stroke="#111" stroke-width="0.45" stroke-linecap="round"/>`, '譜面台');
+      if (opts.pfDot && ps2.some(it => SS.instrumentKind(it.label) === 'pf')) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#111" stroke="#111" stroke-width="0.35"/>`, 'ピアノ椅子');
       if (standing) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35" stroke-dasharray="0.7 0.5"/>`, '立って演奏する人（打楽器など）');
       if (lead) item(x => `<text x="${x + 1.8}" y="${ky}" dy="0.35em" text-anchor="middle" font-weight="700">★</text>`, cm ? 'パートのトップ（首席）・★CM＝コンサートマスター' : 'パートのトップ（首席）');
       out += g + '</g>';
@@ -1040,6 +1075,20 @@ window.SS = window.SS || {};
         if (c.plain) { const room = (c.bold ? lCols : c.wide && lCols >= 2 ? 2 : 1) * cellW - 2, fs2 = Math.max(1.8, Math.min(lfs, room / textLen(c.text))); out += `<text x="${x}" y="${y}" font-size="${fs2.toFixed(2)}"${c.bold ? ' font-weight="700"' : ''}>${SS.esc(c.text)}</text>`; return; }
         out += `<circle cx="${x + 1.4}" cy="${y - 1}" r="1.3" fill="${opts.colorBy && !opts.mono ? c.color : '#fff'}" stroke="#333" stroke-width="0.25"/>`;
         out += `<text x="${x + 3.6}" y="${y}">${SS.esc(c.text)}</text>`;
+      });
+      out += '</g>';
+    }
+    if (fields.length) {
+      // 図のすぐ下（記号の見方・編成表の下）。「項目：内容」を2列で。長いときは字を小さく
+      const fy0 = draw.y + ch + 3 + keyH + (legendItems.length || legendH ? legendH + 3 : 0);
+      const colW = (PW - 2 * M) / fCols, fs = 3.4;
+      out += `<g fill="#111">`;
+      fields.forEach((r, i) => {
+        const per = Math.ceil(fields.length / fCols); // 左の列を上から下へ、つづきは右の列
+        const x = M + Math.floor(i / per) * colW, y = fy0 + (i % per) * fRow + 3.4;
+        const lab = (r.label || '').trim(), val = (r.text || '').trim(), line = lab && val ? `${lab}：${val}` : lab || val;
+        const size = Math.max(2, Math.min(fs, (colW - 3) / Math.max(1, textLen(line))));
+        out += `<text x="${x}" y="${y}" font-size="${size.toFixed(2)}">${lab && val ? `<tspan font-weight="700">${SS.esc(lab)}</tspan>：${SS.esc(val)}` : SS.esc(line)}</text>`;
       });
       out += '</g>';
     }

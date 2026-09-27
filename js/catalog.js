@@ -190,7 +190,9 @@ window.SS = window.SS || {};
       const kind = SS.instrumentKind ? SS.instrumentKind(it.label) : '';
       const noStand = SS.NO_STAND_KINDS.includes(kind);
       body += '<circle r="30" fill="transparent"/>';
-      body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
+      // 白黒のとき、ピアノ椅子は●（黒丸）にもできる
+      const dot = opts.mono && opts.pfDot && kind === 'pf';
+      body += `<circle${dot ? ' class="pf-dot"' : ''} r="20" fill="${dot ? '#111' : '#fff'}" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
       if (opts.showStands !== false && !noStand && !opts.sharedStand) {
         // 打楽器奏者は、並べたときに決めた楽器の向こう側に
         const [sx, sy] = Array.isArray(it.standAt) ? it.standAt : [0, 52];
