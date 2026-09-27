@@ -84,7 +84,7 @@ window.SS = window.SS || {};
     vib:     { name: 'ヴィブラフォン', cat: '打楽器', w: 143, h: 82, shape: 'keys', fill: '#c9ced6', label: 'Vib', note: '1430×820mm（YV-3710）' },
     glock:   { name: 'グロッケン', cat: '打楽器', w: 106, h: 56, shape: 'keys', fill: '#c9ced6', label: 'Glk', note: '1060×560mm（YG-2500）' },
     chimes:  { name: 'チャイム', cat: '打楽器', w: 150, h: 60, shape: 'chimes', fill: '#c9ced6', label: 'Chime', note: '1.5oct 目安' },
-    bd:      { name: '大太鼓', cat: '打楽器', w: 100, h: 60, shape: 'bd', fill: '#e6e6e6', label: 'B.D.', note: '36"×16"＋スタンド' },
+    bd:      { name: '大太鼓', cat: '打楽器', w: 50, h: 100, shape: 'bd', fill: '#e6e6e6', label: 'B.D.', note: '36"×16"＋スタンド（奏者から見て縦長：胴の直径が前後、ヘッドは左右を向く）' },
     sd:      { name: '小太鼓', cat: '打楽器', w: 36, h: 36, shape: 'drumhead', fill: '#f4f4f4', label: 'S.D.', note: '14インチ' },
     cym:     { name: 'サスペンデッドシンバル', cat: '打楽器', w: 46, h: 46, shape: 'cym', fill: '#e8cf6a', label: 'Cym', note: '18インチ' },
     tam:     { name: 'タムタム(銅鑼)', cat: '打楽器', w: 100, h: 45, shape: 'rect', fill: '#b99a4a', label: 'T.T.' },
@@ -188,10 +188,14 @@ window.SS = window.SS || {};
     if (it.type === 'player' && opts.contest) {
       // コンクール用の配置図：椅子は○、譜面台は×（指揮者側）。色は付けない
       const kind = SS.instrumentKind ? SS.instrumentKind(it.label) : '';
-      const noStand = ['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind);
+      const noStand = SS.NO_STAND_KINDS.includes(kind);
       body += '<circle r="30" fill="transparent"/>';
       body += `<circle r="20" fill="#fff" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
-      if (opts.showStands !== false && !noStand && !opts.sharedStand) body += `<path d="M-12 40L12 64M12 40L-12 64" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
+      if (opts.showStands !== false && !noStand && !opts.sharedStand) {
+        // 打楽器奏者は、並べたときに決めた楽器の向こう側に
+        const [sx, sy] = Array.isArray(it.standAt) ? it.standAt : [0, 52];
+        body += `<path transform="translate(${sx} ${sy})" d="M-12 -12L12 12M12 -12L-12 12" stroke="#111" stroke-width="3.4" stroke-linecap="round"/>`;
+      }
       const lab = it.label || '';
       if (lab && opts.mono) {
         // 図面用（白黒）：コピーやFAXでも読めるよう、パート名は椅子の後ろに大きく（重なるときはずらす）
@@ -319,11 +323,14 @@ window.SS = window.SS || {};
           }
           break;
         }
-        case 'bd':
+        case 'bd': {
+          // 真上から見た大太鼓：胴の直径（約91cm）が奏者の前後、胴の深さ（約41cm）が左右。ヘッド（枠）は奏者の左右を向く
+          const sw = w * 0.82, sh = h * 0.91;
           body += `<rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="6" fill="none" stroke="#9aa3ae" stroke-width="1.5" stroke-dasharray="5 4"/>`;
-          body += `<rect x="${-w * 0.455}" y="${-h * 0.34}" width="${w * 0.91}" height="${h * 0.68}" rx="5" fill="${fill}" stroke="#39414d" stroke-width="2"/>`;
-          body += `<rect x="${-w * 0.455}" y="${-h * 0.34}" width="${w * 0.91}" height="4" fill="#8a6d3b"/><rect x="${-w * 0.455}" y="${h * 0.34 - 4}" width="${w * 0.91}" height="4" fill="#8a6d3b"/>`;
+          body += `<rect x="${-sw / 2}" y="${-sh / 2}" width="${sw}" height="${sh}" rx="5" fill="${fill}" stroke="#39414d" stroke-width="2"/>`;
+          body += `<rect x="${-sw / 2}" y="${-sh / 2}" width="4" height="${sh}" fill="#8a6d3b"/><rect x="${sw / 2 - 4}" y="${-sh / 2}" width="4" height="${sh}" fill="#8a6d3b"/>`;
           break;
+        }
         case 'drumhead':
           body += `<circle r="${w / 2}" fill="#9aa3ae" stroke="#39414d" stroke-width="2"/><circle r="${w / 2 - 3}" fill="${fill}"/>`;
           break;

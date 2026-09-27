@@ -9,7 +9,7 @@
   const KEEP = 20;
   const SKIP = new Set(['player', 'text', 'box', 'circle', 'cable', 'outlet', 'tap', 'door', 'runway']);
   const STANDING = ['voice', 'perc', 'bass'];
-  const NO_STAND = ['perc', 'drs', 'pf', 'hp', 'voice'];
+  const NO_STAND = ['drs', 'pf', 'hp', 'voice']; // 打楽器奏者は譜面台あり（1人1本）
   const BASE = {
     chair: ['奏者のいす', '脚'], bassChair: ['バス椅子（高いいす）', '脚'], timpChair: ['ティンパニ椅子', '脚'], pianoBench: ['ピアノ椅子', '脚'], drumThrone: ['ドラム椅子', '脚'],
     stand: ['譜面台', '本'], light: ['譜面灯', '個'], podium: ['指揮台', '台'], cstand: ['指揮者用譜面台', '本'],

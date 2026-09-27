@@ -175,7 +175,7 @@ window.SS = window.SS || {};
       };
       case 'gt': return { draw: fiddle(-12, 20, 26, 36, 80, WOOD, WOOD_D) + line(4, 18, 36, 14, WOOD_D, 3), hands: [[-12, 20], [28, 15]] };
       case 'bass': return { draw: fiddle(-12, 20, 26, 34, 80, '#6b2a2a', '#3a1515') + line(4, 18, 46, 12, WOOD_D, 3), hands: [[-12, 20], [34, 13]], standing: true };
-      case 'perc': return { draw: line(-9, 16, -12, 38, WOOD_D, 1.8) + line(9, 16, 12, 38, WOOD_D, 1.8) + circ(-12, 39, 2.6, '#c8c8d0', '#555') + circ(12, 39, 2.6, '#c8c8d0', '#555'), hands: [[-9, 16], [9, 16]], standing: true, noStand: true };
+      case 'perc': return { draw: line(-9, 16, -12, 38, WOOD_D, 1.8) + line(9, 16, 12, 38, WOOD_D, 1.8) + circ(-12, 39, 2.6, '#c8c8d0', '#555') + circ(12, 39, 2.6, '#c8c8d0', '#555'), hands: [[-9, 16], [9, 16]], standing: true };
       // 歌う人：両手で楽譜のファイル（黒い表紙、開いて約30×22cm）を胸の前に
       case 'voice': return { draw: `<rect x="-15" y="15" width="30" height="13" rx="1.5" fill="#1f2328" stroke="#000" stroke-width="1"/><line x1="0" y1="15" x2="0" y2="28" stroke="#555" stroke-width="1"/>`, hands: [[-13, 19], [13, 19]], standing: true, noStand: true };
       case 'drs': return { draw: line(-9, 16, -14, 36, WOOD_D, 1.8) + line(9, 16, 14, 36, WOOD_D, 1.8), hands: [[-9, 16], [9, 16]], stool: true, noStand: true };
@@ -191,9 +191,14 @@ window.SS = window.SS || {};
   const DESK_KINDS = new Set(['vn', 'va', 'vc', 'cb']);
   SS.isDeskPart = it => it.type === 'player' && DESK_KINDS.has(SS.instrumentKind(it.label));
   // 奏者から見た譜面台の位置（奏者の向きの座標、cm）
+  // 譜面台を使わない奏者（ドラムセット・ピアノ・ハープ・合唱）。打楽器奏者は1人1本
+  SS.NO_STAND_KINDS = ['drs', 'pf', 'hp', 'voice'];
+  SS.hasStand = it => it.type === 'player' && !SS.NO_STAND_KINDS.includes(SS.instrumentKind(it.label));
   const standMemo = new Map();
   SS.standOffset = function (it, opts) {
     opts = opts || {};
+    // 打楽器奏者：並べたときに決めた、自分の楽器の向こう側
+    if (Array.isArray(it.standAt) && it.standAt.length === 2) return it.standAt.slice();
     if (opts.contest) return [0, 52];
     if (opts.figure !== false) {
       // 楽器ごとの譜面台の位置は決まっているので、1回調べたら覚えておく（楽器の絵は作らない）
@@ -234,10 +239,10 @@ window.SS = window.SS || {};
     cand.forEach(([, a, b]) => { if (!map.has(a) && !map.has(b)) { map.set(a, b); map.set(b, a); } });
     return map;
   };
-  // 譜面台の本数（打楽器・鍵盤・ハープ・ドラムは数えない。2人で1本の組は1本）
+  // 譜面台の本数（ドラム・ピアノ・ハープ・合唱は数えない。打楽器は1人1本。2人で1本の組は1本）
   SS.standCount = function (items) {
     const pairs = SS.standPairs(items);
-    const need = items.filter(it => it.type === 'player' && !['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label)));
+    const need = items.filter(SS.hasStand);
     return { stands: need.length - pairs.size / 2, shared: pairs.size / 2 };
   };
   // 用意する物（備品）の数の目安：いす（種類ごと）・譜面台・指揮台・平台・箱馬・上がり段・譜面灯
@@ -322,7 +327,7 @@ window.SS = window.SS || {};
     else if (!ins.standing) s += `<rect x="-22.5" y="-24" width="45" height="44" rx="6" fill="#e1e5ea" stroke="#8a929c" stroke-width="1.5"/><rect x="-21" y="-28" width="42" height="6" rx="3" fill="#b9c0c9" stroke="#8a929c" stroke-width="1"/>`;
     // 譜面台（机 50cm、支柱）
     if (opts.showStands !== false && !ins.noStand && !opts.sharedStand) {
-      const st = ins.stand || [0, 64];
+      const st = Array.isArray(it.standAt) ? it.standAt : ins.stand || [0, 64];
       // 机（幅50cm）と、その下の支柱・3本脚（直径 約54cm）
       const legs = opts.standLegs !== false ? `<g transform="translate(0 4)" opacity=".75">${SS.standLegsSVG()}</g>` : line(0, 3, 0, 12, '#5b6472', 2) + circ(0, 13, 2, '#5b6472');
       s += `<g transform="translate(${st[0]} ${st[1]})">${legs}<rect x="-25" y="-3" width="50" height="6" rx="1.5" fill="#5b6472"/><rect x="-24" y="-3" width="48" height="2" fill="#f4f1e8"/></g>`;

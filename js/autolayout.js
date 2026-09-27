@@ -368,6 +368,10 @@ window.SS = window.SS || {};
   const STATION_ORDER = ['marimba', 'marimba43', 'xylo', 'vib', 'glock', 'chimes', 'tam', 'bd', 'cym', 'sd', 'table', 'drums', 'timp'];
   A.PERC_TYPES = PERC_TYPES;
 
+  // 大太鼓は奏者の右手側の横に置く（胴の直径が前後＝奏者から見て縦長、ヘッドは奏者の方＝横を向く）。
+  // 奏者は指揮者の方を向いたまま、横のヘッドをたたく。奏者から見た大太鼓の真ん中の位置 [左右, 前]
+  const BD_SIDE = it => { const C = SS.CATALOG, w = it.w || C[it.type].w, h = it.h || C[it.type].h; return [-(w / 2 + 30), h / 2 - 30]; };
+  A.BD_SIDE = BD_SIDE;
   function timpPositions(px, py, sizes) {
     const k = sizes.length, R0 = 112;
     return sizes.map((t, i) => {
@@ -403,8 +407,8 @@ window.SS = window.SS || {};
     // 楽器どうしのすき間。1列に入りきらないときは、2列にする前に少しつめて（楽器の間 14cm）1列に入るか試す
     let pad = 28;
     const width = s => s.kind === 'timp' ? (s.items.length > 1 ? 2 * 112 * Math.sin(66 * Math.PI / 180) : 0) + (C[s.items[0].type].w) + pad - 8
-      : s.kind === 'stand' ? 75 : (s.items[0].w || C[s.items[0].type].w) + pad;
-    const depthOf = s => s.kind === 'timp' ? 230 : s.kind === 'stand' ? 90 : (s.items[0].h || C[s.items[0].type].h) + 100;
+      : s.kind === 'stand' ? 75 : s.kind === 'bd' ? -BD_SIDE(s.items[0])[0] + (s.items[0].w || C.bd.w) / 2 + 25 + pad : (s.items[0].w || C[s.items[0].type].w) + pad;
+    const depthOf = s => s.kind === 'timp' ? 230 : s.kind === 'stand' ? 90 : s.kind === 'bd' ? 38 + Math.max(BD_SIDE(s.items[0])[1] + (s.items[0].h || C.bd.h) / 2, 64 + 12) + 38 : (s.items[0].h || C[s.items[0].type].h) + 100;
     // 行に分ける（入りきらなければ手前にもう1行）
     const rows = [];
     let cur = [], used = 0;
@@ -442,6 +446,13 @@ window.SS = window.SS || {};
           if (s.player) Object.assign(s.player, { x: cx, y: py, rot: 0 });
         } else if (s.kind === 'stand') {
           Object.assign(s.player, { x: cx, y: y0 + 40, rot: 0 });
+        } else if (s.kind === 'bd') {
+          // 大太鼓：奏者の右手側の横（奏者の正面は譜面台）
+          const it = s.items[0], [ox, oy] = BD_SIDE(it), px = cx + (-ox + (it.w || C.bd.w) / 2 - 25) / 2;
+          const py = y0 + 62 - 24;
+          Object.assign(it, { x: px + ox, y: py + oy, rot: 0 });
+          if (s.player) Object.assign(s.player, { x: px, y: py, rot: 0 });
+          else Object.assign(it, { x: cx, y: py + oy });
         } else {
           const it = s.items[0];
           const h = it.h || C[it.type].h;
@@ -536,6 +547,57 @@ window.SS = window.SS || {};
       q.items.concat([p]).forEach(m => { m.grp = g; });
     });
   };
+  // 打楽器奏者の譜面台：自分の楽器（同じまとまり）の向こう側で、楽器にかからないいちばん近い所（奏者の正面）。
+  // 楽器ごしに楽譜と指揮者が同じ向きに見える。奏者から見た位置を it.standAt [左右, 前] cm に入れる（楽器がなければ消す）
+  A.percStands = function (items) {
+    const C = SS.CATALOG, tiers = items.filter(it => it.type === 'hina');
+    items.filter(it => it.type === 'player' && SS.instrumentKind(it.label) === 'perc').forEach(p => {
+      const own = p.grp ? items.filter(o => o !== p && o.grp === p.grp && PERC_TYPES.has(o.type)) : [];
+      if (!own.length) { delete p.standAt; return; }
+      const a = ((p.rot || 0) * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+      const world = (lx, ly) => ({ x: p.x + lx * ca - ly * sa, y: p.y + lx * sa + ly * ca });
+      // 奏者と同じ高さの所（段の上の人は同じ段の、縁から10cm以上内側。床の人は段にかからない所）
+      const myTier = tiers.filter(t => SS.hinaContains(t, p.x, p.y, 0)).sort((u, v) => (v.hgt || 0) - (u.hgt || 0))[0] || null;
+      const level = (lx, ly) => {
+        const q = world(lx, ly);
+        if (myTier) return SS.hinaContains(myTier, q.x, q.y, -10) && !tiers.some(t => t !== myTier && (t.hgt || 0) > (myTier.hgt || 0) && SS.hinaContains(t, q.x, q.y, 10));
+        return !tiers.some(t => SS.hinaContains(t, q.x, q.y, 10));
+      };
+      // 楽器を奏者から見た座標の四角に（向きのちがいも考える）
+      const boxes = own.map(o => {
+        const dx = o.x - p.x, dy = o.y - p.y, lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
+        const w = o.w || C[o.type].w, h = o.h || C[o.type].h, r = (((o.rot || 0) - (p.rot || 0)) * Math.PI) / 180;
+        const hw = (Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))) / 2, hh = (Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r))) / 2;
+        return { x0: lx - hw, x1: lx + hw, y0: ly - hh, y1: ly + hh };
+      });
+      const cands = [];
+      // ティンパニ：譜面台は太鼓より高いので、太鼓と太鼓のすき間（真ん中に近い所）に立てる
+      const drums = own.filter(o => TIMP.includes(o.type)).map(o => {
+        const dx = o.x - p.x, dy = o.y - p.y;
+        return { x: dx * ca + dy * sa, y: -dx * sa + dy * ca, r: (o.w || C[o.type].w) / 2 };
+      });
+      if (drums.length) {
+        for (let k = 0; k <= 10; k++) for (const sg of k ? [1, -1] : [1]) for (let R = 96; R <= 140; R += 2) {
+          const th = (sg * k * 6 * Math.PI) / 180, x = R * Math.sin(th), y = R * Math.cos(th);
+          // 譜面台の足もと（半径12cm）が、太鼓の縁に深くかからない所（⚠ 確認の「重なり」と同じ見方）
+          if (drums.every(dm => Math.hypot(dm.x - x, dm.y - y) >= dm.r + 5)) cands.push([Math.round(x), Math.round(y)]);
+        }
+      }
+      // 楽器の向こう側で、楽器にかからないいちばん近い所（奏者の正面）。机（幅50cm）と脚が楽器にかからないように
+      const hit = (x, d) => boxes.some(b => b.x0 < x + 27 && b.x1 > x - 27 && b.y0 < d + 14 && b.y1 > d - 14);
+      // 奏者と楽器のあいだ（たたく所）には置かない：いちばん手前の楽器の縁より向こうから探す
+      const near = Math.min(...boxes.filter(b => b.y1 > 0 && b.x0 < 27 && b.x1 > -27).map(b => b.y0));
+      let d = isFinite(near) ? Math.max(40, Math.round(near) + 12) : 64; // 前に楽器がなければ、ふつうの譜面台と同じ 64cm
+      while (d < 320 && hit(0, d)) d += 4;
+      const front = [0, d];
+      cands.push(front);
+      // それで段から落ちるときは、楽器の横（奏者の少し前）
+      const xr = Math.max(...boxes.map(b => b.x1)), xl = Math.min(...boxes.map(b => b.x0));
+      [40, 64, 20].forEach(ly => { [[Math.round(xr + 32), ly], [Math.round(xl - 32), ly]].forEach(c => { if (!hit(c[0], c[1])) cands.push(c); }); });
+      // どこも段から落ちるときは、ティンパニはすき間、ほかは楽器の向こう側
+      p.standAt = cands.find(c => level(c[0], c[1])) || cands[0] || front;
+    });
+  };
   A.arrangePercSide = function (items, stage, c, Rin, allowed, avoid, opt) {
     opt = opt || {};
     const C = SS.CATALOG;
@@ -546,6 +608,7 @@ window.SS = window.SS || {};
       if (q.kind === 'timp') return { w: (q.items.length > 1 ? 2 * 112 * Math.sin(66 * Math.PI / 180) : 0) + C[q.items[0].type].w + 20, front: 112 + 45, back: 35 };
       if (q.kind === 'stand') return { w: 75, front: 75, back: 35 };
       const it = q.items[0], w = it.w || C[it.type].w, h = it.h || C[it.type].h;
+      if (q.kind === 'bd') { const [ox, oy] = BD_SIDE(it); return { w: 2 * (-ox + w / 2) + 26, front: Math.max(64 + 12, oy + h / 2), back: 35 }; }
       return { w: w + 26, front: 24 + h, back: 35 };
     };
     // P：奏者の位置、rot：奏者の向き（楽器はその前）
@@ -555,6 +618,7 @@ window.SS = window.SS || {};
       const out = [];
       if (q.player) out.push([q.player, { x: P.x, y: P.y, rot }]);
       if (q.kind === 'timp') timpPositions(0, 0, q.items.map(it => it.type)).forEach((p, i) => out.push([q.items[i], Object.assign(W(p.x, p.y), { rot })]));
+      else if (q.kind === 'bd') { const it = q.items[0], [ox, oy] = BD_SIDE(it); out.push([it, Object.assign(W(ox, oy), { rot })]); }
       else if (q.kind !== 'stand') { const it = q.items[0], h = it.h || C[it.type].h; out.push([it, Object.assign(W(0, 24 + h / 2), { rot })]); }
       return out;
     };
@@ -1689,7 +1753,7 @@ window.SS = window.SS || {};
       return r;
     }
     const r = buildInner(st, stage);
-    if (r && r.items) { A.groupStations(r.items); keepPercFromStrings(r, stage); }
+    if (r && r.items) { A.groupStations(r.items); keepPercFromStrings(r, stage); A.percStands(r.items); }
     return r;
   };
   // 打楽器（床に置く物）を、弦楽器のすぐ横（2m以内）には置かない。舞台がせまくて入りきらないときも。
@@ -1766,6 +1830,7 @@ window.SS = window.SS || {};
       }
       const r = f(s3, stage, tune);
       keepFromEdge(r.items, stage);
+      A.groupStations(r.items); A.percStands(r.items); // 打楽器奏者の譜面台も入れて、重なりを数える
       const outside = r.items.filter(it => it.type === 'player' && !inside(stage, it, 28)).length;
       const hinaOut = r.items.filter(it => it.type === 'hina' && !it.perc && it.y - it.h / 2 < AISLE - 1).length;
       // 椅子・譜面台・楽器の重なり、ひな壇の縁にかかる人（⚠ 確認と同じ見方）

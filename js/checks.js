@@ -283,7 +283,7 @@ window.SS = window.SS || {};
     ps.forEach(p => {
       const kind = SS.instrumentKind ? SS.instrumentKind(p.label) : '';
       shapes.push({ kind: 'chair', it: p, x: p.x, y: p.y, r: CHAIR, plays: PLAYS_ITEM.has(kind) });
-      if (['perc', 'drs', 'pf', 'hp', 'voice'].includes(kind)) return;
+      if (SS.NO_STAND_KINDS.includes(kind)) return; // 打楽器奏者は譜面台あり（1人1本）
       const b = pairs.get(p);
       if (b && ix(b) < ix(p)) return; // 2人で1本：1本だけ
       const s1 = SS.standPoint(p, fig), s2 = b ? SS.standPoint(b, fig) : s1;

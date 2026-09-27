@@ -454,9 +454,9 @@ window.SS = window.SS || {};
     arm(g, shR, hr, cloth, skin);
     arm(g, shL, hl, cloth, skin);
     // 譜面台（楽譜つき）
-    const noStand = ['perc', 'drs', 'pf', 'hp', 'voice', 'mc'].includes(kind);
+    const noStand = ['drs', 'pf', 'hp', 'voice', 'mc'].includes(kind); // 打楽器奏者は譜面台あり（1人1本）
     if (!noStand && V.showStands && !shared) {
-      const sz = kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
+      const sz = Array.isArray(it.standAt) ? [it.standAt[0] / 100, it.standAt[1] / 100] : kind === 'tb' || kind === 'btb' ? [-0.32, 0.6] : kind === 'vc' ? [0, 0.72] : kind === 'cb' ? [-0.14, 0.78] : [0, 0.64];
       makeStand(g, sz[0], sz[1]);
     }
     g.add(blobShadow(0.9, 0.35));
@@ -724,14 +724,14 @@ window.SS = window.SS || {};
         break;
       }
       case 'bd': {
-        // 2D と同じ向き：胴の直径は横（x）、ヘッドは前後（奏者の方と、その反対）
-        const R = Math.min(w * 0.455, 0.46), L = Math.min(d * 0.68, 0.45), cy = R + 0.25;
-        const m = cyl(g, R, R, L, '#efeae0', 0, cy, 0, { roughness: 0.6 }, 36); m.rotation.x = Math.PI / 2;
-        [-1, 1].forEach(sz => { const r = cyl(g, R + 0.01, R + 0.01, 0.04, '#6b3a1c', 0, cy, sz * (L / 2 - 0.02), undefined, 36); r.rotation.x = Math.PI / 2; const hd = cyl(g, R - 0.02, R - 0.02, 0.005, '#f6f1e4', 0, cy, sz * (L / 2 + 0.001), { roughness: 0.8 }, 36); hd.rotation.x = Math.PI / 2; });
+        // 2D と同じ向き：胴の直径は前後（z）、ヘッドは奏者の左右（x）を向く（奏者から見て縦長）
+        const R = Math.min(d * 0.455, 0.46), L = Math.min(w * 0.82, 0.45), cy = R + 0.25;
+        const m = cyl(g, R, R, L, '#efeae0', 0, cy, 0, { roughness: 0.6 }, 36); m.rotation.z = Math.PI / 2;
+        [-1, 1].forEach(sx => { const r = cyl(g, R + 0.01, R + 0.01, 0.04, '#6b3a1c', sx * (L / 2 - 0.02), cy, 0, undefined, 36); r.rotation.z = Math.PI / 2; const hd = cyl(g, R - 0.02, R - 0.02, 0.005, '#f6f1e4', sx * (L / 2 + 0.001), cy, 0, { roughness: 0.8 }, 36); hd.rotation.z = Math.PI / 2; });
         // 台（ゆりかご）と脚
-        tube(g, [-R * 0.7, 0.02, 0], [-R * 0.5, cy - R * 0.8, 0], 0.025, '#444', METAL); tube(g, [R * 0.7, 0.02, 0], [R * 0.5, cy - R * 0.8, 0], 0.025, '#444', METAL);
-        box(g, R * 1.6, 0.04, 0.05, '#444', 0, 0.02, -d * 0.35); box(g, R * 1.6, 0.04, 0.05, '#444', 0, 0.02, d * 0.35);
-        [-1, 1].forEach(sx => box(g, 0.05, 0.04, d * 0.7, '#444', sx * R * 0.75, 0.02, 0));
+        tube(g, [0, 0.02, -R * 0.7], [0, cy - R * 0.8, -R * 0.5], 0.025, '#444', METAL); tube(g, [0, 0.02, R * 0.7], [0, cy - R * 0.8, R * 0.5], 0.025, '#444', METAL);
+        box(g, 0.05, 0.04, R * 1.6, '#444', -w * 0.35, 0.02, 0); box(g, 0.05, 0.04, R * 1.6, '#444', w * 0.35, 0.02, 0);
+        [-1, 1].forEach(sz => box(g, w * 0.7, 0.04, 0.05, '#444', 0, 0.02, sz * R * 0.75));
         break;
       }
       case 'sd': cyl(g, w / 2, w / 2, 0.14, '#ddd', 0, 0.7, 0, METAL, 28); cyl(g, w / 2 - 0.005, w / 2 - 0.005, 0.005, '#f8f8f5', 0, 0.775, 0); [0, 2.1, 4.2].forEach(a => tube(g, [0, 0.6, 0], [Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25], 0.01, '#666', METAL)); break;

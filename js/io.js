@@ -552,8 +552,8 @@ window.SS = window.SS || {};
     const ps = doc.items.filter(it => it.type === 'player');
     const heads = ps.map(it => ({ it, x0: it.x - 11, x1: it.x + 11, y0: it.y - 11, y1: it.y + 11 }));
     ps.forEach(it => {
-      if (['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label))) return;
-      const a = ((it.rot || 0) * Math.PI) / 180, sx = it.x - Math.sin(a) * 64, sy = it.y + Math.cos(a) * 64;
+      if (!SS.hasStand(it)) return;
+      const q = SS.standPoint(it, { figure: true }), sx = q.x, sy = q.y;
       heads.push({ it, x0: sx - 25, x1: sx + 25, y0: sy - 6, y1: sy + 6 });
     });
     // 数の多い列から先に置くより、前（客席側）の人から順に置くほうが自然
@@ -753,7 +753,7 @@ window.SS = window.SS || {};
   R.contestPlayersSVG = function (doc, opts) {
     const showLeads = !opts || opts.showLeads !== false;
     const ps = doc.items.filter(it => it.type === 'player');
-    const noStand = it => ['perc', 'drs', 'pf', 'hp', 'voice'].includes(SS.instrumentKind(it.label));
+    const noStand = it => !SS.hasStand(it);
     const fwd = it => { const a = ((it.rot || 0) * Math.PI) / 180; return [-Math.sin(a), Math.cos(a)]; };
     // じゃまになる物：椅子の◯、楽器（打楽器・ピアノなど）、指揮台
     const things = doc.items.filter(it => it.type !== 'player' && it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46').map(polyOf);
@@ -774,6 +774,8 @@ window.SS = window.SS || {};
       const f = who.map(fwd).reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]);
       const L = Math.hypot(f[0], f[1]) || 1, fx = f[0] / L, fy = f[1] / L;
       const cx = who.reduce((a, w) => a + w.x, 0) / who.length, cy = who.reduce((a, w) => a + w.y, 0) / who.length;
+      // 打楽器奏者：並べたときに決めた、楽器の向こう側
+      if (who.length === 1 && Array.isArray(it.standAt)) { const q = SS.standPoint(it, {}); xs.push({ x: q.x, y: q.y, rot: (Math.atan2(fy, fx) * 180) / Math.PI - 90 }); return; }
       let best = null, bestS = Infinity;
       [46, 40, 52, 58, 64].forEach((d, di) => [0, -9, 9, -18, 18].forEach((lat, li) => {
         const x = cx + fx * d - fy * lat, y = cy + fy * d + fx * lat;
