@@ -227,6 +227,8 @@
 
 ## 公開する（GitHub Pages）
 
+**検索エンジンに載せない設定**：`index.html` の `<head>` に `<meta name="robots" content="noindex, nofollow">` を入れてあるので、公開しても Google などの検索結果にはアプリのURLが出ません（URLを知っている人は、これまでどおり開けます）。すでに検索結果に出ている場合は、Google がページを読み直すまで（数日〜数週間）残ることがあります。
+
 GitHub のリポジトリ画面で **Settings → Pages → Branch** に公開したいブランチとフォルダ `/ (root)` を選んで保存すると、
 `https://<ユーザー名>.github.io/stagesetting/` で誰でも使えるようになります。
 
