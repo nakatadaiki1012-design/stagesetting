@@ -247,6 +247,11 @@ window.SS = window.SS || {};
   };
   // 用意する物（備品）の数の目安：いす（種類ごと）・譜面台・指揮台・平台・箱馬・上がり段・譜面灯
   // 戻り値 [{ key, name, n, note }]（数が0のものは入れない）。編成表・図面の「用意する物」で使う
+  // ピアノ椅子（高さを変えられるいす）にするパート。ピアノの奏者はいつもピアノ椅子。
+  // 開いている配置図の設定（コンクール提出用の画面で切りかえ）をアプリが入れる。はじめはバスクラ
+  SS.BENCH_DEFAULT = ['B.Cl'];
+  SS.benchParts = SS.BENCH_DEFAULT.slice();
+  SS.isBench = it => it.type === 'player' && (SS.instrumentKind(it.label) === 'pf' || SS.benchParts.includes(String(it.label || '').trim()));
   SS.equipmentSummary = function (items) {
     const ps = items.filter(it => it.type === 'player');
     const kindOf = it => SS.instrumentKind(it.label);
@@ -256,10 +261,11 @@ window.SS = window.SS || {};
     const out = [];
     const add = (key, name, n, note) => { if (n > 0) out.push({ key, name, n, note: note || '' }); };
     // いす
-    add('chair', '奏者のいす', count(it => !isTimp(it) && !STANDING.includes(kindOf(it)) && !['cb', 'drs', 'pf'].includes(kindOf(it))) + items.filter(it => it.type === 'chair').length, 'ふつうの奏者用のいす（ハープ・ギターもふくむ）');
+    add('chair', '奏者のいす', count(it => !isTimp(it) && !STANDING.includes(kindOf(it)) && !['cb', 'drs', 'pf'].includes(kindOf(it)) && !SS.isBench(it)) + items.filter(it => it.type === 'chair').length, 'ふつうの奏者用のいす（ハープ・ギターもふくむ）');
     add('bassChair', 'バス椅子（高いいす）', count(it => kindOf(it) === 'cb'), 'コントラバス用');
     add('timpChair', 'ティンパニ椅子（高いいす）', count(isTimp), 'ティンパニ奏者用');
-    add('pianoBench', 'ピアノ椅子', Math.max(count(it => kindOf(it) === 'pf'), items.filter(it => /^piano/.test(it.type) || it.type === 'upright').length), '高さを変えられるもの');
+    const benchOthers = count(it => SS.isBench(it) && kindOf(it) !== 'pf' && !isTimp(it) && !STANDING.includes(kindOf(it)) && !['cb', 'drs'].includes(kindOf(it)));
+    add('pianoBench', 'ピアノ椅子', Math.max(count(it => kindOf(it) === 'pf'), items.filter(it => /^piano/.test(it.type) || it.type === 'upright').length) + benchOthers, benchOthers ? `高さを変えられるもの（ピアノ以外に ${benchOthers}脚：${[...new Set(ps.filter(it => SS.isBench(it) && kindOf(it) !== 'pf').map(it => it.label))].join('・')}）` : '高さを変えられるもの');
     add('drumThrone', 'ドラム椅子', count(it => kindOf(it) === 'drs'), 'ドラムセットに付いていることが多い');
     // 譜面台
     const sc = SS.standCount(items);

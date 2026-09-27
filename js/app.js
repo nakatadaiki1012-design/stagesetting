@@ -64,7 +64,8 @@
     if (d.options.paper && d.options.paper.style === 'contest') d.options.paper.style = 'mono';
     return d;
   }
-  const doc = () => S.doc;
+  // ピアノ椅子にするパート（図の●・用意する物の数で使う）は、開いている配置図の設定から
+  const doc = () => { const d = S.doc; if (d && d.contest) SS.benchParts = d.contest.benchParts || SS.BENCH_DEFAULT; return d; };
   const opts = () => doc().options;
   const byId = id => doc().items.find(it => it.id === id);
   const selected = () => doc().items.filter(it => S.sel.has(it.id));
@@ -4060,6 +4061,16 @@
     $('outPrint').onclick = openPrint;
   };
 
+  // ピアノ椅子（高さを変えられるいす）にするパートを選ぶ（舞台にいる、座って演奏するパートだけ。ピアノはいつも）
+  function benchPartsHTML(c) {
+    const cur = new Set(c.benchParts || SS.BENCH_DEFAULT);
+    const seated = it => !['pf', 'drs', 'voice', 'perc', 'bass', 'cb'].includes(SS.instrumentKind(it.label)); // ティンパニ・コントラバスは高いいす
+    // 並びは編成表と同じ（かんたん編成のパートの順。ほかのパート名はその後ろ）
+    const order = Object.values(SS.auto.ENSEMBLES).flatMap(e => e.parts.map(q => q[0])), rank = l => { const i = order.indexOf(l); return i < 0 ? 999 : i; };
+    const labs = [...new Set(players().filter(seated).map(it => String(it.label || '').trim()).filter(Boolean))].sort((a, b) => rank(a) - rank(b));
+    if (!labs.length) return '';
+    return `<div class="ct-bench"><span class="small">ピアノ椅子（高さを変えられるいす・●）にするパート（ピアノはいつもピアノ椅子）：</span><div class="chip-checks">${labs.map(l => `<label class="chip-check"><input type="checkbox" data-bench="${SS.esc(l)}"${cur.has(l) ? ' checked' : ''}>${SS.esc(l)}</label>`).join('')}</div></div>`;
+  }
   // コンクール提出用の「図の下に入れる項目」のうち、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数える行）。
   // 自動の行は key を持ち、配置が変わると中身を数え直す（中身を書きかえた行・消した行はそのまま）。reset：自動の行を作り直す
   function contestRowsSync(c, reset) {
@@ -4088,6 +4099,7 @@
   // 🎺 コンクール提出用：白黒◯×・A4・紙いっぱい。入れるのは団体名とメモだけ（どちらも空でも作れる）
   function openContest() {
     const c = doc().contest;
+    contestRowsSync(c); // ひな壇ごとの数を先に数えておく（項目があれば、箱を開いて見せる）
     const sel = (v, t) => `<option value="${v}"${c.orient === v ? ' selected' : ''}>${t}</option>`;
     openModal(`
       <h2>🎺 コンクール提出用（白黒◯×）</h2>
@@ -4110,6 +4122,7 @@
       <label class="check"><input type="checkbox" id="ctKey"${c.key !== false ? ' checked' : ''}> 記号の見方（◯＝いす・×＝譜面台 など）を図の下に入れる</label>
       <label class="check"><input type="checkbox" id="ctLeads"${c.leads ? ' checked' : ''}> ★（パートのトップ・首席）を入れる</label>
       <label class="check"><input type="checkbox" id="ctPfDot"${c.pfDot !== false ? ' checked' : ''}> ピアノ椅子を●（黒丸）で表す</label>
+      ${benchPartsHTML(c)}
       <p class="hint small">椅子は○、譜面台は×、パート名は◯の中の白黒の図です（★ パートのトップは、選んだときだけ入ります）。寸法・センター線・情報欄は入りません。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</p>
       <div id="ctResult"></div>
     `);
@@ -4122,8 +4135,15 @@
     };
     ['ctEvent', 'ctOrg', 'ctMemo'].forEach(id => $(id).addEventListener('input', save));
     ['ctOrient', 'ctLegend', 'ctKey', 'ctLeads', 'ctPfDot'].forEach(id => $(id).addEventListener('change', () => { save(); if (id === 'ctPfDot') render(); }));
+    // ピアノ椅子にするパート
+    document.querySelectorAll('[data-bench]').forEach(el => { el.onchange = () => {
+      save();
+      const cur = new Set(c.benchParts || SS.BENCH_DEFAULT), k = el.getAttribute('data-bench');
+      if (el.checked) cur.add(k); else cur.delete(k);
+      c.benchParts = [...cur];
+      doc(); render(); renderCounts();
+    }; });
     // 図の下に入れる項目（表）
-    contestRowsSync(c);
     const drawRows = () => {
       const rows = c.rows || [];
       $('ctRows').innerHTML = rows.length ? rows.map((r, i) => `<div class="ct-row"><input type="checkbox" data-on="${i}"${r.on !== false ? ' checked' : ''} aria-label="入れる"><input data-lab="${i}" value="${SS.esc(r.label || '')}" placeholder="項目（例: 出演順）"><input data-txt="${i}" value="${SS.esc(r.text || '')}" placeholder="中身（例: 12番）"><button type="button" class="btn" data-del="${i}" aria-label="この行を消す">×</button></div>`).join('') : '<p class="hint small">項目はありません。「＋ 行を足す」で足せます。</p>';
@@ -4324,7 +4344,7 @@
         <li><b>段の縁の自動の手直し</b>：人や段をドラッグして離すと、ひな壇の縁にかかった人を、段の上か床に自動できちんと置き直します（打楽器は楽器ごと）。そのままにしたいときは Alt を押しながら動かします。</li>
         <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF・印刷にも「必要ないす・譜面台などの数を入れる」で入れられます。</li>
         <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
-        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは演奏会名（大会名）・団体名・メモ（部門・出演順など）。「図の下に入れる項目」で、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数えます）や、指揮者・出演順などを、書きかえ・足す・消す・入れる／入れないを選べます。ピアノ椅子は●（黒丸）にもできます。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
+        <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは演奏会名（大会名）・団体名・メモ（部門・出演順など）。「図の下に入れる項目」で、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数えます）や、指揮者・出演順などを、書きかえ・足す・消す・入れる／入れないを選べます。ピアノ椅子は●（黒丸）にもでき、バスクラなど、ピアノ椅子にするパートも選べます（はじめはバスクラ。用意する物のピアノ椅子の数にも入ります）。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>↶ 戻す</b>：200回まで戻せます。▲▼を続けて押したとき（1秒以内）は1回分にまとめます。</li>
         <li><b>スマホで選ぶ</b>：奏者が小さく見えても、指のまわり（約44px）まで当たりです。近くに何人もいるときは指にいちばん近い人を選び、青い丸とパート名の札で示します。</li>

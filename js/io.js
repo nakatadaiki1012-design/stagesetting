@@ -787,7 +787,7 @@ window.SS = window.SS || {};
     });
     let body = '';
     // ピアノ椅子は●（黒丸）にもできる（opts.pfDot）
-    const dot = it => opts && opts.pfDot && SS.instrumentKind(it.label) === 'pf';
+    const dot = it => opts && opts.pfDot && SS.isBench(it);
     ps.forEach(it => {
       const kind = SS.instrumentKind(it.label);
       body += `<circle${dot(it) ? ' class="pf-dot"' : ''} cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="${SEAT_R}" fill="${dot(it) ? '#111' : '#fff'}" stroke="#111" stroke-width="2.6"${kind === 'perc' || kind === 'bass' ? ' stroke-dasharray="6 4"' : ''}/>`;
@@ -1050,7 +1050,7 @@ window.SS = window.SS || {};
       const item = (sym, label) => { g += sym(kx) + `<text x="${(kx + 4.4).toFixed(2)}" y="${ky}" dy="0.35em">${label}</text>`; kx += 4.4 + textLen(label) * fs2 * 0.98 + 5; };
       item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35"/>`, 'いす');
       item(x => `<path d="M${x + 0.4} ${ky - 1.4}l2.8 2.8M${x + 3.2} ${ky - 1.4}l-2.8 2.8" stroke="#111" stroke-width="0.45" stroke-linecap="round"/>`, '譜面台');
-      if (opts.pfDot && ps2.some(it => SS.instrumentKind(it.label) === 'pf')) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#111" stroke="#111" stroke-width="0.35"/>`, 'ピアノ椅子');
+      if (opts.pfDot && ps2.some(SS.isBench)) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#111" stroke="#111" stroke-width="0.35"/>`, 'ピアノ椅子');
       if (standing) item(x => `<circle cx="${x + 1.8}" cy="${ky}" r="1.7" fill="#fff" stroke="#111" stroke-width="0.35" stroke-dasharray="0.7 0.5"/>`, '立って演奏する人（打楽器など）');
       if (lead) item(x => `<text x="${x + 1.8}" y="${ky}" dy="0.35em" text-anchor="middle" font-weight="700">★</text>`, cm ? 'パートのトップ（首席）・★CM＝コンサートマスター' : 'パートのトップ（首席）');
       out += g + '</g>';
