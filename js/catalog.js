@@ -64,6 +64,13 @@ window.SS = window.SS || {};
     stand:   { name: '譜面台', cat: '基本', w: 50, h: 12, note: '机 約50cm・3本脚を開くと直径 約54cm', shape: 'rect', fill: '#5b6472', label: '' },
     riser:   { name: '平台 3×6尺', cat: '基本', w: 182, h: 91, shape: 'riser', fill: '#efe3cc', label: '', note: 'サブロク 910×1820mm' },
     riser46: { name: '平台 4×6尺', cat: '基本', w: 182, h: 121, shape: 'riser', fill: '#efe3cc', label: '', note: 'ヨンロク 1212×1820mm' },
+    // よく使われる平台（ホールの備品・貸し出しで一般的な大きさ）。1尺＝約30.3cm
+    riser66: { name: '平台 6×6尺', cat: '基本', w: 182, h: 182, shape: 'riser', fill: '#efe3cc', label: '', note: 'ロクロク 1820×1820mm（正方形）' },
+    riser33: { name: '平台 3×3尺', cat: '基本', w: 91, h: 91, shape: 'riser', fill: '#efe3cc', label: '', note: 'サブサブ 910×910mm（正方形。1人用の台に）' },
+    riser26: { name: '平台 2×6尺', cat: '基本', w: 182, h: 61, shape: 'riser', fill: '#efe3cc', label: '', note: 'ニロク 606×1820mm（すき間うめ・細い段に）' },
+    // 斜め（45°）に置いた正方形の平台：扇形の外側のコントラバスなど、指揮者の方へ角を向けて置く
+    riser66d: { name: '平台 6×6尺（斜め）', cat: '基本', w: 182, h: 182, shape: 'riser', fill: '#efe3cc', label: '', as: 'riser66', rot: 45, note: 'ロクロクを45°まわして、角を指揮者の方へ（ひし形）' },
+    riser33d: { name: '平台 3×3尺（斜め）', cat: '基本', w: 91, h: 91, shape: 'riser', fill: '#efe3cc', label: '', as: 'riser33', rot: 45, note: 'サブサブを45°まわして（ひし形）' },
     hina:    { name: 'ひな壇（1段）', cat: '基本', w: 728, h: 182, shape: 'hina', fill: '#ead9bb', label: '', note: '平台を並べた段。高さは箱馬で調整' },
     stairs:  { name: '上がり段', cat: '基本', w: 91, h: 60, shape: 'stairs', fill: '#efe3cc', label: '', note: 'ひな壇に上がる階段。段の横か前にくっつけて置く（矢印の向きに上がる）' },
     runway:  { name: '花道（張り出し）', cat: '舞台の設備・その他', w: 180, h: 540, shape: 'runway', fill: '#f1e2c6', label: '花道', note: '舞台と同じ高さの張り出し（花道・張り出し舞台）。客席の方や舞台の横へ出して置けます。長さ・幅・向きは自由に。上に置いた人や物は舞台の外でもそのまま' },
@@ -610,10 +617,14 @@ window.SS = window.SS || {};
     const c = SS.CATALOG[type];
     let it;
     if (type === 'player') it = { type, x: 0, y: 0, rot: 0, label: 'Fl' };
-    else it = { type, x: 0, y: 0, rot: 0, w: c.w, h: c.h, label: type === 'text' ? 'A' : '' };
+    else it = { type, x: 0, y: 0, rot: c.rot || 0, w: c.w, h: c.h, label: type === 'text' ? 'A' : '' };
     const s = SS.itemSize(it, {});
     const m = Math.max(s.w, s.h + (type === 'player' ? 30 : 0)) * 0.62;
     const d = SS.drawItem(it, { colorBy: true, showStands: true });
     return `<svg viewBox="${-m} ${-m} ${m * 2} ${m * 2}">${d.body}${d.text}</svg>`;
   };
+  // 平台（1枚ずつ置くもの）。種類を足したら、ここを使うところはみな同じように扱う
+  SS.RISERS = Object.keys(SS.CATALOG).filter(k => SS.CATALOG[k].shape === 'riser' && !SS.CATALOG[k].as);
+  SS.isRiser = it => !!it && SS.RISERS.includes(it.type);
+  SS.isPlatform = it => !!it && (it.type === 'hina' || SS.isRiser(it));
 })(window.SS);

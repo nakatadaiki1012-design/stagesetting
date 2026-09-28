@@ -232,7 +232,7 @@
     const o = renderOpts();
     if (o.nameView || S.blocks || f.pairKey() !== f.pairs0) return false;
     const ids = [...f.base.keys()], items = ids.map(byId);
-    if (items.some(it => !it || /^(hina|riser|riser46|stairs|runway)$/.test(it.type))) return false;
+    if (items.some(it => !it || SS.isPlatform(it) || /^(stairs|runway)$/.test(it.type))) return false;
     const d = doc(), c = conductor(), ctx = SS.render.itemCtx(d, o, c);
     const NS = 'http://www.w3.org/2000/svg';
     const make = html => { const g = document.createElementNS(NS, 'g'); g.innerHTML = html; return g.firstElementChild; };
@@ -1009,7 +1009,7 @@
     const keep = JSON.stringify(d.items);
     S.sel.clear();
     const st = d.stage, R = SS.render;
-    const tiers = () => d.items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46');
+    const tiers = () => d.items.filter(SS.isPlatform);
     const onTier = it => tiers().some(t => SS.hinaContains(t, it.x, it.y, 14));
     const has = k => SS.checks(d).some(w => w.kind === k);
     // 手直しを1つ試して、⚠ が増えたら元に戻す
@@ -1028,7 +1028,7 @@
       if (bi >= 0) fns[bi]();
     };
     const FIXED = new Set(['text', 'cable', 'outlet', 'tap', 'runway', 'podium', 'stairs', 'door']);
-    const PLAT = new Set(['hina', 'riser', 'riser46']);
+    const PLAT = new Set(['hina', ...SS.RISERS]);
     const hit = (a, b) => a.x0 < b.x1 - 1 && a.x1 > b.x0 + 1 && a.y0 < b.y1 - 1 && a.y1 > b.y0 + 1;
     const unitOf = it => {
       if (PLAT.has(it.type)) return [it].concat(d.items.filter(o => o !== it && !PLAT.has(o.type) && o.type !== 'text' && SS.hinaContains(it, o.x, o.y, 0)));
@@ -1919,7 +1919,7 @@
 
   // ひな壇どうしのマグネット：動かしている段（選んだ段・平台・上がり段）の外枠を、ほかの段の外枠にくっつける／そろえる。
   // 横（x）と縦（y）を別々に、いちばん近いものへ。くっつく距離は画面の上で約16px（ただし最大40cm）
-  const PLATFORMS = new Set(['hina', 'riser', 'riser46', 'stairs']);
+  const PLATFORMS = new Set(['hina', ...SS.RISERS, 'stairs']);
   function magnetSnap(d, dx, dy) {
     const th = Math.min(40, 16 / S.view.k);
     const moving = selected().filter(it => PLATFORMS.has(it.type));
@@ -1954,7 +1954,7 @@
     const prim = byId(d.primary);
     if (!p0 || !prim) return { dx, dy, guides: null };
     const px = p0.x + dx, py = p0.y + dy;
-    const others = doc().items.filter(it => !S.sel.has(it.id) && it.type !== 'riser' && it.type !== 'text');
+    const others = doc().items.filter(it => !S.sel.has(it.id) && !SS.isRiser(it) && it.type !== 'text');
     const guides = [];
     if (prim.type === 'player') {
       const c = conductor();
@@ -2139,6 +2139,8 @@
     let p = { x: center.x, y: center.y };
     if (!at) for (let i = 0; i < 30 && doc().items.some(it => Math.hypot(it.x - p.x, it.y - p.y) < 40); i++) { p.x += 30; p.y += 20; }
     const it = Object.assign({ id: newId(), type, x: Math.round(p.x), y: Math.round(p.y), rot: 0 }, extra || {});
+    // 「平台 6×6尺（斜め）」のような、同じ部品を向きだけ変えて置くもの
+    if (c && c.as) { it.type = c.as; if (!(extra && extra.rot != null)) it.rot = c.rot || 0; }
     if (type === 'player') {
       it.label = it.label || '';
       it.rot = G.faceAngle(it, conductor());
@@ -2668,6 +2670,11 @@
     if (one && one.type === 'text') {
       h += `<label class="field">文字の大きさ<input id="propFont" type="range" min="12" max="120" value="${one.fontSize || 36}"></label>`;
     }
+    if (one && SS.isRiser(one)) {
+      // 1枚ずつ置いた平台：高さ（足の組み方）と向き
+      h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
+      h += `<div class="row2"><button class="btn" id="propRiserRot">◇ 斜め（45°）にする／もどす</button></div>`;
+    }
     if (one && one.type === 'hina') {
       const m = SS.hinaMaterials(one);
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
@@ -2725,6 +2732,7 @@
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
     bind('propRot', 'input', el => { const d = +el.value - (one.rot || 0); const gm = matesOf(one).map(m => ({ m, x: m.x, y: m.y, rot: m.rot || 0 })); one.rot = +el.value; turnMates(one, gm, d); $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => { one.hgt = +el.value; renderProps(); });
+    if ($('propRiserRot')) $('propRiserRot').onclick = () => { pushHistory(); one.rot = Math.abs(((one.rot || 0) % 90 + 90) % 90 - 45) < 1 ? 0 : 45; renderAll(); };
     // 弧のひな壇：指揮台（なければ舞台の前の真ん中）を中心にする半径・向き
     const curveToConductor = it => {
       const c = conductor(), vx = c.x - it.x, vy = c.y - it.y;
@@ -4344,6 +4352,7 @@
         <li><b>段の縁の自動の手直し</b>：人や段をドラッグして離すと、ひな壇の縁にかかった人を、段の上か床に自動できちんと置き直します（打楽器は楽器ごと）。そのままにしたいときは Alt を押しながら動かします。</li>
         <li><b>用意する物</b>：右の「編成表」に、奏者のいす・バス椅子・ティンパニ椅子・ピアノ椅子・譜面台・指揮台・平台・箱馬・上がり段・譜面灯の数（目安）が出ます。画像・PDF・印刷にも「必要ないす・譜面台などの数を入れる」で入れられます。</li>
         <li><b>★ パートのトップ（首席）</b>：奏者を選んで下の操作バーの <b>「★ 首席」</b> を押すと、★首席 → ★コンマス（ヴァイオリン1）→ なし と変わります。かんたん編成では、各パートで指揮者にいちばん近い席（コントラバスは前の方、ブラスバンドのソロ・コルネットは最前列の端）に自動で付きます。「設定」の「首席の★印を表示」で消せます。コンクール提出用の図には、「★を入れる」を選んだときだけ入ります。</li>
+        <li><b>平台</b>：「部品」の「基本」に、平台 3×6尺・4×6尺・6×6尺・3×3尺・2×6尺と、正方形を斜め（45°）に置いたものがあります。置いた平台を選ぶと、高さと「◇ 斜めにする」を選べます。オーケストラ・弦楽の「かんたん編成」では、<b>「弦の後ろの奏者を平台に乗せる」</b>で、コントラバス（と各パートのいちばん後ろの列）を平台に乗せて並べられます。</li>
         <li><b>🎺 コンクール提出用</b>：上の「📤 書き出す」→ いちばん上の <b>「🎺 コンクール提出用（白黒◯×）」</b> → 「PDFを作る」の3回で、A4・紙いっぱいの白黒の図ができます。入れるのは演奏会名（大会名）・団体名・メモ（部門・出演順など）。「図の下に入れる項目」で、ひな壇ごと（と床・合計）のいす・譜面台の数（自動で数えます）や、指揮者・出演順などを、書きかえ・足す・消す・入れる／入れないを選べます。ピアノ椅子は●（黒丸）にもでき、バスクラなど、ピアノ椅子にするパートも選べます（はじめはバスクラ。用意する物のピアノ椅子の数にも入ります）。パート名は◯の中に書き、図の下に記号の見方（◯＝いす・×＝譜面台・点線の◯＝立って演奏する人・★＝首席）を入れます。用紙の向き（横・縦）・編成表・記号の見方を入れるかは選べます。提出の書式は大会や支部の要項で違うことがあるので、要項を確かめてください。</li>
         <li><b>方眼</b>：「設定」で方眼を <b>1.82m（1間）</b> にできます。</li>
         <li><b>↶ 戻す</b>：200回まで戻せます。▲▼を続けて押したとき（1秒以内）は1回分にまとめます。</li>
@@ -4586,6 +4595,8 @@
     // 打楽器の箱：打楽器のある編成だけ
     $('percBox').hidden = !['band', 'orch', 'brass'].includes(st.type);
     $('ensAntiWrap').hidden = !['orch', 'strings'].includes(st.type);
+    $('strRiserWrap').hidden = !['orch', 'strings'].includes(st.type);
+    $('strRiser').value = st.strRiser || '';
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
@@ -4672,6 +4683,7 @@
     };
   });
   $('ensAnti').onchange = e => { ens().antiphonal = e.target.checked; applyAuto(); };
+  $('strRiser').onchange = e => { if (e.target.value) ens().strRiser = e.target.value; else delete ens().strRiser; applyAuto(); };
   document.querySelectorAll('#ensSpace [data-space]').forEach(b => { b.onclick = () => { ens().space = b.getAttribute('data-space'); renderEnsNow(); applyAuto(); }; });
   // 配置のくふう（一括作成タブ）：自動配置のときだけ並べ直す。手で置いた配置は消さない
   const optAuto = () => {

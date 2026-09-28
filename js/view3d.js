@@ -466,7 +466,7 @@ window.SS = window.SS || {};
   // 平台の高さ：ひな壇(hina)は it.hgt。昔の平台は前から 21, 42, 64cm…
   function riserHeights(items) {
     const map = new Map();
-    const rs = items.filter(it => it.type === 'riser' || it.type === 'riser46');
+    const rs = items.filter(SS.isRiser);
     const ys = [...new Set(rs.map(r => Math.round(r.y / 30)))].sort((a, b) => b - a);
     const std = [21.2, 42.4, 63.6, 84.8];
     rs.forEach(r => map.set(r, (r.hgt || std[Math.min(3, ys.indexOf(Math.round(r.y / 30)))]) / 100));
@@ -627,7 +627,7 @@ window.SS = window.SS || {};
         box(g, 0.58, 0.4, 0.005, '#f4f1e8', 0, 1.25, -d / 2 + 0.152).rotation.x = -0.35;
         break;
       }
-      case 'riser': case 'riser46': makeRiser(g, w, d, riserH, (it.type === 'riser46' ? 1.212 : 0.909)); break;
+      case 'riser': case 'riser46': case 'riser66': case 'riser33': case 'riser26': makeRiser(g, w, d, riserH, d, w); break;
       case 'hina':
         if (SS.hinaArc(it)) {
           // 弧のひな壇：平台を1枚ずつ扇に並べる
@@ -1037,7 +1037,7 @@ window.SS = window.SS || {};
         scene.add(p.g);
         playerGroups.set(it.id, { g: p.g, head: p.head, it, base });
       } else {
-        const isRiser = it.type === 'riser' || it.type === 'riser46' || it.type === 'hina' || it.type === 'runway' || it.type === 'door';
+        const isRiser = SS.isPlatform(it) || it.type === 'runway' || it.type === 'door';
         const g = makeItem(it, color, rh.get(it) || 0.2);
         if (!g) return;
         if (!isRiser && it.type !== 'podium') {

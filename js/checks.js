@@ -7,7 +7,7 @@ window.SS = window.SS || {};
   // 形のない書き込み（文字・四角・丸）は、物ではないので確かめない
   const NOT_THING = new Set(['text', 'box', 'circle', 'cable', 'outlet', 'tap', 'runway', 'door']); // 床のケーブル・コンセントも通れるので除く（花道は床の続き）
   const HEAVY = new Set(['marimba', 'marimba43', 'timp32', 'timp29', 'timp26', 'timp23', 'timp', 'piano', 'pianoFull', 'vib', 'chimes', 'xylo', 'tam']);
-  const PLATFORM = new Set(['hina', 'riser', 'riser46']);
+  const PLATFORM = new Set(['hina', ...SS.RISERS]); // ひな壇と、1枚ずつ置いた平台（種類は catalog の SS.RISERS）
   const STEP_OK = 25; // 1回で上り下りできる高さの差（cm）。平台1段（21.2cm）まで
   const HIGH = 40; // これ以上の高さの段には上がり段が要る
   const PATH_W = 120; // 重い楽器の搬入経路の幅（cm）

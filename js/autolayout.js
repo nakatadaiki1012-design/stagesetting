@@ -476,7 +476,7 @@ window.SS = window.SS || {};
         out.push({ x: o.x, y: o.y, r: 25 });
         const a = ((o.rot || 0) * Math.PI) / 180;
         out.push({ x: o.x - Math.sin(a) * 64, y: o.y + Math.cos(a) * 64, r: 25 });
-      } else if (o.type !== 'hina' && o.type !== 'riser' && o.type !== 'riser46') {
+      } else if (!SS.isPlatform(o)) {
         const C = SS.CATALOG[o.type] || {};
         out.push({ x: o.x, y: o.y, r: Math.max(o.w || C.w || 40, o.h || C.h || 40) / 2 });
       }
@@ -1370,6 +1370,38 @@ window.SS = window.SS || {};
     return out.map(([v, d]) => [v - x / 2, d]);
   }
 
+  // 弦の後ろの奏者を平台に乗せる（mode：'cb' コントラバスだけ／'back' コントラバスと、各パートのいちばん後ろの列）。
+  // プルト（2人で1本の譜面台）ごとに1枚、指揮者の方へ向けて置く（扇の外側では斜めになる）。高さは7寸（約21cm）。
+  // コントラバス：2人なら 6×6尺（正方形）、1人なら 3×6尺。後ろの列の Vn・Va・Vc：4×6尺。いす・楽器・譜面台が乗るように、少し前へ出す
+  function stringRisers(items, c, mode) {
+    const out = [];
+    const desks = new Map();
+    items.filter(it => it.type === 'player' && it.desk).forEach(it => { if (!desks.has(it.desk)) desks.set(it.desk, []); desks.get(it.desk).push(it); });
+    const dist = it => Math.hypot(it.x - c.x, it.y - c.y);
+    // 各パートのいちばん後ろの列（指揮者からいちばん遠い半径の人たち）
+    const backRing = {};
+    ['Vn1', 'Vn2', 'Va', 'Vc'].forEach(k => {
+      const ps = items.filter(it => it.type === 'player' && it.label === k);
+      if (ps.length < 4) return; // 1列しかないパートは乗せない
+      const far = Math.max(...ps.map(dist));
+      backRing[k] = far;
+    });
+    desks.forEach((ps, key) => {
+      const k = ps[0].label;
+      const cb = k === 'Cb';
+      if (!cb && !(mode === 'back' && backRing[k] != null && ps.every(p => dist(p) > backRing[k] - 30))) return;
+      const mx = ps.reduce((a, p) => a + p.x, 0) / ps.length, my = ps.reduce((a, p) => a + p.y, 0) / ps.length;
+      const rot = G().faceAngle({ x: mx, y: my }, c), a = (rot * Math.PI) / 180;
+      const type = cb ? (ps.length > 1 ? 'riser66' : 'riser') : 'riser46';
+      const C = SS.CATALOG[type];
+      // 3×6尺は、長い方を前後に（1人と楽器・譜面台が乗る）
+      const long = type === 'riser';
+      const w = long ? C.h : C.w, h = long ? C.w : C.h;
+      const fwd = cb ? h / 2 - 32 : h / 2 - 30; // いすの後ろのはし（約-25cm）が乗るところまで前へ
+      out.push({ type, x: mx - Math.sin(a) * fwd, y: my + Math.cos(a) * fwd, rot, w, h, hgt: 21.2, strRiser: true });
+    });
+    return out;
+  }
   function orch(st, stage, tune) {
     const n = st.counts;
     const c = { x: stage.w / 2, y: podiumY(stage) };
@@ -1572,6 +1604,7 @@ window.SS = window.SS || {};
       items.push({ type: 'player', label: 'Hp', x: p.x, y: p.y, rot: r }, { type: 'harp', x: p.x - Math.sin(a) * 70, y: p.y + Math.cos(a) * 70, rot: r + 180 });
     });
     rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(maxR + 120, -0.85, c); items.push(...pianoAt(p.x, p.y)); });
+    if (st.strRiser) items.push(...stringRisers(items, c, st.strRiser));
     const all = tp.tiers.concat(items);
     return { items: all, c, overlap: overlapCheck(tp, all) };
   }
@@ -1592,7 +1625,7 @@ window.SS = window.SS || {};
     const pod = items.find(it => it.type === 'podium');
     if (parts.left.length && pod && opt && opt.side) {
       const c = { x: pod.x, y: pod.y };
-      const tiers = items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46');
+      const tiers = items.filter(SS.isPlatform);
       const onTier = p => tiers.some(h => (SS.hinaContains ? SS.hinaContains(h, p.x, p.y, 0) : Math.abs(p.x - h.x) < (h.w || 0) / 2 && Math.abs(p.y - h.y) < (h.h || 0) / 2));
       const pset = new Set(parts.left);
       const floorPl = items.filter(it => it.type === 'player' && !pset.has(it) && SS.partGroup(it.label).id !== 'perc' && !onTier(it) && it.x < c.x);
@@ -1704,7 +1737,7 @@ window.SS = window.SS || {};
 
   // 舞台の前の縁から1m以内に来た人・楽器（とそのまとまり）を、足りない分だけ奥へ（指揮台・マイク・モニターはそのまま）
   function keepFromEdge(items, stage) {
-    const skip = new Set(['podium', 'hina', 'riser', 'riser46', 'stairs', 'mic', 'micTall', 'monitor', 'text']);
+    const skip = new Set(['podium', 'hina', ...SS.RISERS, 'stairs', 'mic', 'micTall', 'monitor', 'text']);
     items.forEach(it => {
       if (skip.has(it.type)) return;
       const b = SS.itemAABB(it, {});

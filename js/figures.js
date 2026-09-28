@@ -281,9 +281,8 @@ window.SS = window.SS || {};
       const hb = Object.keys(sm.leg).filter(k => /箱馬/.test(k));
       if (hb.length > 1) add('legTotal', '箱馬（合計）', hb.reduce((a, k) => a + sm.leg[k], 0), '向きのちがう箱馬を合わせた数');
     }
-    const r36 = items.filter(it => it.type === 'riser').length, r46 = items.filter(it => it.type === 'riser46').length;
-    add('riser36', '平台 3×6尺（1枚ずつ置いたもの）', r36);
-    add('riser46', '平台 4×6尺（1枚ずつ置いたもの）', r46);
+    // 1枚ずつ置いた平台（種類ごと。向きは問わない）
+    SS.RISERS.forEach(k => add(k === 'riser' ? 'riser36' : k, `${SS.CATALOG[k].name}（1枚ずつ置いたもの）`, items.filter(it => it.type === k).length));
     add('stairs', '上がり段', items.filter(it => it.type === 'stairs').length);
     // 譜面灯
     if (SS.powerSummary) add('light', '譜面灯', SS.powerSummary(items).lights);

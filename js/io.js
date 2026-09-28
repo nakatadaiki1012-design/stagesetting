@@ -384,7 +384,7 @@ window.SS = window.SS || {};
         const knobR = 26 / k;
         const blocks = placed.slice().concat(opt.knobs ? R.stageKnobs(st).map(q => ({ x0: q.x - knobR, x1: q.x + knobR, y0: q.y - knobR, y1: q.y + knobR })) : []);
         // 奏者・楽器の上にも重ねない（スマホのように字が大きく見えるとき、舞台の外の「前の幅」の線の上へ逃がす）
-        doc.items.forEach(it => { if (['hina', 'riser', 'riser46', 'stairs', 'podium', 'text', 'cable'].includes(it.type)) return; blocks.push(it.type === 'player' ? { x0: it.x - 26, x1: it.x + 26, y0: it.y - 26, y1: it.y + 26 } : bboxOf(it)); });
+        doc.items.forEach(it => { if (SS.isPlatform(it) || ['stairs', 'podium', 'text', 'cable'].includes(it.type)) return; blocks.push(it.type === 'player' ? { x0: it.x - 26, x1: it.x + 26, y0: it.y - 26, y1: it.y + 26 } : bboxOf(it)); });
         const fl = placed[0], fy2 = R.frontOuter(st) + 34;
         const cands = [
           { x: lxLine + tw / 2 + g, y: my },                       // 線の右
@@ -409,7 +409,8 @@ window.SS = window.SS || {};
     return s;
   };
 
-  const LAYER = { runway: -1, riser: 0, riser46: 0, hina: 0, stairs: 0, text: 3, player: 2 };
+  const LAYER = { runway: -1, hina: 0, stairs: 0, text: 3, player: 2 };
+  SS.RISERS.forEach(k => { LAYER[k] = 0; }); // 平台はいちばん下（ひな壇と同じ）
   R.sortedItems = items => items.map((it, i) => ({ it, i })).sort((a, b) => ((LAYER[a.it.type] ?? 1) - (LAYER[b.it.type] ?? 1)) || a.i - b.i).map(o => o.it);
 
   R.seatNumbers = function (doc, conductor) {
@@ -710,7 +711,7 @@ window.SS = window.SS || {};
     if (ex.content === 'contest') return contestContent(doc, opts, k);
     if (ex.content === 'assembly') {
       // ひな壇の組み図：段・上がり段・平台・指揮台だけ（平台1枚ずつの番号と足の位置）
-      const keep = new Set(['hina', 'stairs', 'riser', 'riser46', 'podium']);
+      const keep = new Set(['hina', 'stairs', ...SS.RISERS, 'podium']);
       const d2 = Object.assign({}, doc, { items: doc.items.filter(it => keep.has(it.type)) });
       let s = R.stageSVG(d2, opts.grid && ex.grid ? (opts.gridSize || 50) : 0);
       s += R.itemsSVG(d2, Object.assign({}, opts, { assembly: true, hinaDetail: true }), conductor, false);
@@ -730,7 +731,7 @@ window.SS = window.SS || {};
   // ---------------------------------------------------------------- コンクール提出用（白黒◯×）
   // 出すのは、舞台の形・ひな壇の段・椅子◯・譜面台×・パート名・打楽器などの楽器・指揮台・客席の向きだけ。
   // 寸法・センター線・平台の継ぎ目・上手下手・マイクなどは出さない
-  const CONTEST_KEEP = new Set(['podium', 'hina', 'riser', 'riser46', 'piano', 'pianoFull', 'upright', 'keyboard', 'harp']);
+  const CONTEST_KEEP = new Set(['podium', 'hina', ...SS.RISERS, 'piano', 'pianoFull', 'upright', 'keyboard', 'harp']);
   R.contestKeeps = it => it.type === 'player' || CONTEST_KEEP.has(it.type) || ((SS.CATALOG[it.type] || {}).cat === '打楽器') || it.type === 'timp';
   const SEAT_R = 20, X_R = 14;
   // 部品の外形を多角形（図の座標）で
@@ -756,9 +757,9 @@ window.SS = window.SS || {};
     const noStand = it => !SS.hasStand(it);
     const fwd = it => { const a = ((it.rot || 0) * Math.PI) / 180; return [-Math.sin(a), Math.cos(a)]; };
     // じゃまになる物：椅子の◯、楽器（打楽器・ピアノなど）、指揮台
-    const things = doc.items.filter(it => it.type !== 'player' && it.type !== 'hina' && it.type !== 'riser' && it.type !== 'riser46').map(polyOf);
+    const things = doc.items.filter(it => it.type !== 'player' && !SS.isPlatform(it)).map(polyOf);
     const inThing = (x, y, r) => things.some(pg => inPolyW(x, y, pg) || pg.some(([px, py]) => Math.hypot(px - x, py - y) < r));
-    const lines = doc.items.filter(it => it.type === 'hina' || it.type === 'riser' || it.type === 'riser46').map(polyOf);
+    const lines = doc.items.filter(SS.isPlatform).map(polyOf);
     // 1) 譜面台の×：その人の◯の前（指揮者側）に、◯から少し離して。となりの◯・×と重ならない所
     const xs = [];
     const pairs = SS.standPairs ? SS.standPairs(doc.items) : new Map();
