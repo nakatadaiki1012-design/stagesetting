@@ -3190,7 +3190,7 @@
     // 舞台奥の通路の幅は、設定した値のまま（ひな形は60cmで作ってあるので、違えば並べ直す）
     if (keep.stage.backAisle != null) {
       S.doc.stage.backAisle = keep.stage.backAisle;
-      if (SS.auto.aisleOf(S.doc.stage) !== SS.auto.DEFAULT_AISLE && S.doc.ensemble) applyAuto({ noHistory: true, quiet: true });
+      if (!t.mine && SS.auto.aisleOf(S.doc.stage) !== SS.auto.DEFAULT_AISLE && S.doc.ensemble) applyAuto({ noHistory: true, quiet: true });
     }
     renderSteppers();
     S.sel.clear();
@@ -3201,9 +3201,62 @@
     toast('「' + t.name + '」を読み込みました', true);
   }
 
+  // マイひな形：自分の配置を名前をつけてこのブラウザに取っておき、ひな形と同じように使う
+  const MYTPL_KEY = 'stagesetting.mytpl.v1';
+  function myTemplates() {
+    try { const a = JSON.parse(localStorage.getItem(MYTPL_KEY) || '[]'); return Array.isArray(a) ? a.filter(t => t && t.doc && Array.isArray(t.doc.items)) : []; } catch (e) { return []; }
+  }
+  function saveMyTemplates(a) {
+    try { localStorage.setItem(MYTPL_KEY, JSON.stringify(a)); return true; } catch (e) { toast('保存できませんでした（ブラウザの保存場所がいっぱいです）。使わないマイひな形を消してください'); return false; }
+  }
+  function asTemplate(m) {
+    const n = m.doc.items.filter(it => it.type === 'player').length;
+    return { mine: true, id: m.id, name: m.name, desc: `${n}人・${m.date || ''}`, make: () => JSON.parse(JSON.stringify(m.doc)) };
+  }
+  function addMyTemplate() {
+    if (!doc().items.length) { toast('舞台に何もありません。並べてから保存してください'); return; }
+    const d = new Date(), date = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    const def = (doc().title || '').trim() || `${players().length}人の配置`;
+    openModal(`<h2>マイひな形に保存</h2>
+      <p class="hint">今の配置（舞台の大きさ・人・ひな壇・部品）を、自分のひな形として取っておきます。次からは「ひな形」の一番上から、すぐに使えます。</p>
+      <label class="field"><span>名前</span><input type="text" id="mtName" maxlength="40" value="${SS.esc(def)}"></label>
+      <p class="hint small">このブラウザの中にだけ保存されます。ほかのパソコン・スマホで使うときは「💾 保存/開く」でファイルに保存してください。</p>
+      <div class="btn-row"><button class="btn primary" id="mtYes">保存する</button><button class="btn" id="mtNo">やめる</button></div>`);
+    const inp = $('mtName'); inp.focus(); inp.select();
+    const go = () => {
+      const name = inp.value.trim() || def, cur = doc();
+      const a = myTemplates();
+      a.unshift({ id: 'my' + Date.now().toString(36), name, date, doc: JSON.parse(JSON.stringify({ stage: cur.stage, items: cur.items, ensemble: cur.ensemble || null })) });
+      if (!saveMyTemplates(a)) return;
+      closeModal(); buildTemplates(); toast(`「${name}」をマイひな形に保存しました`, true);
+    };
+    $('mtYes').onclick = go; $('mtNo').onclick = closeModal;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  }
+
   function buildTemplates() {
     const list = $('templateList');
     list.innerHTML = '';
+    const mine = myTemplates();
+    const head = document.createElement('div');
+    head.className = 'my-tpl';
+    head.innerHTML = `<h4>マイひな形${mine.length ? `<span class="small">（${mine.length}）</span>` : ''}</h4><button class="btn" id="myTplAdd">＋ 今の配置をマイひな形に保存</button>${mine.length ? '' : '<p class="hint small">よく使う配置を取っておくと、次から1回で呼び出せます。</p>'}`;
+    list.appendChild(head);
+    $('myTplAdd').onclick = addMyTemplate;
+    mine.forEach(m => {
+      const t = asTemplate(m), row = document.createElement('div');
+      row.className = 'tpl-mine';
+      const b = document.createElement('button');
+      b.className = 'tpl-card';
+      let th = ''; try { th = thumbSVG(t.make()); } catch (e) { /* ignore */ }
+      b.innerHTML = `${th}<div><b>${SS.esc(t.name)}</b><span>${SS.esc(t.desc)}</span></div>`;
+      b.onclick = () => loadTemplate(t);
+      const x = document.createElement('button');
+      x.className = 'tpl-del'; x.title = 'このマイひな形を消す'; x.textContent = '×';
+      x.onclick = () => askConfirm(`マイひな形「${m.name}」を消します。\n（今の配置図は消えません）`, '消す', () => { saveMyTemplates(myTemplates().filter(q => q.id !== m.id)); buildTemplates(); toast('消しました'); });
+      row.append(b, x); list.appendChild(row);
+    });
+    const h4 = document.createElement('h4'); h4.textContent = 'ひな形'; list.appendChild(h4);
     SS.TEMPLATES.forEach(t => {
       const b = document.createElement('button');
       b.className = 'tpl-card';
@@ -4371,6 +4424,7 @@
         <li><b>ひな壇の幅</b>：自動ではすべての段が同じ横幅になります。手で置いたときは「▤ ひな壇の幅をそろえる」。</li>
         <li><b>🧊 3D</b>：客席から・指揮者から・<b>奏者の席に座った目線</b>で、立体で見られます（奏者をタップするとその席に座れます）。3Dの表示には<b>インターネット接続が必要</b>です。スマホでは、左のパネルの「もっと…」→「🧊 3Dで見る」から開きます。</li>
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
+        <li><b>マイひな形</b>：「ひな形」の一番上の「＋ 今の配置をマイひな形に保存」で、今の配置に名前をつけて取っておけます。次からはカードを押すだけ。このブラウザの中にだけ保存されます（ほかの機械では「💾 保存/開く」のファイルで）。</li>
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
         <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列をまとめて選択。右の「選択中」タブの「複製・削除・同じパートを選ぶ」は1つ以上、「位置合わせ」は2つ以上選んだときに出ます。</li>
         <li><b>部品を足す</b>：「部品」で押してから、置きたい場所をタップ。楽器は実寸（cm）です。</li>
