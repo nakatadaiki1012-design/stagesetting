@@ -1174,8 +1174,6 @@
     if (!after.length && !fitBad()) { S.warnMsg = null; toast(`⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）`, true); return; }
     warnOut(!after.length ? `⚠ ${before}件をすべて直しました（「戻す」で元に戻せます）` : `${after.length < before ? `⚠ ${before}件 → ${after.length}件になりました（「戻す」で元に戻せます）。残りは` : 'ここは自動では直せませんでした。'}下の一覧を押して、赤い枠の所を手で直してください。`);
   }
-  // 「選択中」タブの ✨ きれいに整える（下のボタンと同じ）
-  $('selTidy').onclick = () => $('btnTidy').click();
   $('warnChip').onclick = () => { $('warnList').hidden = !$('warnList').hidden; if ($('warnList').hidden) { S.warnMsg = null; S.warnReauto = false; } renderWarnList(); };
   function warnMarksSVG(k) {
     const ws = S.warnings || [];
@@ -2636,7 +2634,15 @@
     $('alignBox').hidden = sel.length < 2;
     document.querySelectorAll('#selTab .sel-only').forEach(b => { b.hidden = !sel.length; });
     $('selOps').hidden = !sel.length;
-    if (!sel.length) { info.classList.remove('hidden'); box.innerHTML = ''; return; }
+    if (!sel.length) {
+      // 何も選んでいないとき：使い方の一言と、今の配置図のまとめ（人数・いす・譜面台）
+      const ps = players(), sc = SS.standCount(doc().items);
+      info.innerHTML = `<div class="sel-empty"><div class="sel-sum"><b>${ps.length}人</b><span>譜面台 ${sc.stands}本</span></div>
+        <button class="btn wide" id="selToCount">📋 編成表・用意する物を見る</button>
+        <p class="small">人や部品を押すと、ここで名前・向き・大きさを変えられます。何もないところをドラッグすると、まとめて選べます。</p></div>`;
+      $('selToCount').onclick = () => openTab('rightPanel', 'countTab');
+      info.classList.remove('hidden'); box.innerHTML = ''; return;
+    }
     info.classList.add('hidden');
     const allPlayers = sel.every(it => it.type === 'player');
     const one = sel.length === 1 ? sel[0] : null;
@@ -3274,17 +3280,23 @@
     const cats = {};
     Object.keys(SS.CATALOG).forEach(k => { const c = SS.CATALOG[k]; if (c.cat) (cats[c.cat] = cats[c.cat] || []).push(k); });
     let h = '';
-    // よく使う人が少ない部品（花道・出入り口・司会）は「舞台の設備・その他」にまとめ、はじめは閉じておく
-    const FOLD = '舞台の設備・その他';
+    // あまり使わない部品は、はじめは閉じた箱にまとめて、一覧を短くする
+    //  ・マイク・モニター・電源・花道・出入り口・司会 →「音響・電源・劇場の設備」
+    //  ・平台の 3×6尺 以外の大きさ →「平台のほかの大きさ」（基本の中）
+    const FOLD = '音響・電源・劇場の設備';
+    const FOLD_KEYS = ['mic', 'micTall', 'monitor', 'outlet', 'tap', 'runway', 'mc', 'door'];
+    const MORE_RISERS = ['riser46', 'riser66', 'riser33', 'riser26', 'riser66d', 'riser33d'];
+    Object.keys(cats).forEach(cat => { cats[cat] = cats[cat].filter(k => !FOLD_KEYS.includes(k)); if (!cats[cat].length) delete cats[cat]; });
+    cats[FOLD] = FOLD_KEYS.filter(k => SS.CATALOG[k]);
+    const btn = k => { const c = SS.CATALOG[k]; const size = c.w ? `${c.w}×${c.h}cm` : ''; return `<button class="pal-item" draggable="true" data-type="${k}" title="${SS.esc(c.note || size)}">${SS.iconFor(k)}<span>${c.name}${size ? `<small>${size}</small>` : ''}</span></button>`; };
     Object.keys(cats).sort((a, b) => (a === FOLD) - (b === FOLD)).forEach(cat => {
-      if (cat === FOLD) { h += `<details class="fold pal-fold"><summary>${cat}（花道・出入り口・司会）</summary><div class="palette-grid">`; cats[cat].forEach(k => { const c = SS.CATALOG[k]; const size = c.w ? `${c.w}×${c.h}cm` : ''; h += `<button class="pal-item" draggable="true" data-type="${k}" title="${SS.esc(c.note || size)}">${SS.iconFor(k)}<span>${c.name}${size ? `<small>${size}</small>` : ''}</span></button>`; }); h += '</div></details>'; return; }
-      h += `<h4>${cat}</h4><div class="palette-grid">`;
-      cats[cat].forEach(k => {
-        const c = SS.CATALOG[k];
-        const size = c.w ? `${c.w}×${c.h}cm` : '';
-        h += `<button class="pal-item" draggable="true" data-type="${k}" title="${SS.esc(c.note || size)}">${SS.iconFor(k)}<span>${c.name}${size ? `<small>${size}</small>` : ''}</span></button>`;
-      });
-      h += '</div>';
+      if (cat === FOLD) { h += `<details class="fold pal-fold"><summary>${cat}<small>（マイク・モニター・コンセント・延長コード・花道・出入り口・司会）</small></summary><div class="palette-grid">${cats[cat].map(btn).join('')}</div></details>`; return; }
+      const more = cats[cat].filter(k => MORE_RISERS.includes(k));
+      // 平台 3×6尺 は、すぐ下の「平台のほかの大きさ」と並ぶように、その列の最後に
+      const main = cats[cat].filter(k => !MORE_RISERS.includes(k));
+      if (more.length) main.sort((a, b) => (a === 'riser') - (b === 'riser'));
+      h += `<h4>${cat}</h4><div class="palette-grid">${main.map(btn).join('')}</div>`;
+      if (more.length) h += `<details class="fold pal-fold pal-sub"><summary>平台のほかの大きさ<small>（4×6・6×6・3×3・2×6尺・斜め）</small></summary><div class="palette-grid">${more.map(btn).join('')}</div></details>`;
     });
     pal.innerHTML = h;
     pal.querySelectorAll('[data-type]').forEach(b => {
@@ -4424,9 +4436,9 @@
         <li><b>選び方</b>：右上の <b>⬚</b> で四角く囲んで、<b>➰</b> で自由に囲んで、まとめて選べます。<b>ひな壇（平台）は選ばれません</b>（平台だけを囲んだときは平台を選びます）。</li>
         <li><b>弧のカーブ</b>：「整える」のスライダーで、床の扇形を<b>ゆるい弧〜まっすぐ</b>に変えられます。右端に戻すと元の扇形です。</li>
         <li><b>舞台図を重ねる</b>：左のタブの「もっと…」→「トレース」で、ホールの<b>舞台図（PDF・画像）</b>を読み込むと配置図に重なります。「⤢ 舞台の前の角に合わせる」で図の前の左右の角をタップすると、<b>大きさ・向き・位置が一度に</b>合います。PDFなら縮尺（1/100など）で実寸にもできます。図が大きくはみ出しても大丈夫。「✂ 使う範囲を切り取る」「🔭 図の全体を表示」で調整できます。</li>
-        <li><b>右の「選択中」</b>：何も選んでいないときは「✨ きれいに整える」だけ。扇形・横一列・向き・重なり・左右反転・間隔などの細かいボタンは <b>「くわしく整える」</b> の箱の中です。</li>
+        <li><b>右の「選択中」</b>：何も選んでいないときは、人数・譜面台の本数のまとめと「📋 編成表・用意する物を見る」だけ（「✨ きれいに整える」は舞台図の下に1つ）。扇形・横一列・向き・重なり・左右反転・間隔などの細かいボタンは <b>「くわしく整える」</b> の箱の中です。</li>
         <li><b>安全の確認</b>：人や楽器が <b>舞台の前の縁から1m以内</b> にあるとき、高さ40cm以上の段の <b>いちばん後ろに立つ人</b> がいるとき（後ろに柵や壁がない）も「⚠ 確認」に出ます。縁に近いものは「🔧 自動で直す」で奥へ動かせます。</li>
-        <li><b>上級機能</b>：花道・出入り口（扉）・司会（マイクスタンド）は「部品」の <b>「舞台の設備・その他」</b>、3D の「💡 照明」は 3D の下の <b>「⋯ くわしく」</b> の中です。</li>
+        <li><b>上級機能</b>：花道・出入り口（扉）・司会（マイクスタンド）は「部品」の <b>「音響・電源・劇場の設備」</b>、3D の「💡 照明」は 3D の下の <b>「⋯ くわしく」</b> の中です。</li>
         <li><b>オーケストラ</b>：弦はプルト（2人で1本）ごとに指揮者を中心とした弧に沿って同じ間隔・同じ向きで並べ、Vn1・Vn2・Va・Vc の境目に少しすき間を空けます。ティンパニは最上段の真ん中、大太鼓・小太鼓などはそのとなりにまとめ、弦のすぐ横の床には置きません。</li>
         <li><b>舞台の大きさを数字で</b>：図の「前の幅」「奥の幅」「奥行」の数字（✎）を押すと、長さを入力できます。</li>
         <li><b>ひな壇の段ごとの置き方</b>：「ひな壇」の箱で、段ごとに平台の置き方を選べます（例：1段目は横・2段目は縦）。</li>
@@ -4462,14 +4474,14 @@
         <li><b>ホールの設備</b>：「かんたん編成」の「安全・ホールの設備」→「ホールの設備」に、反射板の位置・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道・<b>上手／下手の出入り口（扉）</b>を<b>分かるものだけ</b>入れると、図に描き、重なった物を「⚠ 確認」で知らせます。出入り口は扉の前 1.2m を空けておく所として描き、かんたん編成はそこを空けて並べます。</li>
         <li><b>📏 舞台図の縮尺</b>：「もっと…」→「トレース」で舞台図を読み込んだら、いちばん上の青いボタン <b>「📏 長さのわかる2点で縮尺を合わせる」</b> を押し、図の上で長さのわかる2点（平台の端から端など）をタップして、<b>1.82m（6尺）・0.91m（3尺）・1m</b> などのボタンを押すと縮尺が合います。</li>
         <li><b>出入り口（扉）</b>：「部品」の <b>出入り口（扉）</b> を壁の近くに置くと、壁にくっついて内側を向きます。<b>舞台の外（そで・奥の通路）</b>にも置けます。舞台のすぐ外（壁から1.5m以内）に置くと、<b>壁の外側にくっついて、そでの方へ開く形</b>になります（空けておく所もそで側）。それより遠くに出すと、置いた所のまま舞台のほうを向きます（Alt を押しながらだと、くっつかず向きも変えません）。「全体を表示」で外の出入り口まで入ります。扉の前 1.2m に人や物があると「⚠ 確認」に出て、かんたん編成はそこを空けて並べます。</li>
-        <li><b>司会・照明のテスト</b>：「部品」の「舞台の設備・その他」の <b>司会（マイクスタンド）</b> で司会の位置を決め、3D の「⋯ くわしく」→ <b>「💡 照明」</b> で、地明かりの明るさ・反射板を下から色で照らす・上から色の明かり・<b>ピンスポット</b>（当てる人・どこから・大きさ・色）をためせます。照明の設定は配置図といっしょに保存されます。</li>
+        <li><b>司会・照明のテスト</b>：「部品」の「音響・電源・劇場の設備」の <b>司会（マイクスタンド）</b> で司会の位置を決め、3D の「⋯ くわしく」→ <b>「💡 照明」</b> で、地明かりの明るさ・反射板を下から色で照らす・上から色の明かり・<b>ピンスポット</b>（当てる人・どこから・大きさ・色）をためせます。照明の設定は配置図といっしょに保存されます。</li>
         <li><b>花道（張り出し）</b>：「部品」の <b>花道（張り出し）</b> は舞台と同じ高さの床です。客席の方や舞台の横へ出して置け、長さ・幅・向きは自由です。上に置いた人は舞台の外でも「整える」で動かしません。3D にも出ます。</li>
         <li><b>✨ きれいに整える</b>：ひな壇から落ちかけている人は段に乗せ、段にかかっている床の人は降ろし、段の上の人を段の上にきちんと並べます。舞台からはみ出すひな壇・指揮台は舞台の中へ、舞台に入らない床の列は少し詰めます。花道・ピットのふたの上の人はそのままです。</li>
         <li><b>🎻 弦は2人で1本の譜面台</b>：ヴァイオリン・ヴィオラ・チェロ・コントラバスは、となりの人と2人で1本の譜面台になります。奏者を選んで「1人1本にする」「この2人で1本にする」で変えられます。</li>
         <li><b>◠ 弧のひな壇</b>：かんたん編成の「ひな壇の形」で「弧（指揮者を中心に）」。置いたひな壇は、選んで「形」を「弧（円形）」に。平台は扇に並べて描きます。</li>
         <li><b>3Dのパート名</b>：3Dの下の「文字 小・中・大」で大きさを変えられます。</li>
-        <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」の「電気・音響」にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
-        <li><b>🎙 録音・音響</b>：「部品」の「電気・音響」に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
+        <li><b>💡 譜面灯・電源</b>：奏者を選んで「譜面灯をつける」、または「編成表」の「全員に譜面灯」。「部品」のいちばん下の「音響・電源・劇場の設備」（はじめは閉じています）にコンセント・延長コード（タップ）があります。「編成表」に譜面灯の数と必要な差し込み口の数が出ます。</li>
+        <li><b>🎙 録音・音響</b>：「部品」のいちばん下の「音響・電源・劇場の設備」（はじめは閉じています）に録音用マイク（高いスタンド）・モニタースピーカー。マイクを選んで「下手の袖へ」「上手の袖へ」を押すと、ケーブルの通り道を線で描きます（白い丸をドラッグで直せます）。「📤 書き出す」の画面では「音響の機材を入れる」のチェックで出す／出さないを切り替えられます。</li>
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>
         <li><b>版</b>：「名前を付けて保存」のとき、<b>第何版かを1つ上げるか</b>聞きます。「📤 書き出す」の画面の「図面の情報欄」で手で直すこともできます。</li>
         <li><b>保存・共有</b>：上のボタンから画像保存・印刷・共有リンクが作れます。作業中の内容は自動で保存されます。ただし保存先は<b>このブラウザの中だけ</b>なので、ブラウザのデータを消したり機種を変えたりすると消えます。大事な図は「💾 保存/開く」の<b>「⬇ ファイルに保存」</b>もしておくと安心です（初めて書き出したあとにも1回だけ案内します）。</li>

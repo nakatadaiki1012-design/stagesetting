@@ -89,6 +89,7 @@ body {
 .tab-more-menu .tab:hover { background: #f4f7fb; }
 .tab-more-menu .tab.active { background: var(--accent-soft); color: var(--accent); }
 .tab-more-menu .tab small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+.tab-more-menu .more-sep { margin: 6px 6px 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .tabpane { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; }
 .tabpane.active { display: block; }
 .tabpane h3 { font-size: 14px; margin: 14px 0 6px; }
@@ -633,3 +634,12 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
   .view-title span { font-size: 10.5px; }
   .view-acts .btn { padding: 6px 8px; font-size: 12.5px; }
 }
+
+/* 「選択中」で何も選んでいないとき */
+.sel-empty .sel-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; color: var(--text); }
+.sel-empty .sel-sum b { font-size: 18px; }
+.sel-empty .sel-sum span { font-size: 12.5px; }
+.sel-empty .btn.wide { margin-top: 8px; }
+.sel-empty p { margin: 8px 0 0; }
+.pal-fold summary small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+.pal-fold.pal-sub { margin-top: 6px; }

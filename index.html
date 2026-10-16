@@ -34,12 +34,13 @@
       <button class="tab" data-tab="partsTab">部品</button>
       <button class="tab-more" id="tabMore" type="button" aria-haspopup="true" aria-expanded="false">もっと…</button>
       <div class="tab-more-menu" id="tabMoreMenu" hidden>
-        <button class="tab" data-tab="quickTab">一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
-        <button class="tab" data-tab="traceTab">トレース<small>ホールの舞台図を下に重ねる</small></button>
         <button class="more-3d" id="moreRoster" type="button">👥 名簿・乗り番表<small>個人名・曲ごとの乗り番。Excelの様式で取り込み</small></button>
         <button class="more-3d" id="moreParts" type="button">📑 1部・2部・3部<small>部ごとの配置図と、転換（はける・出す・動かす）の計画</small></button>
         <button class="more-3d" id="moreBlocks" type="button">🧩 パートのかたまりで動かす<small>パートごとに動かす・並び順をパートごと入れかえる</small></button>
         <button class="more-3d mobile-only" id="more3d" type="button">🧊 3Dで見る<small>立体で確認（ネット接続が必要です）</small></button>
+        <div class="more-sep">上級（慣れてきたら）</div>
+        <button class="tab" data-tab="quickTab">📐 一括作成<small>配置のくふう・扇形をまとめて作る</small></button>
+        <button class="tab" data-tab="traceTab">🖼 トレース<small>ホールの舞台図（写真）を下に重ねて写す</small></button>
       </div>
     </nav>
 
@@ -367,7 +368,6 @@
       <div id="selInfo" class="hint">何も選ばれていません。<br>部品をクリック（タップ）すると選べます。<br>何もないところをドラッグすると範囲で選べます。</div>
       <div id="selProps"></div>
 
-      <button class="btn primary wide" id="selTidy" title="列を見つけて、間隔・向きをそろえます">✨ きれいに整える</button>
       <details class="fold" id="tidyMore">
         <summary>くわしく整える</summary>
         <p class="hint small">選んだもの（何も選ばなければ奏者全員）が対象です。</p>
