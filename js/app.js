@@ -1321,7 +1321,7 @@
     }
     // 寸法線（選んだ物が1つなら、そのまわりの距離も）
     const one = sel.length === 1 ? sel[0] : null;
-    setHTML($('layerDims'), (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile()));
+    setHTML($('layerDims'), (opts().dims ? SS.render.dimsSVG(doc(), k, one, { knobs: !(S.viewOnly || S.underlayEdit || S.placing || S.pick), small: isMobile(), basic: isMobile(), editable: !(S.viewOnly || S.underlayEdit || S.placing || S.pick) }) : '') + SS.render.marksSVG(doc(), k, opts().dims, true, isMobile()));
     positionCtxBar();
   }
 
@@ -1407,6 +1407,7 @@
   // ------------------------------------------------------------ 保存
   let saveTimer = null;
   function scheduleSave() {
+    if (S.viewOnly) return; // 見るだけの表示：相手のブラウザに保存してある配置図を上書きしない
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       try {
@@ -1468,6 +1469,7 @@
       return;
     }
     if (pointers.size > 2) return;
+    if (S.viewOnly) { drag = { kind: 'pan', start: { sx: e.clientX, sy: e.clientY, w: toWorld(e.clientX, e.clientY) }, last: { x: e.clientX, y: e.clientY } }; return; }
     // 舞台の大きさの数字（前の幅・奥の幅・奥行）を押すと、長さを入力できる
     const dimEl = e.target.closest && e.target.closest('[data-dimedit]');
     // 舞台の外に置いた出入り口が数字に重なっているときは、出入り口をつかむ
@@ -2068,6 +2070,7 @@
     const typing = /INPUT|TEXTAREA|SELECT/.test(tag);
     if (e.key === 'Escape') { setPlacing(null); if (S.pick) endPick(); closeModal(); if (!typing) { S.sel.clear(); renderOverlay(); renderProps(); } return; }
     if (typing) return;
+    if (S.viewOnly) return; // 見るだけの表示では、キーで直さない
     const mod = e.ctrlKey || e.metaKey;
     if (e.code === 'Space') { spaceDown = true; svg.classList.add('panning'); e.preventDefault(); return; }
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
@@ -4351,15 +4354,34 @@
   $('btnShare').onclick = async () => {
     try {
       const code = await SS.render.encodeShare(doc());
-      const url = location.origin + location.pathname + '#d=' + code;
+      const base = location.origin + location.pathname;
+      const urls = { view: base + '#v=' + code, edit: base + '#d=' + code };
+      // はじめは「見るだけ」（団員・会場の人に送る用）。いっしょに作る人には「編集できる」
       let copied = false;
-      try { await navigator.clipboard.writeText(url); copied = true; } catch (e) { /* ignore */ }
+      try { await navigator.clipboard.writeText(urls.view); copied = true; } catch (e) { /* ignore */ }
       openModal(`
         <h2>共有リンク</h2>
-        <p class="hint">${copied ? '✅ リンクをコピーしました。' : ''}このリンクを開くと、同じ配置図が表示されます（下絵の画像は含まれません）。LINEやメールで送れます。</p>
-        <textarea readonly rows="4" style="width:100%;font-size:12px" onclick="this.select()">${SS.esc(url)}</textarea>
-        <p class="hint small">長さ: ${url.length}文字</p>
+        <div class="seg share-kind"><button class="active" data-kind="view">👀 見るだけ</button><button data-kind="edit">✏️ 編集できる</button></div>
+        <p class="hint" id="shareNote"></p>
+        <textarea readonly rows="4" id="shareUrl" style="width:100%;font-size:12px" onclick="this.select()"></textarea>
+        <div class="btn-row"><button class="btn primary" id="shareCopy">📋 リンクをコピー</button></div>
+        <p class="hint small">LINEやメールで送れます。下絵の画像は含まれません。リンクの中に配置図が入っているので、あとで直したときは、もう一度リンクを作って送ってください。</p>
       `);
+      const show = (kind, done) => {
+        document.querySelectorAll('.share-kind [data-kind]').forEach(b => b.classList.toggle('active', b.getAttribute('data-kind') === kind));
+        $('shareUrl').value = urls[kind];
+        $('shareNote').innerHTML = (done ? '✅ リンクをコピーしました。' : '') + (kind === 'view'
+          ? '<b>団員・会場の人に送る用</b>：開くと、配置図だけが大きく表示されます（動かせません）。相手のブラウザに保存してある配置図も消えません。'
+          : '<b>いっしょに作る人に送る用</b>：開くと、そのまま直せます。<b>相手のブラウザで作りかけの配置図は、この配置図に置き換わります</b>（「戻す」で戻せます）。');
+      };
+      show('view', copied);
+      document.querySelectorAll('.share-kind [data-kind]').forEach(b => { b.onclick = () => show(b.getAttribute('data-kind')); });
+      $('shareCopy').onclick = async () => {
+        const kind = document.querySelector('.share-kind .active').getAttribute('data-kind');
+        let ok = false;
+        try { await navigator.clipboard.writeText(urls[kind]); ok = true; } catch (e) { $('shareUrl').select(); try { ok = document.execCommand('copy'); } catch (e2) { /* ignore */ } }
+        show(kind, ok); if (!ok) toast('コピーできませんでした。上の文字を長押し（右クリック）してコピーしてください');
+      };
     } catch (e) {
       toast('リンクを作れませんでした');
     }
@@ -4451,6 +4473,7 @@
         <li><b>🔍 前の版とくらべる</b>：「保存/開く」の「くらべる」「第○版とくらべる」「ファイルとくらべる」で、違いを図に出します（<b>○＋ 増えた・□− 減った・→ 動いた</b>。白黒でも分かります）。「変更の内容に入れる」で変更メモを作ると、図面の情報欄の「変更」の行に出ます。</li>
         <li><b>版</b>：「名前を付けて保存」のとき、<b>第何版かを1つ上げるか</b>聞きます。「📤 書き出す」の画面の「図面の情報欄」で手で直すこともできます。</li>
         <li><b>保存・共有</b>：上のボタンから画像保存・印刷・共有リンクが作れます。作業中の内容は自動で保存されます。ただし保存先は<b>このブラウザの中だけ</b>なので、ブラウザのデータを消したり機種を変えたりすると消えます。大事な図は「💾 保存/開く」の<b>「⬇ ファイルに保存」</b>もしておくと安心です（初めて書き出したあとにも1回だけ案内します）。</li>
+        <li><b>見るだけの共有リンク</b>：「🔗 共有」の「👀 見るだけ」のリンクは、団員・会場の人に送る用です。開くと配置図だけが大きく出て、動かせません。開いた人のブラウザの配置図も消えません。いっしょに直す人には「✏️ 編集できる」のリンクを送ります。</li>
       </ol>
       <h3 style="font-size:14px">上級機能（左のタブの「もっと…」の中）</h3>
       <p class="hint small">使わなくても配置図は作れます。必要になったら使ってください。</p>
@@ -4810,6 +4833,37 @@
   $('btn3d').onclick = () => SS.view3d.open(null);
   SS.app = { doc, conductor, players, toast, selected, touch: () => scheduleSave() };
 
+  // ------------------------------------------------------------ 見るだけの共有リンク（#v=）
+  // 配置図だけを大きく出す。動かせない・自動保存しない（開いた人のブラウザの配置図はそのまま）
+  function enterViewOnly() {
+    S.viewOnly = true;
+    document.body.classList.add('view-only');
+    const bar = document.createElement('div');
+    bar.className = 'view-bar'; bar.id = 'viewBar';
+    bar.innerHTML = `<div class="view-title"><b id="viewTitle"></b><span>👀 見るだけの表示です（2本指・ホイールで拡大できます）</span></div>
+      <div class="view-acts"><button class="btn" id="viewOut">📤 画像・印刷</button><button class="btn" id="viewEdit">✏️ 編集する</button></div>`;
+    document.body.prepend(bar);
+    const t = (doc().title || '').trim(), sub = (doc().subtitle || '').trim();
+    $('viewTitle').textContent = t ? t + (sub ? '　' + sub : '') : '配置図';
+    if (t) document.title = t + '｜ステージ配置図';
+    $('viewOut').onclick = () => $('btnOut').click();
+    $('viewEdit').onclick = () => askConfirm('この配置図を、このブラウザで編集できるようにします。\nこのブラウザに保存してある配置図は、この配置図に置き換わります（「戻す」で戻せます）。\n残しておきたいときは、先に今の配置図を「💾 保存/開く」でファイルにしてください。', '編集する', () => {
+      let prev = null;
+      try { const sv = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || 'null'); if (sv && Array.isArray(sv.items)) prev = sv; } catch (e) { /* ignore */ }
+      S.viewOnly = false;
+      document.body.classList.remove('view-only');
+      bar.remove();
+      history.replaceState(null, '', location.pathname + location.search);
+      // 前に保存してあった配置図は「戻す」で戻せるように
+      if (prev) { const cur = S.doc; S.doc = normalize(prev); pushHistory(); S.doc = cur; }
+      renderAll(); renderSteppers(); updateHallNote(); fitView(); scheduleSave();
+      toast('編集できるようにしました');
+    });
+  }
+
+  // 開いているページに共有リンクを貼りつけたとき（# のあとだけ変わる）も、読み込み直して開く
+  window.addEventListener('hashchange', () => { if (/#[dv]=/.test(location.hash)) location.reload(); });
+
   // ------------------------------------------------------------ 起動
   async function init() {
     buildTemplates();
@@ -4817,7 +4871,11 @@
     buildHallSelect();
     setMode('select');
     let loaded = false;
-    const m = /#d=([A-Za-z0-9_-]+)/.exec(location.hash);
+    const v = /#v=([A-Za-z0-9_-]+)/.exec(location.hash);
+    if (v) {
+      try { S.doc = normalize(await SS.render.decodeShare(v[1])); loaded = true; enterViewOnly(); } catch (e) { toast('共有リンクを読み込めませんでした'); }
+    }
+    const m = !loaded && /#d=([A-Za-z0-9_-]+)/.exec(location.hash);
     if (m) {
       try {
         S.doc = normalize(await SS.render.decodeShare(m[1]));

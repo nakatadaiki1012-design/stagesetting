@@ -616,3 +616,20 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .chip-checks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .chip-check { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 16px; padding: 4px 10px; font-size: 13px; cursor: pointer; min-height: 32px; }
 .chip-check input { margin: 0; }
+
+/* 見るだけの共有リンク（#v=）：配置図だけを大きく */
+.share-kind { grid-template-columns: 1fr 1fr; }
+.view-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.view-title { min-width: 0; }
+.view-title b { display: block; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-title span { font-size: 12px; color: var(--muted); }
+.view-acts { display: flex; gap: 6px; flex: 0 0 auto; }
+.view-only .topbar, .view-only .panel, .view-only .bottombar, .view-only .tidy-bar, .view-only .ctx-bar,
+.view-only .warn-chip, .view-only .warn-list, .view-only #layerWarn, .view-only [data-handle], .view-only .part-bar,
+.view-only #modeSelect, .view-only #modeBox, .view-only #modeLasso, .view-only #modePan, .view-only #modeBlocks, .view-only .float-tools .sep { display: none !important; }
+@media (max-width: 820px) {
+  .view-bar { padding: 6px 10px; }
+  .view-title b { font-size: 14px; }
+  .view-title span { font-size: 10.5px; }
+  .view-acts .btn { padding: 6px 8px; font-size: 12.5px; }
+}
