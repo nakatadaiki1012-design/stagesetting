@@ -811,29 +811,51 @@ window.SS = window.SS || {};
     return body + `<g pointer-events="none">${text}</g>`;
   };
   // ひな壇ごと（と床）の、いす・譜面台の数。[{ key, label, chairs, stands }]（最後に床。段がなければ床だけ）
+  // ひな壇の段ごと・床の列ごとの、いす・譜面台の数。[{ key, label, chairs, stands }]
+  // 床は、指揮者から近い順に列（扇の輪。指揮台がなければ客席に近い順の横の列）に分けて「床1列目」「床2列目」…（1列だけなら「床」）
   R.tierCounts = function (doc) {
     const items = doc.items, tiers = items.filter(it => it.type === 'hina');
     const hno = SS.hinaNumbers ? SS.hinaNumbers(items) : new Map();
     const tierAt = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
     const nameOf = t => (t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `ひな壇${hno.get(t)}段目` : `ひな壇${hno.get(t) || ''}`);
-    const rows = new Map();
-    const row = t => { const key = t ? nameOf(t) : '床'; if (!rows.has(key)) rows.set(key, { key, label: key, chairs: 0, stands: 0, hgt: t ? t.hgt || 0 : -1, y: t ? t.y : Infinity }); return rows.get(key); };
-    tiers.forEach(t => row(t));
     const ps = items.filter(it => it.type === 'player');
+    // 床の列：指揮台からの距離（指揮台がなければ、客席側の縁からの距離）で、40cm 以上あいたところで分ける
+    const pod = items.find(it => it.type === 'podium');
+    const metric = q => (pod ? Math.hypot(q.x - pod.x, q.y - pod.y) : (doc.stage.d || 0) - q.y);
+    const floorPs = ps.filter(p => !tierAt(p.x, p.y)).sort((a, b) => metric(a) - metric(b));
+    const rowOf = new Map(), bounds = [];
+    let cur = -1, last = -Infinity;
+    floorPs.forEach(p => { const m = metric(p); if (m - last > 40) { cur++; bounds.push([m, m]); } bounds[cur][1] = m; last = m; rowOf.set(p, cur); });
+    const nRows = cur + 1;
+    const floorKey = i => (nRows > 1 ? `床${i + 1}列目` : '床');
+    const nearestRow = m => { let best = 0, bd = Infinity; bounds.forEach(([lo, hi], i) => { const d = m < lo ? lo - m : m > hi ? m - hi : 0; if (d < bd) { bd = d; best = i; } }); return best; };
+    const rows = new Map();
+    const get = (key, ord) => { if (!rows.has(key)) rows.set(key, { key, label: key, chairs: 0, stands: 0, ord }); return rows.get(key); };
+    // 段は前（低い段）から、床の列はその後ろ
+    tiers.slice().sort((a, b) => (a.hgt || 0) - (b.hgt || 0) || b.y - a.y).forEach((t, i) => get(nameOf(t), i));
+    const placeOf = (x, y, owner) => {
+      const t = tierAt(x, y);
+      if (t) return get(nameOf(t), 0);
+      const i = owner && rowOf.has(owner) ? rowOf.get(owner) : nearestRow(metric({ x, y }));
+      return get(floorKey(i), 1000 + i);
+    };
     const STANDING = ['voice', 'perc', 'bass'];
-    ps.forEach(p => { if (!STANDING.includes(SS.instrumentKind(p.label)) || /^tim/i.test(p.label || '')) row(tierAt(p.x, p.y)).chairs++; });
-    // 譜面台（2人で1本の組は1本。2人の真ん中で数える）
+    ps.forEach(p => { if (!STANDING.includes(SS.instrumentKind(p.label)) || /^tim/i.test(p.label || '')) placeOf(p.x, p.y, p).chairs++; });
+    // 譜面台（2人で1本の組は1本）。段の上か床かは譜面台の場所で、床の列は奏者の列で数える
     const pairs = SS.standPairs ? SS.standPairs(items) : new Map(), done = new Set(), fig = { figure: true };
     ps.filter(SS.hasStand).forEach(p => {
       if (done.has(p)) return;
       const m = pairs.get(p), a = SS.standPoint(p, fig), b = m ? SS.standPoint(m, fig) : a;
       done.add(p); if (m) done.add(m);
-      row(tierAt((a.x + b.x) / 2, (a.y + b.y) / 2)).stands++;
+      placeOf((a.x + b.x) / 2, (a.y + b.y) / 2, p).stands++;
     });
-    items.filter(it => it.type === 'chair').forEach(c => row(tierAt(c.x, c.y)).chairs++);
-    items.filter(it => it.type === 'stand').forEach(c => row(tierAt(c.x, c.y)).stands++);
-    // 前（客席側）の段から。床はいちばん最後
-    return [...rows.values()].filter(r => r.chairs || r.stands).sort((a, b) => (a.hgt < 0) - (b.hgt < 0) || a.hgt - b.hgt || b.y - a.y);
+    items.filter(it => it.type === 'chair').forEach(c => placeOf(c.x, c.y).chairs++);
+    items.filter(it => it.type === 'stand').forEach(c => placeOf(c.x, c.y).stands++);
+    // 何もない列（立って歌う人だけの列など）は飛ばして、床の列は前から数え直す
+    const out = [...rows.values()].filter(r => r.chairs || r.stands).sort((a, b) => a.ord - b.ord);
+    const fl = out.filter(r => r.ord >= 1000);
+    fl.forEach((r, i) => { r.key = r.label = fl.length > 1 ? `床${i + 1}列目` : '床'; });
+    return out;
   };
   R.contestMarksSVG = function (doc, k) {
     const st = doc.stage, cx = st.w / 2, col = '#111';
