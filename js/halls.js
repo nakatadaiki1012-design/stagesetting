@@ -28,7 +28,13 @@ window.SS = window.SS || {};
 (function (SS) {
   const raw = [
     // ---------------- 神奈川県 ----------------
-    { pref: '神奈川', name: 'ミューザ川崎シンフォニーホール', fw: 22, bw: 17, d: 14, shape: 'arc', sag: 1.5, q: 'concert', note: 'ヴィンヤード型のオープンステージ（間口22m×奥行14m）。前のふちの弧・奥の幅は図面を見て調整してください', src: 'https://www.kawasaki-sym-hall.jp/about/muza/' },
+    // ミューザ：ホールの舞台平面図（1:100）から読み取った形。前のふちは中央が平らな浅いV字、奥の左右は斜めの壁。
+    //   pts＝角の点（m、奥の下手の角から時計回り）。rings＝円形の迫り。arcs＝[中心の奥行, 半径]の半円で、中心の高さからはまっすぐ前の帯の前のふちまで下りる。
+    //   band＝前の帯（舞台の真ん中の線からの距離 uIn〜uOut の所の、奥のふち back・前のふち front の奥行）
+    { pref: '神奈川', name: 'ミューザ川崎シンフォニーホール', fw: 20.96, d: 14, shape: 'poly', q: 'plan',
+      pts: [[5.72, 0], [15.24, 0], [20.24, 5.94], [20.52, 7.17], [20.96, 13.23], [12.52, 14], [8.44, 14], [0, 13.23], [0.44, 7.17], [0.72, 5.94]],
+      fixtures: { rings: { arcs: [[12.01, 4.31], [12.0, 5.57], [12.21, 7.03], [12.28, 8.34], [12.27, 9.84]], band: { uIn: 4.31, uOut: 9.84, back: [10.58, 10.12], front: [12.78, 12.33] } } },
+      note: 'ホールの舞台平面図（1:100）から読み取った形・円形の迫り（幅20.96m・奥行14.0m・奥の壁9.52m）', src: 'https://www.kawasaki-sym-hall.jp/about/muza/' },
     { pref: '神奈川', name: '神奈川県立音楽堂', fw: 19.4, bw: 19.4, d: 8.6, q: 'concert', note: 'コンサート専用。奥行7.4m（張り出し舞台使用時8.6m）', src: 'https://www.kanagawa-ongakudo.com/about' },
     { pref: '神奈川', name: 'やまと芸術文化ホール メインホール', fw: 18, d: 11, q: 'shell', note: '音響反射板使用時 最大間口18m・奥行11m（奥の幅は推定）', src: 'https://yamato-bunka.jp/hall/' },
     { pref: '神奈川', name: '鎌倉芸術館 大ホール', fw: 18, d: 13.5, q: 'shell', note: '音響反射板設置時 開口18m・奥行13.5m（鎌倉市の資料。奥の幅は推定）', src: 'https://www.city.kamakura.kanagawa.jp/b-shisetsu/documents/kamagei-gaibuhyoukakekka.pdf' },
@@ -54,5 +60,5 @@ window.SS = window.SS || {};
     if (!o.bw) o.bw = r1(o.fw * 0.72);
     return o;
   });
-  SS.HALL_Q = { shell: '反射板寸法（公開値）', concert: 'コンサート形式（公開値）', est: '推定値・要確認', approx: '目安（公開寸法なし）・要確認' };
+  SS.HALL_Q = { plan: 'ホールの舞台図面から読み取った形', shell: '反射板寸法（公開値）', concert: 'コンサート形式（公開値）', est: '推定値・要確認', approx: '目安（公開寸法なし）・要確認' };
 })(window.SS);

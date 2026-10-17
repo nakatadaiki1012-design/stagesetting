@@ -924,8 +924,12 @@ window.SS = window.SS || {};
       glow.rotation.y = w.rotation.y; glow.translateZ(depthOff + 0.2);
       scene.add(glow);
     };
-    wall(bl, br, -0.13);
-    if (st.shape !== 'apron' && st.shape !== 'round') {
+    if (st.shape === 'poly') {
+      // 図面の形：前のふち（客席側）以外のすべての辺に壁を立てる
+      const near = p => p[1] >= D * 0.85;
+      poly.forEach((a, i) => { const b = poly[(i + 1) % poly.length]; if (!(near(a) && near(b))) wall(a, b, -0.13); });
+    } else wall(bl, br, -0.13);
+    if (st.shape !== 'apron' && st.shape !== 'round' && st.shape !== 'poly') {
       wall(fl, bl, -0.13);
       wall(br, fr, -0.13);
     }

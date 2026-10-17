@@ -1846,6 +1846,7 @@
       if (kind === 'w') { st.w = cm; if (st.bw) st.bw = Math.min(st.bw, st.w); }
       else if (kind === 'bw') { st.bw = Math.min(st.w, cm); }
       else { if (st.shape === 'arc') { const sg = R.arcSag(st); st.sag = Math.min(sg, cm); } st.d = cm; }
+      R.scalePoly(st, oldW, oldD);
       doc().hall = '';
       const hadAuto = doc().items.some(it => it.auto);
       if (hadAuto) applyAuto({ noHistory: true, quiet: true });
@@ -1884,6 +1885,7 @@
       st.d = Math.max(300, Math.min(5000, r10(w.y)));
     }
     if (st.w === oldW && st.d === oldD && dr.kind !== 'stageBW' && dr.kind !== 'stageSag') return;
+    SS.render.scalePoly(st, oldW, oldD);
     doc().hall = '';
     const dx = (st.w - oldW) / 2, dy = st.d - oldD;
     doc().items.forEach(it => { it.x += dx; it.y += dy; });
@@ -2971,10 +2973,12 @@
     if ($('safetyBoxNow')) $('safetyBoxNow').textContent = `通路${SS.auto.aisleOf(st)}cm・指揮台の前${SS.auto.podiumGapOf(st)}cm${nFx ? `・設備${nFx}` : ''}`;
     void R;
   }
-  bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { doc().stage.w = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
-  bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { doc().stage.d = Math.round(v * 100); doc().hall = ''; updateHallNote(); } });
+  bindSetting('stageW', 'change', el => { const v = +el.value; if (v >= 3 && v <= 60) { const st = doc().stage, w0 = st.w; st.w = Math.round(v * 100); SS.render.scalePoly(st, w0, st.d); doc().hall = ''; updateHallNote(); } });
+  bindSetting('stageD', 'change', el => { const v = +el.value; if (v >= 2 && v <= 50) { const st = doc().stage, d0 = st.d; st.d = Math.round(v * 100); SS.render.scalePoly(st, st.w, d0); doc().hall = ''; updateHallNote(); } });
   bindSetting('stageShape', 'change', el => {
     const st = doc().stage;
+    // 図面の形にするときは、今の形の角の点をそのまま使う（ホールを選んだときは、図面の点が入る）
+    if (el.value === 'poly' && !(Array.isArray(st.pts) && st.pts.length >= 3)) st.pts = SS.render.stagePoly(st).map(p => [Math.round(p[0]), Math.round(p[1])]);
     st.shape = el.value;
     if (['shell', 'arc', 'round'].includes(el.value) && !st.bw) st.bw = Math.round(st.w * 0.7);
     if (el.value === 'arc' && st.sag == null) st.sag = Math.round(st.w * 0.08);
@@ -3058,6 +3062,11 @@
     if (f.hanamichi && [f.hanamichi.x, f.hanamichi.w, f.hanamichi.len].every(v => c(v) != null)) o.hanamichi = { x: c(f.hanamichi.x), w: c(f.hanamichi.w), len: c(f.hanamichi.len) };
     if (Array.isArray(f.doors) && f.doors.length) o.doors = f.doors.map(d => ({ side: d.side, y: c(d.y), w: c(d.w) }));
     if (Array.isArray(f.lifts) && f.lifts.length) o.lifts = f.lifts.map(l => ({ x: c(l.x), y: c(l.y), w: c(l.w), h: c(l.h), name: l.name || '' }));
+    if (f.rings && Array.isArray(f.rings.arcs)) {
+      const b = f.rings.band;
+      o.rings = { arcs: f.rings.arcs.map(a => [c(a[0]), c(a[1])]) };
+      if (b) o.rings.band = { uIn: c(b.uIn), uOut: c(b.uOut), back: b.back.map(c), front: b.front.map(c) };
+    }
     return o;
   }
   function readFixtures() {
@@ -3081,6 +3090,8 @@
       return o;
     });
     if (doors.length) fx.doors = doors;
+    const rings = (doc().stage.fixtures || {}).rings; // 円形の迫り（ホールの図面から。入力欄はない）
+    if (rings) fx.rings = rings;
     if (Object.keys(fx).length) doc().stage.fixtures = fx; else delete doc().stage.fixtures;
   }
   FX_FIELDS.forEach(id => bindSetting(id, 'change', () => {
@@ -4422,7 +4433,8 @@
       <h2>🎼 使い方</h2>
       <ol>
         <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。「サックス5人」「Sax 5」のように書き方がちがっても、分け方は同じです。1パートは40人までで、多すぎるときは「フルート100人は多すぎます（1パート最大40人）」と出ます。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
-        <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。ミューザ川崎もホール一覧にあります（寸法は目安なので図面で確認を）。</li>
+        <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。</li>
+        <li><b>ミューザ川崎</b>：ホール一覧のミューザは、ホールの舞台平面図から読み取った形（奥の左右が斜めの壁・前が浅いV字）と、床の<b>円形の迫り</b>（紫の点線）を図面のとおりに描きます。</li>
         <li><b>ホールの寸法</b>：ホール一覧には、反射板を置いたとき（またはコンサート形式）の寸法が公開されていて確かめられたホールだけを載せています（10か所）。一覧にないホールは、ホールの舞台図面を見て「ステージの大きさ・形」に幅・奥行を入れてください。一覧の寸法も公開資料からの<b>目安</b>です。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
         <li><b>打楽器の楽器</b>：「打楽器」の箱の「楽器（台数）」で、ティンパニ・大太鼓・小太鼓・シンバル・鍵盤などを1つずつ増やしたり減らしたりできます（「人数に合わせて自動に戻す」で元どおり）。オーケストラでは、ティンパニを最上段の真ん中に、ほかの打楽器を奥から大太鼓→小太鼓→シンバル→小物→鍵盤の順に、弦の外側を下手の前へまわりこむように並べます。</li>
@@ -4802,7 +4814,7 @@
   function buildHallSelect() {
     const sel = $('hallSelect');
     const groups = {};
-    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${SS.esc(h.name)}（${h.fw}×${h.d}m${h.shape === 'arc' ? '・前が弧' : ''}）</option>`); });
+    SS.HALLS.forEach((h, i) => { (groups[h.pref] = groups[h.pref] || []).push(`<option value="${i}">${SS.esc(h.name)}（${h.fw}×${h.d}m${h.shape === 'arc' ? '・前が弧' : h.shape === 'poly' ? '・図面の形' : ''}）</option>`); });
     sel.innerHTML = '<option value="">いまの大きさのまま／手動で設定</option>' +
       Object.keys(groups).map(g => `<optgroup label="${g === '東京' ? '東京都' : g + '県'}">${groups[g].join('')}</optgroup>`).join('');
     sel.onchange = () => {
@@ -4818,6 +4830,7 @@
       doc().stage.bw = Math.round(h.bw * 100);
       doc().stage.d = Math.round(h.d * 100);
       doc().stage.shape = h.shape || 'shell';
+      if (h.pts) { doc().stage.pts = h.pts.map(p => [Math.round(p[0] * 100), Math.round(p[1] * 100)]); doc().stage.bw = Math.round(SS.render.backWidth(doc().stage)); } else delete doc().stage.pts;
       if (h.sag != null) doc().stage.sag = Math.round(h.sag * 100); else delete doc().stage.sag;
       // ホールの設備：データがあるホールだけ入れる（分からない値は作らない）。前のホールの設備は消す
       if (h.fixtures) doc().stage.fixtures = fixturesFromHall(h.fixtures); else delete doc().stage.fixtures;
@@ -4825,7 +4838,7 @@
       updateHallNote();
       if (doc().items.some(it => it.auto)) applyAuto({ fit: true });
       else { renderAll(); fitView(); }
-      if (!quiet) toast(h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
+      if (!quiet) toast(h.shape === 'poly' ? `${h.name}：ホールの図面の形（幅${h.fw}m・奥行${h.d}m）にしました${h.fixtures && h.fixtures.rings ? '。円形の迫りも描きます' : ''}` : h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
     }
   }
   function updateHallNote() {
@@ -4839,7 +4852,7 @@
     $('hallWarn').classList.toggle('est', !!est);
     $('hallWarn').innerHTML = h ? `${est ? '⚠ <b>このホールの寸法は推定値です。</b>' : '⚠ '}寸法は目安です。<b>本番前に必ずホールの舞台図面で確認してください。</b>` : '';
     $('hallNote').innerHTML = h
-      ? `<b class="${h.q === 'est' || h.q === 'approx' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>${h.shape === 'arc' ? `幅${h.fw}m／奥の幅${h.bw}m／奥行（中央）${h.d}m、前のふちは弧` : `反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m`}。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら下の「ステージの大きさ・形」で直してください。`
+      ? `<b class="${h.q === 'est' || h.q === 'approx' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>${h.shape === 'poly' ? `いちばん広い所の幅${h.fw}m／奥の壁${h.bw}m／奥行（中央）${h.d}m、図面のとおりの形` : h.shape === 'arc' ? `幅${h.fw}m／奥の幅${h.bw}m／奥行（中央）${h.d}m、前のふちは弧` : `反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m`}。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら下の「ステージの大きさ・形」で直してください。`
       : `いまのステージ：前の幅${st.w / 100}m／奥の幅${Math.round(SS.render.backWidth(st)) / 100}m／奥行${st.d / 100}m`;
   }
   $('btn3d').onclick = () => SS.view3d.open(null);

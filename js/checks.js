@@ -68,6 +68,11 @@ window.SS = window.SS || {};
     if (num(fx.shell)) g.shell = { y: +fx.shell };
     if (num(fx.curtain)) g.curtain = { y: front - +fx.curtain };
     if (fx.proscenium && num(fx.proscenium.y) && num(fx.proscenium.w)) g.proscenium = { y: front - +fx.proscenium.y, x0: cx - +fx.proscenium.w / 2, x1: cx + +fx.proscenium.w / 2 };
+    // 円形の迫り（ホールの図面から）：中心は舞台の真ん中の線の上。arcs＝[中心の奥行, 半径]、band＝前の帯（真ん中からの距離 u で）
+    if (fx.rings && Array.isArray(fx.rings.arcs) && fx.rings.arcs.length) {
+      const bd = fx.rings.band;
+      g.rings = { cx, arcs: fx.rings.arcs.filter(a => num(a[0]) && num(a[1]) && +a[1] > 0).map(a => [+a[0], +a[1]]), band: bd && num(bd.uIn) && num(bd.uOut) && Array.isArray(bd.back) && Array.isArray(bd.front) ? bd : null };
+    }
     g.lifts = (fx.lifts || []).filter(l => num(l.x) && num(l.y) && num(l.w) && num(l.h)).map(l => ({ x0: +l.x, y0: +l.y, x1: +l.x + +l.w, y1: +l.y + +l.h, name: l.name || '' }));
     if (fx.pit && num(fx.pit.depth) && +fx.pit.depth > 0) {
       const w = num(fx.pit.w) ? +fx.pit.w : stage.w;

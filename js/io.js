@@ -8,15 +8,22 @@ window.SS = window.SS || {};
   //  rect：四角／apron：前が丸い張り出し／trapezoid：台形／shell：音響反射板（奥の幅 bw）
   //  arc：前のふちが弧（サントリーホール・ミューザ・みなとみらいなど）。d＝中心の奥行、sag＝弧のふくらみ、bw＝奥の幅
   //  round：奥の直線から横〜前まで一続きの丸い形（円形・楕円形の舞台）
-  const CURVED = new Set(['arc', 'round']);
+  //  poly：ホールの図面から写した形。pts＝角の点（cm、奥の下手の角から時計回り）。w・d は外枠の幅・奥行
+  const CURVED = new Set(['arc', 'round', 'poly']);
+  const polyOk = stage => stage.shape === 'poly' && Array.isArray(stage.pts) && stage.pts.length >= 3;
   R.isCurved = stage => CURVED.has(stage.shape);
   R.backWidth = function (stage) {
+    if (polyOk(stage)) {
+      const xs = stage.pts.filter(p => p[1] < 1).map(p => p[0]);
+      return xs.length >= 2 ? Math.max(...xs) - Math.min(...xs) : stage.w;
+    }
     if (stage.shape === 'shell' || CURVED.has(stage.shape)) return Math.min(stage.w, stage.bw || stage.w * 0.7);
     if (stage.shape === 'trapezoid') return stage.w * 0.8;
     return stage.w;
   };
   R.arcSag = stage => Math.max(0, Math.min(stage.d * 0.6, stage.sag == null ? Math.round(stage.w * 0.08) : stage.sag));
   R.stagePoly = function (stage) {
+    if (polyOk(stage)) return stage.pts.map(p => [p[0], p[1]]);
     const w = stage.w, d = stage.d, b = R.backWidth(stage);
     if (stage.shape === 'apron') {
       const pts = [[0, 0], [w, 0], [w, d]];
@@ -54,7 +61,7 @@ window.SS = window.SS || {};
         const b = R.backWidth(stage);
         return `M${(w - b) / 2} 0H${(w + b) / 2}L${w} ${d}H0Z`;
       }
-      case 'arc': case 'round': return 'M' + R.stagePoly(stage).map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z';
+      case 'arc': case 'round': case 'poly': return 'M' + R.stagePoly(stage).map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z';
       default: return `M0 0H${w}V${d}H0Z`;
     }
   };
@@ -101,6 +108,21 @@ window.SS = window.SS || {};
     const q = R.clampToStage(stage, p, margin || 0);
     return Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5;
   };
+  // 図面の形の舞台の幅・奥行を変えたとき：角の点と円形の迫りを、同じ割合で広げる・縮める
+  R.scalePoly = function (stage, oldW, oldD) {
+    if (!polyOk(stage) || !oldW || !oldD || (stage.w === oldW && stage.d === oldD)) return;
+    const sx = stage.w / oldW, sy = stage.d / oldD, sr = Math.sqrt(sx * sy);
+    stage.pts = stage.pts.map(p => [Math.round(p[0] * sx), Math.round(p[1] * sy)]);
+    const rg = stage.fixtures && stage.fixtures.rings;
+    if (rg) {
+      rg.arcs = (rg.arcs || []).map(a => [Math.round(a[0] * sy), Math.round(a[1] * sr)]);
+      if (rg.band) {
+        const b = rg.band;
+        b.uIn = Math.round(b.uIn * sx); b.uOut = Math.round(b.uOut * sx);
+        b.back = b.back.map(v => Math.round(v * sy)); b.front = b.front.map(v => Math.round(v * sy));
+      }
+    }
+  };
   R.frontY = stage => stage.d + (stage.shape === 'apron' ? stage.d * 0.14 : 0);
   // 客席側でいちばん前（オーケストラピットのふた・花道まで含める）。寸法・「客席」の文字はこの前に置く
   // 花道の部品（runway）も、客席の方へ出ていればそこまで
@@ -128,6 +150,35 @@ window.SS = window.SS || {};
       const h = g.hanamichi;
       s += `<rect x="${h.x0}" y="${h.y0}" width="${h.x1 - h.x0}" height="${h.y1 - h.y0}" fill="#f1ecf6" stroke="${col}" stroke-width="3"/>`;
       s += lab((h.x0 + h.x1) / 2, (h.y0 + h.y1) / 2, '花道', 'middle');
+    }
+    // 円形の迫り（ミューザのような、同じ中心の弧の段）：弧と、前の帯の区切り。舞台の外・前の帯より前は描かない
+    if (g.rings) {
+      const rg = g.rings, cx = rg.cx, band = rg.band;
+      const lineY = (ys, u) => ys[0] + ((u - band.uIn) / (band.uOut - band.uIn)) * (ys[1] - ys[0]);
+      const poly = R.stagePoly(stage);
+      const inside = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+      const dash = `fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="16 8" stroke-opacity=".75"`;
+      // 半円（上側）と、中心の高さから前の帯の前のふちまでまっすぐ下りる線（U字）
+      rg.arcs.forEach(([cy, r]) => {
+        let seg = [], d = '';
+        const flush = () => { if (seg.length > 1) d += 'M' + seg.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L'); seg = []; };
+        const put = (x, y) => { if (inside(x, y)) seg.push([x, y]); else flush(); };
+        const yEnd = band ? lineY(band.front, r) : cy;
+        for (let y = yEnd; y > cy; y -= 10) put(cx - r, y);
+        for (let i = 0; i <= 180; i++) { const a = Math.PI + (Math.PI * i) / 180; put(cx + r * Math.cos(a), cy + r * Math.sin(a)); }
+        for (let y = cy + 10; y <= yEnd; y += 10) put(cx + r, Math.min(y, yEnd));
+        flush();
+        if (d) s += `<path d="${d}" ${dash}/>`;
+      });
+      if (band) {
+        [-1, 1].forEach(sd => {
+          const X = u => cx + sd * u;
+          s += `<path d="M${X(band.uIn)} ${lineY(band.back, band.uIn)}L${X(band.uOut)} ${lineY(band.back, band.uOut)}M${X(band.uIn)} ${lineY(band.front, band.uIn)}L${X(band.uOut)} ${lineY(band.front, band.uOut)}" ${dash}/>`;
+        });
+      }
+      // 名前は、前の帯（下手側）の上に。帯がなければ、いちばん外の弧の上
+      if (band) { const u = (band.uIn + band.uOut) / 2; s += lab(cx - u, (lineY(band.back, u) + lineY(band.front, u)) / 2, '円形の迫り', 'middle'); }
+      else { const top = rg.arcs.reduce((m, a) => Math.min(m, a[0] - a[1]), Infinity); if (isFinite(top)) s += lab(cx, Math.max(fs, top + fs * 0.9), '円形の迫り', 'middle'); }
     }
     g.lifts.forEach((l, i) => {
       s += `<rect x="${l.x0}" y="${l.y0}" width="${l.x1 - l.x0}" height="${l.y1 - l.y0}" fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="10 6"/>`;
@@ -264,6 +315,14 @@ window.SS = window.SS || {};
   R.stageKnobs = function (st) {
     const bw = R.backWidth(st), cx = st.w / 2, out = [];
     const add = (kind, x, y, arrow, title) => out.push({ kind, x, y, arrow, title });
+    if (st.shape === 'poly') {
+      // 図面の形：いちばん広い所の幅と、中央の奥行（形はそのまま、同じ割合で広げる・縮める）
+      const yMid = R.stagePoly(st).reduce((a, p) => (p[0] > a[0] ? p : a), [0, 0])[1];
+      add('stageW', 0, yMid, '↔', 'ドラッグで舞台の幅を変える（図面の形のまま）');
+      add('stageW', st.w, yMid, '↔', 'ドラッグで舞台の幅を変える（図面の形のまま）');
+      add('stageD', cx, R.frontAt(st, cx), '↕', 'ドラッグで舞台の奥行を変える（図面の形のまま）');
+      return out;
+    }
     if (st.shape === 'round') {
       // 丸い舞台：いちばん広い所の幅と、中央の奥行
       const yMid = R.stagePoly(st).reduce((a, p) => (p[0] > a[0] ? p : a), [0, 0])[1];
@@ -345,7 +404,7 @@ window.SS = window.SS || {};
     const shaped = b < st.w - 1;
     s += dimLine(0, R.frontOuter(st) + 34, st.w, R.frontOuter(st) + 34, `${R.isCurved(st) ? '最大の幅' : shaped ? '前の幅' : '幅'} ${fmtM(st.w)}`, C1, k, 1, null, null, opt.editable ? 'w' : null);
     // スマホ（opt.basic）では「前の幅」と「奥行」だけにする
-    if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1, null, null, opt.editable ? 'bw' : null);
+    if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1, null, null, opt.editable && st.shape !== 'poly' ? 'bw' : null);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
     s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1, null, opt.editable ? 'd' : null);
     const pod = doc.items.find(it => it.type === 'podium');

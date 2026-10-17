@@ -1765,6 +1765,8 @@ window.SS = window.SS || {};
       if (f.hanamichi && f.hanamichi.x != null) f.hanamichi.x = s2.w - f.hanamichi.x;
       (f.lifts || []).forEach(l => { if (l.x != null) l.x = s2.w - l.x - (+l.w || 0); });
     }
+    // 図面の形：角の点も左右を入れかえる（円形の迫りは真ん中の線の上なので、そのまま）
+    if (Array.isArray(s2.pts)) s2.pts = s2.pts.map(p => [s2.w - p[0], p[1]]).reverse();
     return s2;
   }
   A.build = function (st, stage) {
