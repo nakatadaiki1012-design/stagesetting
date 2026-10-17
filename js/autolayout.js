@@ -90,9 +90,97 @@ window.SS = window.SS || {};
     const R = +it.curve, h = it.h || 182;
     return { R, h, th: Math.min(Math.PI * 1.6, (it.w || 728) / R), cy: R + h / 2 };
   };
+  // ---------------------------------------------------------------- ホールの円形の迫りでできた段（ミューザなど）
+  // it.lift：{ poly（外形の点・図の座標）, cx, cyIn, rIn, cyOut, rOut, fIn, fOut, j0, j1 }。平台は使わない。
+  //   内側の弧（中心 (cx, cyIn)・半径 rIn）と外側の弧（rOut）にはさまれた U字の帯。弧の下の端からは、まっすぐ前へ
+  //   fIn・fOut（前の帯の前のふちの奥行）まで下りる。外側が舞台の奥の壁までのときは rOut＝奥の壁まで
+  SS.hinaLift = it => (it && it.type === 'hina' && it.lift && Array.isArray(it.lift.poly) && it.lift.poly.length > 2 ? it.lift : null);
+  SS.hinaShaped = it => !!(SS.hinaArc(it) || SS.hinaLift(it));
+  // 帯の中の位置を、真ん中の線からの「弧に沿った長さ s」と「半径 r」で表す（足の所は、まっすぐ下りた長さを足す）
+  SS.liftUD = function (L, x, y) {
+    const cy = (L.cyIn + L.cyOut) / 2, dx = x - L.cx;
+    if (y <= cy) { const r = Math.hypot(dx, cy - y) || 1; return { s: Math.atan2(dx, cy - y) * r, r }; }
+    const r = Math.abs(dx) || 1;
+    return { s: Math.sign(dx || 1) * (r * Math.PI / 2 + (y - cy)), r };
+  };
+  SS.liftXY = function (L, s, r) {
+    const cy = (L.cyIn + L.cyOut) / 2, q = Math.abs(s) / r, sg = Math.sign(s || 1);
+    if (q <= Math.PI / 2) return { x: L.cx + sg * r * Math.sin(q), y: cy - r * Math.cos(q) };
+    return { x: L.cx + sg * r, y: cy + (Math.abs(s) - (r * Math.PI) / 2) };
+  };
+  // 半径 r の所で、真ん中から端までの長さ（足の下の端まで）
+  SS.liftHalf = function (L, r) {
+    if (L.phi != null && L.phi < Math.PI / 2 - 0.01) return L.phi * r; // 一部だけ上げた迫り：弧の角度 phi まで
+    const cy = (L.cyIn + L.cyOut) / 2, t = L.rOut > L.rIn ? Math.max(0, Math.min(1, (r - L.rIn) / (L.rOut - L.rIn))) : 0;
+    const f = L.fIn + (L.fOut - L.fIn) * t;
+    return (r * Math.PI) / 2 + Math.max(0, f - cy);
+  };
+  // 点から多角形のふちまでの距離
+  const segDist = (px, py, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1; const t = Math.max(0, Math.min(1, ((px - a[0]) * vx + (py - a[1]) * vy) / l2)); return Math.hypot(px - a[0] - t * vx, py - a[1] - t * vy); };
+  SS.polyEdgeDist = (px, py, pts) => pts.reduce((m, a, i) => Math.min(m, segDist(px, py, a, pts[(i + 1) % pts.length])), Infinity);
+  // 舞台の円形の迫り（ホールの設備）から、弧の並び（中心の奥行・半径・足の下の端）を作る
+  SS.ringGeom = function (stage) {
+    const g = SS.fixtureGeom ? SS.fixtureGeom(stage).rings : null;
+    if (!g || !g.arcs || g.arcs.length < 2) return null;
+    const band = g.band;
+    const front = u => (band ? band.front[0] + ((u - band.uIn) / (band.uOut - band.uIn)) * (band.front[1] - band.front[0]) : null);
+    const arcs = g.arcs.slice().sort((a, b) => a[1] - b[1]).map(([cy, r]) => ({ cy, r, end: band ? Math.max(cy, front(r)) : cy }));
+    return { cx: g.cx, arcs };
+  };
+  // 弧 a の内側か（U字：中心より奥は円、中心より前は左右のまっすぐの線の内側）
+  const uDist = (cx, a, x, y) => (y <= a.cy ? Math.hypot(x - cx, y - a.cy) : Math.abs(x - cx));
+  SS.ringBandOf = function (rg, x, y) { let b = -1; rg.arcs.forEach((a, j) => { if (uDist(rg.cx, a, x, y) >= a.r) b = j; }); return b; };
+  // j0〜j1 の帯（j の帯＝弧 j と弧 j+1 のあいだ。いちばん外の帯は舞台の奥の壁まで）の外形
+  SS.ringBandPoly = function (stage, rg, j0, j1, phi) {
+    const cx = rg.cx, A = rg.arcs[j0], B = rg.arcs[j1 + 1] || null, pts = [];
+    if (phi != null && phi < Math.PI / 2 - 0.01) {
+      // 一部だけ上げる：真ん中から左右に角度 phi まで（図面の放射状の区切りのように）
+      const N = Math.max(4, Math.ceil((phi * 2 * 180) / Math.PI / 4));
+      const onArc = (a, t) => [cx + a.r * Math.sin(t), a.cy - a.r * Math.cos(t)];
+      for (let i = 0; i <= N; i++) pts.push(onArc(A, -phi + (2 * phi * i) / N));
+      if (B) for (let i = N; i >= 0; i--) pts.push(onArc(B, -phi + (2 * phi * i) / N));
+      else {
+        // 奥の壁まで：中心からの線（角度 ±phi）が舞台のふちに当たる所と、そのあいだの舞台の角
+        const sp = SS.render.stagePoly(stage), ang = q => Math.atan2(q[0] - cx, A.cy - q[1]);
+        const hit = t => {
+          const dx = Math.sin(t), dy = -Math.cos(t);
+          let best = null;
+          sp.forEach((a, i) => {
+            const b = sp[(i + 1) % sp.length], ex = b[0] - a[0], ey = b[1] - a[1], den = dx * ey - dy * ex;
+            if (Math.abs(den) < 1e-9) return;
+            const u = ((a[0] - cx) * ey - (a[1] - A.cy) * ex) / den, v = ((a[0] - cx) * dy - (a[1] - A.cy) * dx) / den;
+            if (u > 0 && v >= 0 && v <= 1 && (!best || u > best)) best = u;
+          });
+          return [cx + dx * (best || A.r), A.cy + dy * (best || A.r)];
+        };
+        pts.push(hit(phi));
+        sp.filter(q => q[1] < A.cy && Math.abs(ang(q)) < phi).sort((p, q) => ang(q) - ang(p)).forEach(q => pts.push([q[0], q[1]]));
+        pts.push(hit(-phi));
+      }
+      return pts.map(p => [Math.round(p[0]), Math.round(p[1])]);
+    }
+    const uArc = (a, from, to, step) => { for (let d = from; step > 0 ? d <= to : d >= to; d += step) { const t = (d * Math.PI) / 180; pts.push([cx - a.r * Math.cos(t), a.cy - a.r * Math.sin(t)]); } };
+    pts.push([cx - A.r, A.end]);
+    uArc(A, 0, 180, 4);
+    pts.push([cx + A.r, A.end]);
+    if (B) {
+      pts.push([cx + B.r, B.end]);
+      uArc(B, 180, 0, -4);
+      pts.push([cx - B.r, B.end]);
+    } else {
+      // 奥の壁まで：右の足の下の端の高さで舞台の右のふちへ、舞台の角を奥へ回って、左のふちへ
+      const yc = A.end, [xl, xr] = SS.render.xRange(stage, yc);
+      pts.push([xr, yc]);
+      SS.render.stagePoly(stage).filter(p => p[1] < yc - 1).sort((p, q) => Math.atan2(yc - p[1], p[0] - cx) - Math.atan2(yc - q[1], q[0] - cx)).forEach(p => pts.push([p[0], p[1]]));
+      pts.push([xl, yc]);
+    }
+    return pts.map(p => [Math.round(p[0]), Math.round(p[1])]);
+  };
+
   // 平台1枚ずつの位置（部品の中の座標）。行 row は前から、列 col は下手から
   // まっすぐの段は格子。弧の段は、各列の平台の前の角が円にのるように、平台を扇に並べる
   SS.hinaPanels = function (it) {
+    if (SS.hinaLift(it)) return [];
     const P = SS.panelSize(it), a = SS.hinaArc(it), out = [];
     const w = it.w || 728, h = it.h || 182;
     if (!a) {
@@ -115,6 +203,8 @@ window.SS = window.SS || {};
   };
   // 部品の中の座標で、段の外形（弧の段は扇形）
   SS.hinaOutline = function (it) {
+    const lf = SS.hinaLift(it);
+    if (lf) return lf.poly.map(p => [p[0] - it.x, p[1] - it.y]);
     const a = SS.hinaArc(it), w = it.w || 728, h = it.h || 182;
     if (!a) return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
     // 平台の角をつないだ形（うしろの角のあいだの三角のすき間も段に含める）
@@ -135,6 +225,14 @@ window.SS = window.SS || {};
   // 点（図の座標）が段の上か。m：ふちの余裕（cm）
   SS.hinaContains = function (it, px, py, m) {
     m = m || 0;
+    const lf = SS.hinaLift(it);
+    if (lf) {
+      // 迫りの段：外形の中か。m＞0 はふちから m まで外も、m＜0 はふちから -m より内側だけ
+      const inside = inPoly(px, py, lf.poly);
+      if (!m) return inside;
+      const d = SS.polyEdgeDist(px, py, lf.poly);
+      return m > 0 ? inside || d <= m : inside && d >= -m;
+    }
     const t = -((it.rot || 0) * Math.PI) / 180, dx = px - it.x, dy = py - it.y;
     const lx = dx * Math.cos(t) - dy * Math.sin(t), ly = dx * Math.sin(t) + dy * Math.cos(t);
     const a = SS.hinaArc(it);
@@ -149,6 +247,7 @@ window.SS = window.SS || {};
 
   // ひな壇1段に使う部材の数（目安）
   SS.hinaMaterials = function (it) {
+    if (SS.hinaLift(it)) return { panels: 0, panelName: 'ホールの迫り', across: 0, deep: 0, legs: 0, legName: '', lift: true };
     const pn = SS.PANELS[it.panel || '36'], P = SS.panelSize(it);
     if (SS.hinaArc(it)) {
       // 弧の段：平台は1枚ずつ扇に並ぶので、足は1枚ごとに6か所（四隅と長い辺の真ん中）の目安
@@ -174,7 +273,8 @@ window.SS = window.SS || {};
   // ひな壇の部材の表（組み図・編成表で共通。平台の番号は組み図の番号と同じ）
   SS.hinaSummary = function (items) {
     const hno = SS.hinaNumbers(items);
-    const rows = items.filter(it => it.type === 'hina').map(it => {
+    // ホールの迫りでできた段は、平台・足が要らないので部材の表に入れない
+    const rows = items.filter(it => it.type === 'hina' && !SS.hinaLift(it)).map(it => {
       const m = SS.hinaMaterials(it), no = hno.get(it);
       return Object.assign({ it, no, hgt: it.hgt || 21.2, w: it.w, h: it.h, label: it.perc ? `打楽器の段（${no}）` : /^\d+$/.test(no) ? `${no}段目` : `ひな壇${no}`, first: `${no}-1`, last: `${no}-${m.panels}` }, m);
     }).sort((a, b) => a.no.localeCompare(b.no, 'ja', { numeric: true }));
@@ -1712,6 +1812,89 @@ window.SS = window.SS || {};
     return fallback;
   }
 
+  // ホールの円形の迫りを段にする（ミューザなど）：まっすぐに並べたひな壇を、迫りの U字の帯に置きかえる。
+  // 段は前から順に、その段の人がいる辺りの帯へ（前の段より奥の帯）。段の上の人・楽器は、真ん中からの横の位置を
+  // 弧に沿った長さとして保ち、段の前のふちからの深さを帯の中の深さにして、帯にのせる（奏者は指揮者の方を向く）。
+  // 帯が足りない段はひな壇のまま（戻り値 true）。床の人が上がった帯にかかったら、帯の内側（前）へ下ろす
+  function liftTiers(items, c, stage) {
+    const rg = SS.ringGeom(stage);
+    if (!rg) return false;
+    const tiers = items.filter(it => it.type === 'hina');
+    const onTier = new Map();
+    items.forEach(it => {
+      if (it.type === 'hina') return;
+      let best = null;
+      tiers.forEach(t => { if (SS.hinaContains(t, it.x, it.y) && (!best || (t.hgt || 0) > (best.hgt || 0))) best = t; });
+      if (best) onTier.set(it, best);
+    });
+    const nB = rg.arcs.length; // 帯の数（いちばん外は奥の壁まで）
+    const aisle = A.aisleOf ? A.aisleOf(stage) : 60;
+    const depthOf = j => (j < nB - 1 ? rg.arcs[j + 1].r - rg.arcs[j].r : Math.max(120, rg.arcs[j].cy - rg.arcs[j].r - aisle));
+    let used = -1, fallback = false;
+    const lifted = [];
+    const order = tiers.slice().sort((p, q) => (q.y + q.h / 2) - (p.y + p.h / 2));
+    const STANDING = new Set(['voice', 'perc', 'bass']);
+    order.forEach((t, ti) => {
+      const on = items.filter(it => onTier.get(it) === t);
+      const bs = (on.length ? on : [t]).map(it => SS.ringBandOf(rg, it.x, it.y));
+      // 段と段のあいだに上げない帯を空けない（上り下りできるように、前の段のすぐ後ろから）
+      let j0 = used >= 0 ? used + 1 : Math.max(0, Math.min(...bs));
+      if (j0 > nB - 1) { fallback = true; return; }
+      // 段の深さ（人の列・楽器のある深さ）が入るまで、奥の帯もまとめる
+      const front = t.y + t.h / 2;
+      const need = on.length ? Math.max(110, Math.max(...on.map(it => front - it.y)) + (t.perc ? 70 : 60)) : 110;
+      let j1 = j0, dep = depthOf(j0);
+      while (dep < need * 0.85 && j1 < nB - 1) { j1++; dep += depthOf(j1); }
+      // いちばん上の段（40cm以上）に立つ人がいるときは、後ろに落ちないよう、奥の壁まで上げる
+      if (ti === order.length - 1 && (t.hgt || 0) >= 40 && on.some(it => it.type === 'player' && STANDING.has(SS.instrumentKind(it.label)))) while (j1 < nB - 1) { j1++; dep += depthOf(j1); }
+      used = j1;
+      const A = rg.arcs[j0], B = rg.arcs[j1 + 1] || null;
+      const rIn = A.r, rOut = B ? B.r : A.r + dep;
+      const L = { poly: null, cx: rg.cx, cyIn: A.cy, rIn, cyOut: B ? B.cy : A.cy, rOut, fIn: A.end, fOut: B ? B.end : A.end, j0, j1 };
+      // 段の上の人・物を帯へ
+      // 深さ：打楽器の段・何列もある段は、段の前のふちからの深さを（入りきらなければ縮めて）そのまま。
+      // 1列の段は、譜面台が帯の前のふちにかからないよう、奏者を帯の奥寄り（奥のふちから40cm）に
+      const ds = on.map(it => front - it.y), dMin = ds.length ? Math.min(...ds) : 0, dMax = ds.length ? Math.max(...ds) : 0;
+      const many = t.perc || dMax - dMin > 60;
+      const k = Math.min(1, Math.max(0, rOut - rIn - 90) / Math.max(1, dMax - dMin));
+      on.forEach(it => {
+        const r = many ? rIn + 45 + (front - it.y - dMin) * k : rIn + Math.max(60, Math.min(dep, depthOf(j0)) - 40);
+        // 横の位置は、いちばん前の列の半径での「弧に沿った長さ」として角度にする（奥の列ほど広がり、縮まない）
+        const rRef = many ? rIn + 45 : r, half = SS.liftHalf(L, r) - 40;
+        const sx = Math.max(-half, Math.min(half, ((it.x - rg.cx) / rRef) * r));
+        const p = SS.liftXY(L, sx, r);
+        const ang = Math.atan2(p.x - rg.cx, ((L.cyIn + L.cyOut) / 2) - p.y);
+        it.x = p.x; it.y = p.y;
+        it.rot = it.type === 'player' ? G().faceAngle(it, c) : (it.rot || 0) + (ang * 180) / Math.PI;
+      });
+      // 上げるのは、段の上の人・物がいる所（＋左右に約80cm）だけ。弧の横の端まで届くときは、U字の足までぜんぶ
+      const rMid = (rIn + Math.min(rOut, rIn + 160)) / 2;
+      const phiNeed = on.length ? Math.max(...on.map(it => { const u = SS.liftUD(L, it.x, it.y); return Math.abs(u.s) / u.r; })) + 80 / rMid : Math.PI / 4;
+      const step = Math.PI / 36; // 5°刻み
+      L.phi = phiNeed >= Math.PI / 2 - 0.05 ? null : Math.min(Math.PI / 2, Math.ceil(phiNeed / step) * step);
+      if (L.phi == null) delete L.phi;
+      const poly = SS.ringBandPoly(stage, rg, j0, j1, L.phi);
+      L.poly = poly;
+      const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      delete t.curve;
+      Object.assign(t, { x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2), w: Math.round(x1 - x0), h: Math.round(y1 - y0), rot: 0, lift: L });
+      lifted.push(t);
+    });
+    // 床の人・物が上がった帯にかかったら、帯の前（内側）へ下ろす
+    items.forEach(it => {
+      if (it.type === 'hina' || onTier.has(it)) return;
+      lifted.forEach(t => {
+        const L = t.lift;
+        if (!SS.hinaContains(t, it.x, it.y, 30)) return;
+        const u = SS.liftUD(L, it.x, it.y), p = SS.liftXY(L, u.s, Math.max(40, L.rIn - 35));
+        it.x = p.x; it.y = p.y;
+        if (it.type === 'player') it.rot = G().faceAngle(it, c);
+      });
+    });
+    return fallback;
+  }
+
   // 首席の印（★）：2人以上いるパートで、指揮者にいちばん近い席。オーケストラの Vn1 は 1プルトの表（客席側）をコンサートマスター（★CM）に
   function markLeads(items, c, type) {
     const ps = items.filter(it => it.type === 'player' && it.label);
@@ -1891,6 +2074,8 @@ window.SS = window.SS || {};
       if (alt && alt.score < best.score) return alt;
     }
     const r = best;
+    // 円形の迫りがあるホールは、はじめから迫りの段（「まっすぐ」「弧」を選んだときだけ、ひな壇）
+    if (st.hina && st.hina.lift !== false && !st.hina.curve && SS.ringGeom(stage) && !r.bent) { r.liftFallback = liftTiers(r.items, r.c, stage); r.bent = true; }
     if (st.hina && st.hina.curve && !r.bent) { r.curveFallback = bendTiers(r.items, r.c, stage); r.bent = true; }
     markLeads(r.items, r.c, st.type);
     // 指揮台（ビッグバンドは指揮者なし、合唱は自分で置く）

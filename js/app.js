@@ -1275,7 +1275,7 @@
       s += `<line x1="0" y1="${-sz.h / 2 - 4}" x2="0" y2="${-back}" stroke="#2f6fde" stroke-width="${2 / k}"/>`;
       s += `<circle data-handle="rotate" cx="0" cy="${-back}" r="${hr * 1.3}" fill="#fff" stroke="#2f6fde" stroke-width="${2.5 / k}" style="cursor:grab"/>`;
       s += `<text x="0" y="${-back}" dy="0.35em" text-anchor="middle" font-size="${12 / k}" fill="#2f6fde" pointer-events="none">↻</text>`;
-      if (it.type !== 'player' && !(SS.hinaArc && SS.hinaArc(it))) {
+      if (it.type !== 'player' && !(SS.hinaShaped && SS.hinaShaped(it))) {
         s += `<rect data-handle="resize" x="${sz.w / 2 + 6 - hr}" y="${sz.h / 2 + 6 - hr}" width="${hr * 2}" height="${hr * 2}" fill="#2f6fde" stroke="#fff" stroke-width="${1.5 / k}" style="cursor:nwse-resize"/>`;
       }
       s += '</g>';
@@ -1542,6 +1542,8 @@
       selected().forEach(it => orig.set(it.id, { x: it.x, y: it.y }));
       // 打楽器と奏者のまとまりは、いっしょに動かす（Alt を押しながらだと、それだけ）
       if (!e.altKey) selected().forEach(it => matesOf(it).forEach(m => { if (!orig.has(m.id)) orig.set(m.id, { x: m.x, y: m.y }); }));
+      // ホールの迫りでできた段は、舞台に作りつけなので動かさない（上の人・物だけ動く）
+      selected().forEach(it => { if (SS.hinaLift(it)) orig.delete(it.id); });
       drag = { kind: 'move', start, orig, primary: id, moved: false };
       renderOverlay();
       renderProps();
@@ -2413,7 +2415,7 @@
   // 弧のカーブ（スライダー）：床の奏者（ひな壇の上の人は除く）を、ゆるい弧〜扇形に
   function onRiser(it) {
     // まっすぐのひな壇の上の人（弧のひな壇の上の人は、弧のまま整える）
-    return doc().items.some(h => h.type === 'hina' && !SS.hinaArc(h) && Math.abs(it.x - h.x) < h.w / 2 && Math.abs(it.y - h.y) < h.h / 2);
+    return doc().items.some(h => h.type === 'hina' && !SS.hinaShaped(h) && Math.abs(it.x - h.x) < h.w / 2 && Math.abs(it.y - h.y) < h.h / 2);
   }
   // スライダーを動かし始めたとき、扇形のときの位置（arcBase）を覚えておき、いつもそこから計算する
   function curveStart() {
@@ -2649,7 +2651,7 @@
     const allPlayers = sel.every(it => it.type === 'player');
     const one = sel.length === 1 ? sel[0] : null;
     const esc = SS.esc;
-    let h = `<div class="hint"><b>${sel.length}個</b>選択中${one ? '：' + esc(one.type === 'player' ? '奏者' : (SS.CATALOG[one.type] || {}).name || '') : ''}</div>`;
+    let h = `<div class="hint"><b>${sel.length}個</b>選択中${one ? '：' + esc(one.type === 'player' ? '奏者' : SS.hinaLift(one) ? '迫りの段（ホールの円形の迫り）' : (SS.CATALOG[one.type] || {}).name || '') : ''}</div>`;
     const same = key => { const v = sel[0][key]; return sel.every(it => it[key] === v) ? v : ''; };
     if (allPlayers || (one && one.type !== 'player')) {
       h += `<label class="field">${allPlayers ? 'パート名' : '表示する文字'}<input id="propLabel" list="partList" value="${esc(same('label') || '')}" placeholder="${sel.length > 1 && !same('label') ? '（いろいろ）' : ''}"></label>`;
@@ -2686,7 +2688,11 @@
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
       h += `<div class="row2"><button class="btn" id="propRiserRot">◇ 斜め（45°）にする／もどす</button></div>`;
     }
-    if (one && one.type === 'hina') {
+    if (one && SS.hinaLift(one)) {
+      // ホールの迫りでできた段：高さだけ
+      h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}</option>`).join('')}</select></label>`;
+      h += `<p class="hint small">ホールの<b>円形の迫り</b>を上げてできた段です（平台は要りません）。舞台に作りつけなので、動かせません。迫りの高さは、ホールで確かめてください。</p>`;
+    } else if (one && one.type === 'hina') {
       const m = SS.hinaMaterials(one);
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
       const curT = SS.hinaTypeOf({ panel: one.panel, orient: one.orient, deep: m.deep });
@@ -2697,10 +2703,10 @@
       h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：${arcH ? `扇に並べて${m.panels}枚（前の列${SS.hinaPanels(one).filter(q => q.row === 0).length}枚）` : `横${m.across}枚×奥${m.deep}枚＝${m.panels}枚`}</p>`;
       h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
     }
-    if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable') {
+    if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable' && !SS.hinaLift(one)) {
       h += `<div class="row2"><label class="field">${SS.hinaArc && SS.hinaArc(one) ? '前のふちの弧の長さ(cm)' : '幅(cm)'}<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
     }
-    if (one && one.type !== 'cable') {
+    if (one && one.type !== 'cable' && !SS.hinaLift(one)) {
       h += `<label class="field">向き <span id="propRotVal">${Math.round(one.rot || 0)}°</span><input id="propRot" type="range" min="-180" max="180" step="5" value="${Math.round(one.rot || 0)}"></label>`;
     }
     const col = same('color') || (one ? SS.itemColor(one, renderOpts()) : '#ffffff');
@@ -4095,7 +4101,7 @@
       <p id="ppWarn" class="pp-warn" hidden></p>
     </div>`;
   };
-  const hasHina = () => doc().items.some(it => it.type === 'hina');
+  const hasHina = () => doc().items.some(it => it.type === 'hina' && !SS.hinaLift(it)); // 迫りの段は組み図が要らない
   function readPaper() {
     const p = { size: $('ppSize').value, orient: $('ppOrient').value, scale: +$('ppScale').value, style: $('ppStyle').value, content: $('ppContent') ? $('ppContent').value : 'plan', audio: $('ppAudio') ? $('ppAudio').checked : paperPref().audio !== false };
     opts().paper = p;
@@ -4434,7 +4440,7 @@
       <ol>
         <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。「サックス5人」「Sax 5」のように書き方がちがっても、分け方は同じです。1パートは40人までで、多すぎるときは「フルート100人は多すぎます（1パート最大40人）」と出ます。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
         <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。</li>
-        <li><b>ミューザ川崎</b>：ホール一覧のミューザは、ホールの舞台平面図から読み取った形（奥の左右が斜めの壁・前が浅いV字）と、床の<b>円形の迫り</b>（紫の点線）を図面のとおりに描きます。</li>
+        <li><b>ミューザ川崎</b>：ホール一覧のミューザは、ホールの舞台平面図から読み取った形（奥の左右が斜めの壁・前が浅いV字）と、床の<b>円形の迫り</b>（紫の点線）を図面のとおりに描きます。かんたん編成の段は、平台のひな壇ではなく<b>円形の迫りを上げた段</b>になります（人のいる所だけ上げます。「ひな壇の形」で「まっすぐ」「弧」を選ぶと平台のひな壇にもどせます）。</li>
         <li><b>ホールの寸法</b>：ホール一覧には、反射板を置いたとき（またはコンサート形式）の寸法が公開されていて確かめられたホールだけを載せています（10か所）。一覧にないホールは、ホールの舞台図面を見て「ステージの大きさ・形」に幅・奥行を入れてください。一覧の寸法も公開資料からの<b>目安</b>です。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
         <li><b>打楽器の楽器</b>：「打楽器」の箱の「楽器（台数）」で、ティンパニ・大太鼓・小太鼓・シンバル・鍵盤などを1つずつ増やしたり減らしたりできます（「人数に合わせて自動に戻す」で元どおり）。オーケストラでは、ティンパニを最上段の真ん中に、ほかの打楽器を奥から大太鼓→小太鼓→シンバル→小物→鍵盤の順に、弦の外側を下手の前へまわりこむように並べます。</li>
@@ -4708,7 +4714,10 @@
     $('percPlaceWrap').hidden = st.type === 'strings';
     const H = st.hina;
     document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => b.classList.toggle('on', +b.getAttribute('data-steps') === (H.steps || 0)));
-    document.querySelectorAll('#hinaShape [data-shape]').forEach(b => b.classList.toggle('on', b.getAttribute('data-shape') === (H.curve ? 'arc' : 'line')));
+    // ホールに円形の迫りがあるときだけ「迫りの段」を出す
+    const rings = !!SS.ringGeom(doc().stage);
+    $('hinaLiftBtn').hidden = !rings;
+    document.querySelectorAll('#hinaShape [data-shape]').forEach(b => b.classList.toggle('on', b.getAttribute('data-shape') === (rings && H.lift !== false && !H.curve ? 'lift' : H.curve ? 'arc' : 'line')));
     const cur = SS.hinaTypeOf(H);
     renderEnsNow();
     // 平台の置き方：よく使う3つだけ見せて、ほかは「ほかの置き方」にしまう
@@ -4803,7 +4812,7 @@
   $('bandLayout').onchange = e => { ens().layout = e.target.value; applyAuto(); };
   $('percPlace').onchange = e => { ens().percPlace = e.target.value; applyAuto(); };
   document.querySelectorAll('#hinaShape [data-shape]').forEach(b => {
-    b.onclick = () => { ens().hina.curve = b.getAttribute('data-shape') === 'arc'; renderSteppers(); applyAuto(); };
+    b.onclick = () => { const v = b.getAttribute('data-shape'); ens().hina.curve = v === 'arc'; ens().hina.lift = v === 'lift'; renderSteppers(); applyAuto(); };
   });
   document.querySelectorAll('#hinaSteps [data-steps]').forEach(b => {
     b.onclick = () => { ens().hina.steps = +b.getAttribute('data-steps'); renderSteppers(); applyAuto(); };
@@ -4835,10 +4844,13 @@
       // ホールの設備：データがあるホールだけ入れる（分からない値は作らない）。前のホールの設備は消す
       if (h.fixtures) doc().stage.fixtures = fixturesFromHall(h.fixtures); else delete doc().stage.fixtures;
       doc().hall = h.name;
+      // 円形の迫りがあるホール（ミューザ）は、はじめから迫りの段で並べる（ひな壇の形で「まっすぐ」「弧」にも戻せる）
+      if (doc().ensemble && doc().ensemble.hina && h.fixtures && h.fixtures.rings) { doc().ensemble.hina.lift = true; doc().ensemble.hina.curve = false; }
       updateHallNote();
+      renderSteppers();
       if (doc().items.some(it => it.auto)) applyAuto({ fit: true });
       else { renderAll(); fitView(); }
-      if (!quiet) toast(h.shape === 'poly' ? `${h.name}：ホールの図面の形（幅${h.fw}m・奥行${h.d}m）にしました${h.fixtures && h.fixtures.rings ? '。円形の迫りも描きます' : ''}` : h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
+      if (!quiet) toast(h.shape === 'poly' ? `${h.name}：ホールの図面の形（幅${h.fw}m・奥行${h.d}m）にしました${h.fixtures && h.fixtures.rings ? '。ひな壇の代わりに、円形の迫りを上げて段にします' : ''}` : h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
     }
   }
   function updateHallNote() {

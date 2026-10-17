@@ -14,7 +14,7 @@ window.SS = window.SS || {};
 
   // 物が占める範囲（回転も考えた外枠）
   function box(it) {
-    if (it.type === 'hina' && SS.hinaArc(it)) return SS.itemAABB(it, {});
+    if (it.type === 'hina' && SS.hinaShaped(it)) return SS.itemAABB(it, {});
     const s = SS.itemSize(it, {});
     const a = ((it.rot || 0) * Math.PI) / 180, c = Math.abs(Math.cos(a)), n = Math.abs(Math.sin(a));
     const w = s.w * c + s.h * n, h = s.w * n + s.h * c;
@@ -160,7 +160,8 @@ window.SS = window.SS || {};
     // ---- 舞台奥の通路（反射板と、段・楽器・奏者のあいだ）
     const aisle = SS.auto && SS.auto.aisleOf ? SS.auto.aisleOf(st) : 60;
     if (aisle > 0) {
-      const bad = items.filter(it => { const b = bx.get(it); return b.y0 < backY + aisle - 0.5 && b.y1 > backY; });
+      // ホールの迫りでできた段は、舞台そのものなので通路の確認に入れない（上の人・物は確かめる）
+      const bad = items.filter(it => { if (SS.hinaLift && SS.hinaLift(it)) return false; const b = bx.get(it); return b.y0 < backY + aisle - 0.5 && b.y1 > backY; });
       if (bad.length) {
         const min = Math.max(0, Math.min(...bad.map(it => bx.get(it).y0 - backY)));
         out.push({ kind: 'aisle', msg: `舞台奥の通路が${cm(aisle)}より狭いところがあります（いちばん狭い所 ${cm(min)}：${names(bad, hno)}）。反射板とのあいだを人が通れるように空けてください`, spots: bad.map(it => bx.get(it)) });
@@ -191,6 +192,7 @@ window.SS = window.SS || {};
     plats.forEach(p => {
       const heavy = on.get(p).filter(it => HEAVY.has(it.type));
       if (!heavy.length || p.h < 10) return;
+      if (SS.hinaLift && SS.hinaLift(p.it)) return; // 迫りは下げて運び込めるので、搬入の通路は要らない
       if (hasPath(p, st, items, bx)) return;
       out.push({ kind: 'loadin', msg: `${names(heavy, hno)}を${nameOf(p.it, hno)}に運び上げる通路（幅1.2mほど）がありません。段の横か前を1.2m以上空けてください`, spots: [p.b].concat(heavy.map(it => bx.get(it))) });
     });

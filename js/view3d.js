@@ -476,7 +476,7 @@ window.SS = window.SS || {};
   function heightAt(x, y, rh) {
     let h = 0;
     rh.forEach((hh, r) => {
-      if (r.type === 'hina' && SS.hinaArc(r)) { if (SS.hinaContains(r, x, y, 2)) h = Math.max(h, hh); return; }
+      if (r.type === 'hina' && SS.hinaShaped(r)) { if (SS.hinaContains(r, x, y, 2)) h = Math.max(h, hh); return; }
       const a = -(r.rot || 0) * Math.PI / 180;
       const dx = x - r.x, dy = y - r.y;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
@@ -629,7 +629,14 @@ window.SS = window.SS || {};
       }
       case 'riser': case 'riser46': case 'riser66': case 'riser33': case 'riser26': makeRiser(g, w, d, riserH, d, w); break;
       case 'hina':
-        if (SS.hinaArc(it)) {
+        if (SS.hinaLift(it)) {
+          // ホールの迫りでできた段：U字の帯の形の床を、段の高さまで上げる
+          const hv = riserH;
+          const shp = new T.Shape(SS.hinaOutline(it).map(q => new T.Vector2(q[0] / 100, q[1] / 100)));
+          const lm = new T.Mesh(new T.ExtrudeGeometry(shp, { depth: hv, bevelEnabled: false }), [mat('#c9955e', { roughness: 0.4 }), mat('#3a2a1c')]);
+          lm.rotation.x = Math.PI / 2; lm.position.y = hv; lm.castShadow = true; lm.receiveShadow = true;
+          g.add(lm);
+        } else if (SS.hinaArc(it)) {
           // 弧のひな壇：平台を1枚ずつ扇に並べる
           SS.hinaPanels(it).forEach(q => {
             const pg = new T.Group();

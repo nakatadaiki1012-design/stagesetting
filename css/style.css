@@ -643,3 +643,4 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .sel-empty p { margin: 8px 0 0; }
 .pal-fold summary small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
 .pal-fold.pal-sub { margin-top: 6px; }
+#hinaShape { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }

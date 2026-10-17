@@ -241,6 +241,23 @@ window.SS = window.SS || {};
     const EDGE = 32; // 段のふちから椅子の中心まで（椅子の半分＋少し）
     const arc = SS.hinaArc && SS.hinaArc(t);
     let tight = false;
+    const lf = SS.hinaLift && SS.hinaLift(t);
+    if (lf) {
+      // 迫りの段（U字の帯）：半径で列に分け、帯の弧に沿って等しく並べる
+      const dep = Math.min(lf.rOut - lf.rIn, 400);
+      const P = items.map(it => Object.assign({ it }, SS.liftUD(lf, it.x, it.y)));
+      let rows = mergeRows(G.cluster1D(P, o => o.r, 45), o => o.r, Math.max(1, Math.floor(dep / 70)));
+      const k = rows.length;
+      rows.forEach((row, i) => {
+        const r = lf.rIn + rowDist(i, k, dep);
+        const lim = SS.liftHalf(lf, r) - EDGE;
+        row.sort((a, b) => a.s - b.s);
+        if ((row.length - 1) * opt.minGap > 2 * lim) tight = true;
+        const ss = fitRange(row.map(o => o.s * (r / o.r)), -lim, lim, opt);
+        row.forEach((o, j) => { const p = SS.liftXY(lf, ss[j], r); o.it.x = p.x; o.it.y = p.y; o.it.rot = G.faceAngle(o.it, c); });
+      });
+      return tight;
+    }
     if (!arc) {
       const L = items.map(it => ({ it, q: tierLocal(t, it) }));
       const h = t.h || 182, w = t.w || 728;
@@ -279,6 +296,13 @@ window.SS = window.SS || {};
   };
   // 段のふちから edge より内側へ入れる（打楽器など、列にしない人用）
   G.clampOnTier = function (p, t, edge) {
+    const lf = SS.hinaLift && SS.hinaLift(t);
+    if (lf) {
+      const u = SS.liftUD(lf, p.x, p.y), r = Math.max(lf.rIn + edge, Math.min(lf.rOut - edge, u.r)), lim = Math.max(0, SS.liftHalf(lf, r) - edge);
+      const q = SS.liftXY(lf, Math.max(-lim, Math.min(lim, u.s * (r / u.r))), r);
+      p.x = q.x; p.y = q.y;
+      return;
+    }
     const arc = SS.hinaArc && SS.hinaArc(t);
     if (arc) {
       const C = tierWorld(t, { x: 0, y: arc.cy }), dx = p.x - C.x, dy = C.y - p.y, axis = ((t.rot || 0) * Math.PI) / 180;
@@ -298,6 +322,13 @@ window.SS = window.SS || {};
   G.pushOffTier = function (p, t, clear) {
     clear = clear || 30;
     if (!SS.hinaContains(t, p.x, p.y, clear)) return false;
+    const lf = SS.hinaLift && SS.hinaLift(t);
+    if (lf) {
+      const u = SS.liftUD(lf, p.x, p.y), nr = u.r < (lf.rIn + lf.rOut) / 2 ? Math.max(30, lf.rIn - clear) : lf.rOut + clear;
+      const q = SS.liftXY(lf, u.s * (nr / u.r), nr);
+      p.x = q.x; p.y = q.y;
+      return true;
+    }
     const arc = SS.hinaArc && SS.hinaArc(t);
     if (arc) {
       const C = tierWorld(t, { x: 0, y: arc.cy }), dx = p.x - C.x, dy = p.y - C.y, r = Math.hypot(dx, dy) || 1;

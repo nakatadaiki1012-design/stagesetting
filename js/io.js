@@ -380,7 +380,7 @@ window.SS = window.SS || {};
   }
   // 部品の外形（回転が90°くらいなら幅と奥行を入れかえる）
   function bboxOf(it) {
-    if (it.type === 'hina' && SS.hinaArc && SS.hinaArc(it)) { const b = SS.itemAABB(it, {}); return Object.assign(b, { w: b.x1 - b.x0, h: b.y1 - b.y0 }); }
+    if (it.type === 'hina' && SS.hinaShaped && SS.hinaShaped(it)) { const b = SS.itemAABB(it, {}); return Object.assign(b, { w: b.x1 - b.x0, h: b.y1 - b.y0 }); }
     const sz = SS.itemSize(it, {});
     const a = Math.abs(((it.rot || 0) % 180 + 180) % 180);
     const swap = a > 45 && a < 135;
@@ -876,7 +876,7 @@ window.SS = window.SS || {};
     const items = doc.items, tiers = items.filter(it => it.type === 'hina');
     const hno = SS.hinaNumbers ? SS.hinaNumbers(items) : new Map();
     const tierAt = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
-    const nameOf = t => (t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `ひな壇${hno.get(t)}段目` : `ひな壇${hno.get(t) || ''}`);
+    const nameOf = t => { const base = SS.hinaLift && SS.hinaLift(t) ? '迫り' : 'ひな壇'; return t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `${base}${hno.get(t)}段目` : `${base}${hno.get(t) || ''}`; };
     const ps = items.filter(it => it.type === 'player');
     // 床の列：指揮台からの距離（指揮台がなければ、客席側の縁からの距離）で、40cm 以上あいたところで分ける
     const pod = items.find(it => it.type === 'podium');

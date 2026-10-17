@@ -351,6 +351,16 @@ window.SS = window.SS || {};
           const hv = it.hgt || 21.2;
           const shade = Math.max(0, Math.min(1, hv / 90));
           const col = `rgb(${Math.round(236 - 40 * shade)},${Math.round(220 - 45 * shade)},${Math.round(190 - 50 * shade)})`;
+          const lf = SS.hinaLift && SS.hinaLift(it);
+          if (lf) {
+            // ホールの円形の迫りでできた段：U字の帯（平台はない）。段の名前は下手側の帯の上に、弧に沿って
+            body += `<path d="M${SS.hinaOutline(it).map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L')}Z" fill="${col}" fill-opacity=".9" stroke="#8a6d3b" stroke-width="3" stroke-linejoin="round"/>`;
+            const rm = (lf.rIn + Math.min(lf.rOut, lf.rIn + 160)) / 2, cym = (lf.cyIn + lf.cyOut) / 2, ph = -Math.min(Math.PI / 3.2, (lf.phi != null ? lf.phi : Math.PI / 2) - 120 / rm);
+            const tx = lf.cx + rm * Math.sin(ph), ty = cym - rm * Math.cos(ph);
+            const tag = `${it.perc ? '打楽器の段 ' : it.step ? '迫り ' + it.step + '段 ' : '迫り '}${Math.round(hv)}cm`;
+            text += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="${opts.contestSheet ? 14 : 22}" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke" transform="rotate(${((ph * 180) / Math.PI).toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${esc(tag)}</text>`;
+            break;
+          }
           const arc = SS.hinaArc && SS.hinaArc(it);
           if (arc) {
             // 弧（円形）のひな壇：扇形の外形と、扇に並べた平台1枚ずつ
@@ -601,7 +611,7 @@ window.SS = window.SS || {};
 
   // 部品の中の座標（向きを回す前）での外枠。ふつうは真ん中が (0,0) の四角。弧のひな壇は扇形の外枠
   SS.itemBounds = function (it, opts) {
-    if (it.type === 'hina' && SS.hinaArc && SS.hinaArc(it)) return SS.hinaBounds(it);
+    if (it.type === 'hina' && SS.hinaShaped && SS.hinaShaped(it)) return SS.hinaBounds(it);
     const s = SS.itemSize(it, opts);
     return { x0: -s.w / 2, x1: s.w / 2, y0: -s.h / 2, y1: s.h / 2 };
   };
