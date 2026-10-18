@@ -37,7 +37,8 @@ window.SS = window.SS || {};
     const hs = items.filter(it => it.type === 'hina');
     const steps = hs.map(h => h.step).filter(Boolean);
     const map = new Map();
-    if (steps.length === hs.length && new Set(steps).size === steps.length) hs.forEach(h => map.set(h, String(h.step)));
+    // 迫りの段は、左右に分かれた同じ段（両はしだけ上げる）があるので、同じ番号でもよい
+    if (steps.length === hs.length && (new Set(steps).size === steps.length || hs.every(h => h.lift))) hs.forEach(h => map.set(h, String(h.step)));
     else hs.slice().sort((a, b) => b.y - a.y || a.x - b.x).forEach((h, i) => map.set(h, i < 26 ? String.fromCharCode(65 + i) : 'Z' + (i - 25)));
     return map;
   };
@@ -174,6 +175,22 @@ window.SS = window.SS || {};
       SS.render.stagePoly(stage).filter(p => p[1] < yc - 1).sort((p, q) => Math.atan2(yc - p[1], p[0] - cx) - Math.atan2(yc - q[1], q[0] - cx)).forEach(p => pts.push([p[0], p[1]]));
       pts.push([xl, yc]);
     }
+    return pts.map(p => [Math.round(p[0]), Math.round(p[1])]);
+  };
+
+  // 帯の一部（角度 t0〜t1。真ん中が0、右が＋。±90°より先は、U字の足にそって前へ下りる）の外形
+  SS.ringBandRange = function (rg, j, t0, t1) {
+    const cx = rg.cx, A = rg.arcs[j], B = rg.arcs[j + 1], pts = [];
+    const tEnd = a => Math.PI / 2 + Math.max(0, a.end - a.cy) / a.r;
+    const at = (a, t) => { const q = Math.abs(t), sg = Math.sign(t || 1); return q <= Math.PI / 2 ? [cx + a.r * Math.sin(t), a.cy - a.r * Math.cos(t)] : [cx + sg * a.r, a.cy + (q - Math.PI / 2) * a.r]; };
+    const walk = (a, from, to) => {
+      const lo = Math.max(-tEnd(a), Math.min(from, to)), hi = Math.min(tEnd(a), Math.max(from, to));
+      const n = Math.max(2, Math.ceil(((hi - lo) * 180) / Math.PI / 4)), out = [];
+      for (let i = 0; i <= n; i++) out.push(at(a, lo + ((hi - lo) * i) / n));
+      return from <= to ? out : out.reverse();
+    };
+    walk(A, t0, t1).forEach(p => pts.push(p));
+    walk(B, t1, t0).forEach(p => pts.push(p));
     return pts.map(p => [Math.round(p[0]), Math.round(p[1])]);
   };
 
@@ -1819,6 +1836,44 @@ window.SS = window.SS || {};
   // 角度（指揮者から見た向き）はそのままなので、奥の列ほど横に広がり、重ならない。打楽器などのまとまりは形のまま動かす
   const RING_HGT = [21.2, 42.4, 63.6, 84.8, 106];
   A.RING_HGT = RING_HGT;
+  const RING_PHI = Math.PI / 3; // 「まん中だけ」「両はしだけ」の分かれ目（真ん中から左右60°）
+  // せりの上げ方の型（帯ごとの高さ・上げる所）
+  A.RING_PRESETS = [
+    { id: 'steps', name: '階段（ぜんぶ）', hgts: [21.2, 42.4, 63.6, 84.8, 106], parts: [] },
+    { id: 'gentle', name: 'ゆるい階段', hgts: [10, 21.2, 31.8, 42.4, 53], parts: [] },
+    { id: 'back', name: '奥だけ上げる', hgts: [0, 0, 21.2, 42.4, 63.6], parts: [] },
+    { id: 'center', name: 'まん中だけ', hgts: [21.2, 42.4, 63.6, 84.8, 106], parts: ['center', 'center', 'center', 'center', 'center'] },
+    { id: 'sides', name: '両はしだけ', hgts: [21.2, 42.4, 63.6, 84.8, 106], parts: ['sides', 'sides', 'sides', 'sides', 'all'] },
+    { id: 'flat', name: '平ら（上げない）', hgts: [0, 0, 0, 0, 0], parts: [] },
+  ];
+  // 円形の迫りの段（帯ごとに、高さ rings.hgts[j]・上げる所 rings.parts[j]：all ぜんぶ／center まん中だけ／sides 両はしだけ）
+  A.ringTiers = function (stage) {
+    const rg = SS.ringGeom(stage);
+    if (!rg) return [];
+    const nB = rg.arcs.length, aisle = A.aisleOf ? A.aisleOf(stage) : 60;
+    const rgs = (stage.fixtures && stage.fixtures.rings) || {}, hgts = rgs.hgts || [], parts = rgs.parts || [];
+    const tiers = [];
+    for (let j = 0; j < nB; j++) {
+      const hgt = hgts[j] != null ? +hgts[j] : RING_HGT[Math.min(j, RING_HGT.length - 1)];
+      const part = parts[j] || 'all';
+      if (!(hgt > 0) || part === 'none') continue;
+      const A0 = rg.arcs[j], B0 = rg.arcs[j + 1] || null;
+      // いちばん外（奥の壁まで）は「ぜんぶ」か「まん中だけ」
+      const polys = !B0 ? [SS.ringBandPoly(stage, rg, j, j, part === 'center' ? RING_PHI : null)]
+        : part === 'center' ? [SS.ringBandRange(rg, j, -RING_PHI, RING_PHI)]
+        : part === 'sides' ? [SS.ringBandRange(rg, j, -9, -RING_PHI), SS.ringBandRange(rg, j, RING_PHI, 9)]
+        : [SS.ringBandPoly(stage, rg, j, j, null)];
+      polys.forEach(poly => {
+        const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+        const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+        const L = { poly, cx: rg.cx, cyIn: A0.cy, rIn: A0.r, cyOut: B0 ? B0.cy : A0.cy, rOut: B0 ? B0.r : A0.cy - aisle, fIn: A0.end, fOut: B0 ? B0.end : A0.end, j0: j, j1: j };
+        if (part === 'center') L.phi = RING_PHI;
+        if (part !== 'all') L.part = part;
+        tiers.push({ type: 'hina', step: j + 1, hgt, rot: 0, auto: true, x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2), w: Math.round(x1 - x0), h: Math.round(y1 - y0), lift: L });
+      });
+    }
+    return tiers;
+  };
   // line＝true：合唱・ビッグバンドのように横一直線の列（ひな壇ありで並べた列を、段ごと・床は前後の位置で列にし、
   //   横の間隔をそのまま帯の弧に沿った長さにする）。false：扇に並べた列（指揮者からの距離で列にし、向きはそのまま）
   function ringStage(r, stage, line) {
@@ -1828,7 +1883,6 @@ window.SS = window.SS || {};
     const items = r.items.filter(it => it.type !== 'hina'), c0 = r.c, nB = rg.arcs.length;
     const C = { x: rg.cx, y: Math.round(rg.arcs.reduce((a, q) => a + q.cy, 0) / nB) };
     const aisle = A.aisleOf ? A.aisleOf(stage) : 60;
-    const hgts = (stage.fixtures && stage.fixtures.rings && stage.fixtures.rings.hgts) || [];
     const polar = it => ({ rho: Math.hypot(it.x - c0.x, it.y - c0.y), th: Math.atan2(it.x - c0.x, c0.y - it.y) });
     // 動かす単位：奏者1人ずつ・打楽器などのまとまり（grp）ごと・そのほかの物1つずつ。横の幅（cm）も
     const units = [], inGrp = new Map();
@@ -1918,18 +1972,8 @@ window.SS = window.SS || {};
       u.members.forEach(it => { it.x += dx; it.y += dy; });
     });
     items.forEach(it => { if (it.type === 'player') it.rot = G().faceAngle(it, C); });
-    // 帯をぜんぶ段に（高さ0の帯は上げない）
-    const tiers = [];
-    for (let j = 0; j < nB; j++) {
-      const hgt = hgts[j] != null ? +hgts[j] : RING_HGT[Math.min(j, RING_HGT.length - 1)];
-      if (!(hgt > 0)) continue;
-      const A0 = rg.arcs[j], B0 = rg.arcs[j + 1] || null;
-      const poly = SS.ringBandPoly(stage, rg, j, j, null);
-      const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
-      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-      tiers.push({ type: 'hina', step: j + 1, hgt, rot: 0, x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2), w: Math.round(x1 - x0), h: Math.round(y1 - y0),
-        lift: { poly, cx: rg.cx, cyIn: A0.cy, rIn: A0.r, cyOut: B0 ? B0.cy : A0.cy, rOut: B0 ? B0.r : A0.cy - aisle, fIn: A0.end, fOut: B0 ? B0.end : A0.end, j0: j, j1: j } });
-    }
+    // 帯を段に（帯ごとの高さ・上げる所は、ホールの設備に覚えてある）
+    const tiers = A.ringTiers(stage);
     r.items = tiers.concat(items);
     r.c = C;
     return over;

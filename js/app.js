@@ -2752,7 +2752,13 @@
       one.hgt = Math.max(0, +el.value || 0);
       // 迫りの段：帯ごとの高さを、ホールの設備（舞台）に覚えておく（並べ直しても同じ高さ）
       const lf = SS.hinaLift(one), rgs = lf && doc().stage.fixtures && doc().stage.fixtures.rings;
-      if (rgs) { rgs.hgts = rgs.hgts || []; for (let j = lf.j0; j <= lf.j1; j++) rgs.hgts[j] = one.hgt; }
+      if (rgs) {
+        rgs.hgts = rgs.hgts || [];
+        for (let j = lf.j0; j <= lf.j1; j++) rgs.hgts[j] = one.hgt;
+        // 両はしだけ上げた帯は、左右の2つとも同じ高さに
+        doc().items.forEach(t => { const l2 = SS.hinaLift(t); if (l2 && l2.j0 === lf.j0) t.hgt = one.hgt; });
+        if (!$('ringBox').hidden) renderRingBox();
+      }
       renderProps();
     });
     if ($('propRiserRot')) $('propRiserRot').onclick = () => { pushHistory(); one.rot = Math.abs(((one.rot || 0) % 90 + 90) % 90 - 45) < 1 ? 0 : 45; renderAll(); };
@@ -4446,7 +4452,7 @@
       <ol>
         <li><b>✍️ 文章で指示する</b>：「フルート6人、打楽器は下手、ひな壇2段、ミューザで」のように書いて押すと、その通りに並べ直します。「コンクールA」「小編成」「55人くらい」のような言い方もわかります。「クラ10人」は Cl1・Cl2・Cl3 に分けて10人（どう分けたかも出ます）。「サックス5人」「Sax 5」のように書き方がちがっても、分け方は同じです。1パートは40人までで、多すぎるときは「フルート100人は多すぎます（1パート最大40人）」と出ます。人数が5人以上減るときは、確認してから並べ直します。読み取れなかったときは、書き方の例が出ます。「かんたん編成」の下の<b>「✍️ 文章で指示する」の箱</b>を開いて使います。</li>
         <li><b>弧・円形の舞台</b>：「かんたん編成」の「ステージの大きさ・形」で「前が弧」「円形・楕円形」を選べます。◠ のつまみで弧のふくらみを変えられます。</li>
-        <li><b>ミューザ川崎</b>：ホール一覧のミューザは、ホールの舞台平面図から読み取った形（奥の左右が斜めの壁・前が浅いV字）と、床の<b>円形の迫り</b>（紫の点線）を図面のとおりに描きます。かんたん編成の段は、平台のひな壇ではなく<b>点線の円形の迫りをぜんぶ上げた段</b>（5段）になり、指揮者を迫りの中心に立たせて、奥の列を1つの帯に1列ずつのせます。段を押すと帯の高さを変えられます（0で上げない）。「ひな壇の形」で「まっすぐ」「弧」を選ぶと平台のひな壇にもどせます。</li>
+        <li><b>ミューザ川崎</b>：ホール一覧のミューザは、ホールの舞台平面図から読み取った形（奥の左右が斜めの壁・前が浅いV字）と、床の<b>円形の迫り</b>（紫の点線）を図面のとおりに描きます。かんたん編成の段は、平台のひな壇ではなく<b>点線の円形の迫りをぜんぶ上げた段</b>（5段）になり、指揮者を迫りの中心に立たせて、奥の列を1つの帯に1列ずつのせます。上げ方は「ひな壇」の箱の<b>「せりの上げ方」</b>で、型（階段・ゆるい階段・奥だけ・まん中だけ・両はしだけ・平ら）から選ぶか、帯ごとに高さ（0で上げない）と上げる所（ぜんぶ・まん中だけ・両はしだけ）を決められます。「ひな壇の形」で「まっすぐ」「弧」を選ぶと平台のひな壇にもどせます。</li>
         <li><b>ホールの寸法</b>：ホール一覧には、反射板を置いたとき（またはコンサート形式）の寸法が公開されていて確かめられたホールだけを載せています（10か所）。一覧にないホールは、ホールの舞台図面を見て「ステージの大きさ・形」に幅・奥行を入れてください。一覧の寸法も公開資料からの<b>目安</b>です。<b>本番前に必ずホールの舞台図面で確認してください。</b>違っていたら「ステージの大きさ・形」で直せます。</li>
         <li><b>編成の種類</b>：「かんたん編成」で <b>吹奏楽・オーケストラ・弦楽・ブラスバンド・ビッグバンド・合唱</b> を選べます。<b>ブラスバンド</b>（ブリティッシュ・スタイル）は<b>台形のコの字</b>に並べます。前の列は下手の腕にソロ・コルネット、奥にフリューゲル→テナーホルン→バリトン、上手の腕にユーフォ。後ろの列は下手の腕にソプラノ・レピアノ・2nd・3rdコルネット、奥にベース、上手の腕にトロンボーン（「並び方」で扇形も選べます）。<b>ビッグバンド</b>はサックス（前・リードのA1が真ん中）→トロンボーン（1段目）→トランペット（2段目）、リズム隊は下手にまとめます（ドラムはトロンボーンの台の下手どなりで、奏者はセットの後ろに座る。ベースはドラマーの右手側、ギターはサックスの下手どなり、ピアノはいちばん前）。<b>合唱</b>は立って歌う人の形で、S・A・T・B を下手から／女声が前・男声が後ろ／S・T・B・A から選べ、前の列は床、うしろの列はひな壇（半人分ずらす）、ピアノは下手に置きます。</li>
         <li><b>打楽器の楽器</b>：「打楽器」の箱の「楽器（台数）」で、ティンパニ・大太鼓・小太鼓・シンバル・鍵盤などを1つずつ増やしたり減らしたりできます（「人数に合わせて自動に戻す」で元どおり）。オーケストラでは、ティンパニを最上段の真ん中に、ほかの打楽器を奥から大太鼓→小太鼓→シンバル→小物→鍵盤の順に、弦の外側を下手の前へまわりこむように並べます。</li>
@@ -4565,6 +4571,55 @@
   document.addEventListener('keydown', () => flushAuto(), true);
   window.addEventListener('pagehide', () => flushAuto());
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushAuto(); });
+  // ---------------------------------------------------------------- せりの上げ方（円形の迫りがあるホール）
+  // 帯ごとの高さ（cm、0＝上げない）と、上げる所（ぜんぶ／まん中だけ／両はしだけ）。型からも選べる
+  const RING_PART_NAMES = { all: 'ぜんぶ', center: 'まん中だけ', sides: '両はしだけ' };
+  function ringCfg() {
+    const rgs = doc().stage.fixtures && doc().stage.fixtures.rings;
+    return rgs || null;
+  }
+  function ringChanged() {
+    // かんたん編成の配置は並べ直す。手で置いた配置は、段だけ作り直す（上の人・物はそのまま）
+    if (doc().items.some(it => it.auto)) { applyAuto({ noHistory: true }); return; }
+    doc().items = SS.auto.ringTiers(doc().stage).map(t => Object.assign(t, { id: newId(), auto: false })).concat(doc().items.filter(it => !SS.hinaLift(it)));
+    renderAll();
+  }
+  function renderRingBox() {
+    const rgs = ringCfg(), rg = SS.ringGeom(doc().stage);
+    if (!rgs || !rg) { $('ringBox').innerHTML = ''; return; }
+    const n = rg.arcs.length, hg = j => (rgs.hgts && rgs.hgts[j] != null ? +rgs.hgts[j] : SS.auto.RING_HGT[Math.min(j, SS.auto.RING_HGT.length - 1)]);
+    const pt = j => (rgs.parts && rgs.parts[j]) || 'all';
+    const same = p => p.hgts.every((v, j) => j >= n || Math.abs(v - hg(j)) < 0.6) && Array.from({ length: n }, (_, j) => (p.parts[j] || 'all') === pt(j)).every(Boolean);
+    let h = `<p class="hint small" style="margin:8px 0 4px"><b>せりの上げ方</b>（点線の帯ごと。0cm＝上げない）</p><div class="ring-presets">${SS.auto.RING_PRESETS.map(p => `<button class="btn${same(p) ? ' active' : ''}" data-rpre="${p.id}">${SS.esc(p.name)}</button>`).join('')}</div><div class="ring-rows">`;
+    for (let j = 0; j < n; j++) {
+      const last = j === n - 1;
+      h += `<label class="ring-row"><b>${j + 1}段目</b><small>${j === 0 ? 'いちばん内側' : last ? '奥の壁まで' : ''}</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rh="${j}" value="${Math.round(hg(j))}"> cm</span><select data-rp="${j}">${Object.keys(RING_PART_NAMES).filter(k => !(last && k === 'sides')).map(k => `<option value="${k}"${pt(j) === k ? ' selected' : ''}>${RING_PART_NAMES[k]}</option>`).join('')}</select></label>`;
+    }
+    h += '</div><p class="hint small">「まん中だけ」は真ん中から左右60°まで、「両はしだけ」はその外側（U字の足まで）を上げます。並べ直しても覚えておきます。実際に上がる高さ・範囲は、ホールで確かめてください。</p>';
+    $('ringBox').innerHTML = h;
+    $('ringBox').querySelectorAll('[data-rpre]').forEach(b => { b.onclick = () => {
+      const p = SS.auto.RING_PRESETS.find(x => x.id === b.getAttribute('data-rpre'));
+      pushHistory(); // 「戻す」で、せりの上げ方も配置も前のとおりに
+      rgs.hgts = p.hgts.slice(0, n); rgs.parts = Array.from({ length: n }, (_, j) => p.parts[j] || 'all');
+      renderRingBox(); ringChanged();
+      toast(`せりの上げ方：${p.name}`, true);
+    }; });
+    $('ringBox').querySelectorAll('[data-rh]').forEach(inp => { inp.onchange = () => {
+      const j = +inp.getAttribute('data-rh');
+      pushHistory();
+      rgs.hgts = Array.from({ length: n }, (_, k) => hg(k));
+      rgs.hgts[j] = Math.max(0, Math.min(200, +inp.value || 0));
+      renderRingBox(); ringChanged();
+    }; });
+    $('ringBox').querySelectorAll('[data-rp]').forEach(sel => { sel.onchange = () => {
+      const j = +sel.getAttribute('data-rp');
+      pushHistory();
+      rgs.parts = Array.from({ length: n }, (_, k) => pt(k));
+      rgs.parts[j] = sel.value;
+      renderRingBox(); ringChanged();
+    }; });
+  }
+
   function applyAuto(opts2) {
     opts2 = opts2 || {};
     const t0 = performance.now();
@@ -4724,6 +4779,11 @@
     const rings = !!SS.ringGeom(doc().stage);
     $('hinaLiftBtn').hidden = !rings;
     document.querySelectorAll('#hinaShape [data-shape]').forEach(b => b.classList.toggle('on', b.getAttribute('data-shape') === (rings && H.lift !== false && !H.curve ? 'lift' : H.curve ? 'arc' : 'line')));
+    // ホールの迫りで並べるときは、平台の置き方の代わりに「せりの上げ方」
+    const liftMode = rings && H.lift !== false && !H.curve;
+    $('ringBox').hidden = !liftMode;
+    ['hinaTypes', 'hinaTypesLbl'].forEach(id => { $(id).hidden = liftMode; });
+    if (liftMode) renderRingBox();
     const cur = SS.hinaTypeOf(H);
     renderEnsNow();
     // 平台の置き方：よく使う3つだけ見せて、ほかは「ほかの置き方」にしまう
@@ -4744,7 +4804,8 @@
     const std = [21.2, 42.4, 63.6, 84.8];
     // 高さは名前だけを選び、組み方（足・箱馬）は下に折り返して出す（せまい画面でも文字が切れない）
     const howOf = v => { const r = SS.RISER_HEIGHTS.find(h => Math.abs(h.v - v) < 0.6); return r ? r.how : ''; };
-    $('hinaHeightsLbl').hidden = !H.steps;
+    $('hinaHeightsLbl').hidden = !H.steps || liftMode;
+    $('hinaHeights').hidden = liftMode;
     $('hinaHeights').innerHTML = Array.from({ length: H.steps || 0 }, (_, i) => {
       const v = (H.heights && H.heights[i]) || std[i];
       // 段ごとの平台の置き方（決めていなければ、上の「1段の平台の置き方」と同じ）
