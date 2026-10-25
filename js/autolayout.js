@@ -2134,8 +2134,19 @@ window.SS = window.SS || {};
   // 舞台の前の縁から1m以内に来た人・楽器（とそのまとまり）を、足りない分だけ奥へ（指揮台・マイク・モニターはそのまま）
   function keepFromEdge(items, stage) {
     const skip = new Set(['podium', 'hina', ...SS.RISERS, 'stairs', 'mic', 'micTall', 'monitor', 'text']);
+    const needOf = it => { const b = SS.itemAABB(it, {}); const fr = Math.min(R().frontAt(stage, b.x0), R().frontAt(stage, b.x1), R().frontAt(stage, (b.x0 + b.x1) / 2)); return EDGE_CLEAR + 2 - (fr - b.y1); };
+    // ティンパニは1台ずつ動かすと重なるので、近くの太鼓と奏者をまとめて同じだけ動かす
+    const tset = new Set();
+    items.filter(it => TIMP.includes(it.type)).forEach(t0 => {
+      if (tset.has(t0)) return;
+      const g = items.filter(o => TIMP.includes(o.type) && Math.hypot(o.x - t0.x, o.y - t0.y) < 260);
+      const pl = items.filter(o => o.type === 'player' && /^tim/i.test(o.label || '') && g.some(t => Math.hypot(o.x - t.x, o.y - t.y) < 200));
+      g.concat(pl).forEach(o => tset.add(o));
+      const need = Math.max(...g.map(needOf));
+      if (need > 0) g.concat(pl).forEach(o => { o.y -= need; });
+    });
     items.forEach(it => {
-      if (skip.has(it.type)) return;
+      if (skip.has(it.type) || tset.has(it)) return;
       const b = SS.itemAABB(it, {});
       const fr = Math.min(R().frontAt(stage, b.x0), R().frontAt(stage, b.x1), R().frontAt(stage, (b.x0 + b.x1) / 2));
       const need = EDGE_CLEAR + 2 - (fr - b.y1);
