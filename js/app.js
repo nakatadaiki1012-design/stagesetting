@@ -4581,8 +4581,11 @@
   function ringChanged() {
     // かんたん編成の配置は並べ直す。手で置いた配置は、段だけ作り直す（上の人・物はそのまま）
     if (doc().items.some(it => it.auto)) { applyAuto({ noHistory: true }); return; }
-    doc().items = SS.auto.ringTiers(doc().stage).map(t => Object.assign(t, { id: newId(), auto: false })).concat(doc().items.filter(it => !SS.hinaLift(it)));
+    // まとめてある帯（打楽器などがまたがる）は、そのまま
+    const merges = doc().items.filter(it => SS.hinaLift(it) && it.lift.merged).map(it => [it.lift.j0, it.lift.j1]);
+    doc().items = SS.auto.ringTiers(doc().stage, merges).map(t => Object.assign(t, { id: newId(), auto: false })).concat(doc().items.filter(it => !SS.hinaLift(it)));
     renderAll();
+    renderRingBox();
   }
   function renderRingBox() {
     const rgs = ringCfg(), rg = SS.ringGeom(doc().stage);
@@ -4595,6 +4598,9 @@
       const last = j === n - 1;
       h += `<label class="ring-row"><b>${j + 1}段目</b><small>${j === 0 ? 'いちばん内側' : last ? '奥の壁まで' : ''}</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rh="${j}" value="${Math.round(hg(j))}"> cm</span><select data-rp="${j}">${Object.keys(RING_PART_NAMES).filter(k => !(last && k === 'sides')).map(k => `<option value="${k}"${pt(j) === k ? ' selected' : ''}>${RING_PART_NAMES[k]}</option>`).join('')}</select></label>`;
     }
+    // 楽器がまたがるので、まとめて1つの段にした帯
+    const merged = doc().items.filter(it => SS.hinaLift(it) && it.lift.merged);
+    if (merged.length) h += `<p class="hint small ring-merged">${merged.map(t => `${t.lift.j0 + 1}〜${t.lift.j1 + 1}段目は、打楽器などがまたがるので、まとめて1つの段（${Math.round(t.hgt)}cm）にしています`).join('。')}。</p>`;
     h += '</div><p class="hint small">「まん中だけ」は真ん中から左右60°まで、「両はしだけ」はその外側（U字の足まで）を上げます。並べ直しても覚えておきます。実際に上がる高さ・範囲は、ホールで確かめてください。</p>';
     $('ringBox').innerHTML = h;
     $('ringBox').querySelectorAll('[data-rpre]').forEach(b => { b.onclick = () => {
@@ -4666,6 +4672,7 @@
     if (opts2.fit) fitView();
     if (opts2.quiet) return;
     if (!S.fit.fits) return;
+    if (!$('ringBox').hidden) renderRingBox();
     if (r.offstage && st.percWing) toast(`打楽器（${r.offstage}台）は、下手のそでに置いています`);
     else if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
     else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');

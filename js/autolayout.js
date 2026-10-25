@@ -179,8 +179,8 @@ window.SS = window.SS || {};
   };
 
   // 帯の一部（角度 t0〜t1。真ん中が0、右が＋。±90°より先は、U字の足にそって前へ下りる）の外形
-  SS.ringBandRange = function (rg, j, t0, t1) {
-    const cx = rg.cx, A = rg.arcs[j], B = rg.arcs[j + 1], pts = [];
+  SS.ringBandRange = function (rg, j, t0, t1, j1) {
+    const cx = rg.cx, A = rg.arcs[j], B = rg.arcs[(j1 != null ? j1 : j) + 1], pts = [];
     const tEnd = a => Math.PI / 2 + Math.max(0, a.end - a.cy) / a.r;
     const at = (a, t) => { const q = Math.abs(t), sg = Math.sign(t || 1); return q <= Math.PI / 2 ? [cx + a.r * Math.sin(t), a.cy - a.r * Math.cos(t)] : [cx + sg * a.r, a.cy + (q - Math.PI / 2) * a.r]; };
     const walk = (a, from, to) => {
@@ -1847,16 +1847,45 @@ window.SS = window.SS || {};
     { id: 'flat', name: '平ら（上げない）', hgts: [0, 0, 0, 0, 0], parts: [] },
   ];
   // 円形の迫りの段（帯ごとに、高さ rings.hgts[j]・上げる所 rings.parts[j]：all ぜんぶ／center まん中だけ／sides 両はしだけ）
-  A.ringTiers = function (stage) {
+  A.ringHgt = function (stage, j) {
+    const rgs = (stage.fixtures && stage.fixtures.rings) || {}, hgts = rgs.hgts || [];
+    return hgts[j] != null ? +hgts[j] : RING_HGT[Math.min(j, RING_HGT.length - 1)];
+  };
+  // merges：[[j0, j1], …] まとめて1つの段にする帯（打楽器などがまたがるとき）。いちばん前の帯の高さにそろえる（どれも「ぜんぶ」のときだけ）
+  A.ringTiers = function (stage, merges) {
     const rg = SS.ringGeom(stage);
     if (!rg) return [];
     const nB = rg.arcs.length, aisle = A.aisleOf ? A.aisleOf(stage) : 60;
-    const rgs = (stage.fixtures && stage.fixtures.rings) || {}, hgts = rgs.hgts || [], parts = rgs.parts || [];
+    const rgs = (stage.fixtures && stage.fixtures.rings) || {}, parts = rgs.parts || [];
     const tiers = [];
+    // 高さを決めていないとき（型のまま）は、まとめた帯を1段と数えて、前から順に高くする（段の差が大きくならないように）
+    const custom = Array.isArray(rgs.hgts) && rgs.hgts.length > 0;
+    let level = 0;
+    const hgtAt = j => (custom ? A.ringHgt(stage, j) : RING_HGT[Math.min(level, RING_HGT.length - 1)]);
+    const mergeOf = j => (merges || []).find(m => j >= m[0] && j <= m[1] && Array.from({ length: m[1] - m[0] + 1 }, (_, k) => (parts[m[0] + k] || 'all') === (parts[m[0]] || 'all') && A.ringHgt(stage, m[0] + k) > 0).every(Boolean)) || null;
     for (let j = 0; j < nB; j++) {
-      const hgt = hgts[j] != null ? +hgts[j] : RING_HGT[Math.min(j, RING_HGT.length - 1)];
+      const m = mergeOf(j);
+      if (m && j > m[0]) continue; // まとめた帯の2つ目以降
       const part = parts[j] || 'all';
-      if (!(hgt > 0) || part === 'none') continue;
+      if (!(A.ringHgt(stage, j) > 0) || part === 'none') continue;
+      const hgt = hgtAt(j);
+      level++;
+      if (m) {
+        const B1 = rg.arcs[m[1] + 1] || null, A0 = rg.arcs[m[0]], Al = rg.arcs[m[1]];
+        const polys = !B1 ? [SS.ringBandPoly(stage, rg, m[0], m[1], part === 'center' ? RING_PHI : null)]
+          : part === 'center' ? [SS.ringBandRange(rg, m[0], -RING_PHI, RING_PHI, m[1])]
+          : part === 'sides' ? [SS.ringBandRange(rg, m[0], -9, -RING_PHI, m[1]), SS.ringBandRange(rg, m[0], RING_PHI, 9, m[1])]
+          : [SS.ringBandPoly(stage, rg, m[0], m[1], null)];
+        polys.forEach(poly => {
+          const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]);
+          const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+          const L = { poly, cx: rg.cx, cyIn: A0.cy, rIn: A0.r, cyOut: B1 ? B1.cy : Al.cy, rOut: B1 ? B1.r : Al.cy - aisle, fIn: A0.end, fOut: B1 ? B1.end : Al.end, j0: m[0], j1: m[1], merged: true };
+          if (part === 'center') L.phi = RING_PHI;
+          if (part !== 'all') L.part = part;
+          tiers.push({ type: 'hina', step: j + 1, hgt, rot: 0, auto: true, x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2), w: Math.round(x1 - x0), h: Math.round(y1 - y0), lift: L });
+        });
+        continue;
+      }
       const A0 = rg.arcs[j], B0 = rg.arcs[j + 1] || null;
       // いちばん外（奥の壁まで）は「ぜんぶ」か「まん中だけ」
       const polys = !B0 ? [SS.ringBandPoly(stage, rg, j, j, part === 'center' ? RING_PHI : null)]
@@ -1895,9 +1924,12 @@ window.SS = window.SS || {};
     items.forEach(it => { if (it.grp == null) units.push(Object.assign({ members: [it], rep: it, w: it.type === 'player' ? 75 : Math.max(60, SS.itemSize(it, {}).w) }, polar(it))); });
     // 列（指揮者からの距離が45cm以内なら同じ列）
     const rows = [];
+    const isKept = u => u.members.length > 1 || u.rep.type !== 'player' || (u.rep.type === 'player' && items.some(o => o.type !== 'player' && o.type !== 'stand' && o.type !== 'podium' && Math.hypot(o.x - u.rep.x, o.y - u.rep.y) < 160)); // 楽器と、ピアノ・打楽器などを弾く人
     if (!line) {
-      units.sort((a, b) => a.rho - b.rho);
-      units.forEach(u => { const l = rows[rows.length - 1]; if (l && u.rho - l.max < 45) { l.max = u.rho; l.us.push(u); } else rows.push({ max: u.rho, us: [u] }); });
+      // 楽器（打楽器など）は列に入れず、まとめて形のまま動かす（ティンパニの組が別の帯にまたがらないように）
+      units.forEach(u => { if (isKept(u)) { u.R = u.rho; u.cy = C.y; u.keep = true; } });
+      const rowU = units.filter(u => !u.keep).sort((a, b) => a.rho - b.rho);
+      rowU.forEach(u => { const l = rows[rows.length - 1]; if (l && u.rho - l.max < 45) { l.max = u.rho; l.us.push(u); } else rows.push({ max: u.rho, us: [u] }); });
     } else {
       // 横一直線の列：段の上の人は段ごと、床の人は前後の位置（45cm以内）で列に。前の列から
       const tierOf = u => oldTiers.filter(t => SS.hinaContains(t, u.rep.x, u.rep.y)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
@@ -1905,8 +1937,7 @@ window.SS = window.SS || {};
       // ピアノなど、楽器といっしょのまとまり・楽器だけの物は列に数えず、指揮者からの向き・距離のまま（迫りの中心のまわりに）
       units.forEach(u => {
         u.s = u.rep.x - c0.x;
-        const nearInst = u.rep.type === 'player' && items.some(o => o.type !== 'player' && o.type !== 'stand' && o.type !== 'podium' && Math.hypot(o.x - u.rep.x, o.y - u.rep.y) < 160); // ピアノ・ドラムなどを弾く人
-        if (u.members.length > 1 || u.rep.type !== 'player' || nearInst) { u.R = u.rho; u.cy = C.y; u.keep = true; return; }
+        if (isKept(u)) { u.R = u.rho; u.cy = C.y; u.keep = true; return; }
         const t = tierOf(u); if (t) { if (!byTier.has(t)) byTier.set(t, []); byTier.get(t).push(u); } else floor.push(u);
       });
       floor.sort((a, b) => b.rep.y - a.rep.y).forEach(u => { const l = rows[rows.length - 1]; if (l && !l.tier && l.y - u.rep.y < 45) { l.y = u.rep.y; l.us.push(u); } else rows.push({ y: u.rep.y, us: [u] }); });
@@ -1949,19 +1980,55 @@ window.SS = window.SS || {};
     // そのままの距離で置く物（ピアノ・ドラムなど）が帯のふちにかかるときは、ふちの内側（前）へ
     // （内側・外側のうち、ほかの物とぶつからない方へ）
     const posOf = (u, R) => ({ x: C.x + R * Math.sin(u.th), y: u.cy - R * Math.cos(u.th) });
+    // 単位の外枠（今の位置から dx・dy 動かしたとき）。奏者は譜面台のぶん前にも広げる
+    const boxOf = (u, dx, dy) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      u.members.forEach(it => { const b = SS.itemAABB(it, {}); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); });
+      if (u.rep.type === 'player' && u.members.length === 1) { x0 -= 10; x1 += 10; y0 -= 10; y1 += 60; }
+      return { x0: x0 + dx, y0: y0 + dy, x1: x1 + dx, y1: y1 + dy };
+    };
+    const boxHit = (a, b, m) => a.x0 < b.x1 - m && b.x0 < a.x1 - m && a.y0 < b.y1 - m && b.y0 < a.y1 - m;
+    const shiftOf = (u, R, dy) => { const p = posOf(u, R); return { dx: p.x - u.rep.x, dy: p.y + (dy || 0) - u.rep.y }; };
+    // 外枠がまたぐ帯（いちばん内側〜外側の帯の番号。床は -1）。外枠の4つの角と中心の、迫りの中心からの距離で
+    const spanOf = b => {
+      const ds = [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1], [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]].map(([x, y]) => (y <= C.y ? Math.hypot(x - C.x, y - C.y) : Math.abs(x - C.x)));
+      const lo = Math.min(...ds) + 4, hi = Math.max(...ds) - 4;
+      const bandAt = d => { let k = -1; rg.arcs.forEach((q, j) => { if (d >= q.r) k = j; }); return k; };
+      return [bandAt(lo), bandAt(Math.max(lo, hi))];
+    };
+    // 段の高さの変わり目をまたぐ数（床と帯のあいだ・高さのちがう帯のあいだ。まとめられる帯どうしは 0.5）
+    const straddles = b => { const [a, c] = spanOf(b); if (a === c) return 0; if (a < 0) return 1; return (c - a) * 0.3; };
     // ピアノ・ドラムなどは形を保つため、まとめて同じだけ前後にずらす（ふちにかかる数＋ぶつかる数がいちばん少ない所）
     const kept = units.filter(u => u.keep), rest = units.filter(u => !u.keep && u.R != null);
+    let keptTarget = 0; // 列のすぐ後ろの帯
     if (kept.length) {
-      const halfOf = u => (u.rep.type === 'player' && u.members.length === 1 ? 80 : Math.min(u.w / 2, 60) + 12); // 1人の奏者は、前の譜面台までふくめて
       const score = d => kept.reduce((n, u) => {
-        const p0 = posOf(u, u.rho), p = { x: p0.x, y: p0.y + d }, R = Math.hypot(p.x - C.x, p.y - C.y);
-        const edge = rg.arcs.some(q => Math.abs(R - q.r) < halfOf(u)) ? 1 : 0;
-        const hit = rest.filter(o => { const q = posOf(o, o.R); return Math.hypot(p.x - q.x, p.y - q.y) < (Math.min(u.w, 120) + Math.min(o.w, 120)) / 2; }).length;
+        const bu = boxOf(u, 0, d);
+        const edge = straddles(bu);
+        const hit = rest.filter(o => { const sh = shiftOf(o, o.R, 0); return boxHit(bu, boxOf(o, sh.dx, sh.dy), 8); }).length;
         return n + edge + hit * 2;
       }, 0) + Math.abs(d) / 1000;
-      let best = 0, bs = score(0);
-      for (let d = -150; d <= 150; d += 10) { const v = score(d); if (v < bs) { bs = v; best = d; } }
+      // 空いた帯を詰める：列のいちばん奥の帯のすぐ後ろの帯まで、まとめて前へ寄せる（あいだに人のいない帯を残さない）
+      const lastRowBand = Math.max(-1, ...rest.map(o => SS.ringBandOf(rg, posOf(o, o.R).x, posOf(o, o.R).y)));
+      const target = Math.min(nB - 1, lastRowBand + 1);
+      keptTarget = target;
+      const keptR = Math.min(...kept.map(u => u.rho));
+      const tIn = rg.arcs[target].r, tOut = target < nB - 1 ? rg.arcs[target + 1].r : rg.arcs[target].cy - aisle;
+      const dTarget = keptR > tOut ? keptR - (tIn + tOut) / 2 : 0; // 図では y が大きいほど客席側（中心へ寄せる＝＋）
+      // 列のすぐ後ろの帯を空けたままにしない（空く帯1つにつき 1）
+      const emptyPen = d => { const front = Math.min(...kept.map(u => spanOf(boxOf(u, 0, d))[0])); return Math.max(0, front - target); };
+      const sc2 = d => score(d) + Math.abs(d - dTarget) / 600 + emptyPen(d);
+      let best = 0, bs = sc2(0);
+      for (let d = -150; d <= Math.max(150, dTarget + 100); d += 10) { const v = sc2(d); if (v < bs) { bs = v; best = d; } }
       kept.forEach(u => { u.R = u.rho; u.dy = best; }); // 形を保つため、前後へ同じだけ平行に動かす
+      // それでも帯のふちにかかる1人の奏者（ベースなど）は、その人だけ少し前後へ
+      kept.filter(u => u.rep.type === 'player' && u.members.length === 1).forEach(u => {
+        const at = d => { const p0 = posOf(u, u.rho); return { x: p0.x, y: p0.y + d }; };
+        const bad = d => { const bu = boxOf(u, 0, d); return straddles(bu) + units.filter(o => o !== u && o.R != null).filter(o => { const sh = shiftOf(o, o.R, o.dy); return boxHit(bu, boxOf(o, sh.dx, sh.dy), 8); }).length * 2; };
+        let bd = u.dy, bb = bad(u.dy);
+        for (const off of [10, -10, 20, -20, 30, -30, 45, -45, 60, -60, 80, -80]) { if (bb === 0) break; const v = bad(u.dy + off); if (v < bb) { bb = v; bd = u.dy + off; } }
+        u.dy = bd;
+      });
     }
     // 置く：指揮者から見た向きはそのまま、迫りの中心からの距離 R に。まとまりは形のまま、代表の奏者と同じだけ動かす
     units.forEach(u => {
@@ -1972,8 +2039,28 @@ window.SS = window.SS || {};
       u.members.forEach(it => { it.x += dx; it.y += dy; });
     });
     items.forEach(it => { if (it.type === 'player') it.rot = G().faceAngle(it, C); });
+    // 楽器などが2つ以上の帯にまたがるときは、その帯をまとめて1つの段（同じ高さ）にする
+    const merges = [];
+    units.filter(u => u.keep).forEach(u => {
+      const [a, c] = spanOf(boxOf(u, 0, 0));
+      if (a < 0 || c <= a) return;
+      const hit = merges.find(m => !(c < m[0] || a > m[1]));
+      if (hit) { hit[0] = Math.min(hit[0], a); hit[1] = Math.max(hit[1], c); } else merges.push([a, c]);
+    });
+    // 列のすぐ後ろに人のいない帯が残るときは、その帯も楽器の段にまとめる（段と段のあいだに空の段を作らない）
+    if (kept.length) {
+      const frontKept = Math.min(...kept.map(u => spanOf(boxOf(u, 0, 0))[0]));
+      if (frontKept > keptTarget) {
+        const hit = merges.find(m => !(frontKept < m[0] || keptTarget > m[1]));
+        if (hit) hit[0] = Math.min(hit[0], keptTarget); else merges.push([keptTarget, frontKept]);
+      }
+    }
+    // 重なる範囲はひとつに
+    merges.sort((a, b) => a[0] - b[0]);
+    for (let i = merges.length - 1; i > 0; i--) if (merges[i][0] <= merges[i - 1][1]) { merges[i - 1][1] = Math.max(merges[i - 1][1], merges[i][1]); merges.splice(i, 1); }
+    r.ringMerges = merges;
     // 帯を段に（帯ごとの高さ・上げる所は、ホールの設備に覚えてある）
-    const tiers = A.ringTiers(stage);
+    const tiers = A.ringTiers(stage, merges);
     r.items = tiers.concat(items);
     r.c = C;
     return over;
