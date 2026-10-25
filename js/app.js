@@ -4791,6 +4791,7 @@
     $('ringBox').hidden = !liftMode;
     ['hinaTypes', 'hinaTypesLbl'].forEach(id => { $(id).hidden = liftMode; });
     if (liftMode) renderRingBox();
+    renderRingNote();
     const cur = SS.hinaTypeOf(H);
     renderEnsNow();
     // 平台の置き方：よく使う3つだけ見せて、ほかは「ほかの置き方」にしまう
@@ -4927,6 +4928,14 @@
       if (!quiet) toast(h.shape === 'poly' ? `${h.name}：ホールの図面の形（幅${h.fw}m・奥行${h.d}m）にしました${h.fixtures && h.fixtures.rings ? '。ひな壇の代わりに、円形の迫りを上げて段にします' : ''}` : h.shape === 'arc' ? `${h.name}：幅${h.fw}m・奥行${h.d}m（前が弧）にしました。弧は ◠ のつまみで調整できます` : `${h.name}：反射板設置時 前幅${h.fw}m・奥幅${h.bw}m・奥行${h.d}m にしました`, true);
     }
   }
+  // 円形の迫りがあるホール：迫りで並べていることと、上げ方を変える場所を、ホールを選ぶ欄のすぐ下に
+  function renderRingNote() {
+    const E = doc().ensemble, ringOn = !!SS.ringGeom(doc().stage) && E && E.hina && E.hina.lift !== false && !E.hina.curve && (E.hina.steps || 0) > 0;
+    $('ringNote').hidden = !ringOn;
+    if (!ringOn) return;
+    $('ringNote').innerHTML = '🎪 このホールは、ひな壇の代わりに<b>円形の迫り</b>を上げて段にしています。<button type="button" class="link-btn" id="ringNoteGo">せりの上げ方を変える ▶</button>';
+    $('ringNoteGo').onclick = () => { $('hinaBox').open = true; renderSteppers(); setTimeout(() => $('ringBox').scrollIntoView({ block: 'center', behavior: 'smooth' }), 50); };
+  }
   function updateHallNote() {
     const h = SS.HALLS.find(x => x.name === doc().hall);
     const sel = $('hallSelect');
@@ -4936,6 +4945,7 @@
     const est = h && (h.q === 'est' || h.q === 'approx');
     $('hallWarn').hidden = !h;
     $('hallWarn').classList.toggle('est', !!est);
+    renderRingNote();
     $('hallWarn').innerHTML = h ? `${est ? '⚠ <b>このホールの寸法は推定値です。</b>' : '⚠ '}寸法は目安です。<b>本番前に必ずホールの舞台図面で確認してください。</b>` : '';
     $('hallNote').innerHTML = h
       ? `<b class="${h.q === 'est' || h.q === 'approx' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>${h.shape === 'poly' ? `いちばん広い所の幅${h.fw}m／奥の壁${h.bw}m／奥行（中央）${h.d}m、図面のとおりの形` : h.shape === 'arc' ? `幅${h.fw}m／奥の幅${h.bw}m／奥行（中央）${h.d}m、前のふちは弧` : `反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m`}。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら下の「ステージの大きさ・形」で直してください。`
