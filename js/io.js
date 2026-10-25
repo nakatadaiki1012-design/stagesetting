@@ -414,7 +414,13 @@ window.SS = window.SS || {};
     // スマホ（opt.basic）では「前の幅」と「奥行」だけにする
     if (shaped && !opt.basic) s += dimLine((st.w - b) / 2, -36, (st.w + b) / 2, -36, `奥の幅 ${fmtM(b)}`, C1, k, -1, null, null, opt.editable && st.shape !== 'poly' ? 'bw' : null);
     // 奥行の数字は、ステージの外（左上のすき間）に出す
-    s += dimLine(-42, 0, -42, st.d, `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`, C1, k, 1, 0.1, null, opt.editable ? 'd' : null);
+    // 文字が奏者・楽器に重ならない高さを選ぶ（上から順に試す）
+    const dLabel = `${R.isCurved(st) ? '奥行（中央）' : '奥行'} ${fmtM(st.d)}`;
+    const dz = labelSize(dLabel + (opt.editable ? ' ✎' : ''), k);
+    const dBoxes = doc.items.filter(it => !SS.isPlatform(it) && !['stairs', 'text', 'cable', 'podium'].includes(it.type)).map(it => (it.type === 'player' ? { x0: it.x - 26, x1: it.x + 26, y0: it.y - 30, y1: it.y + 26 } : bboxOf(it)));
+    const dHits = f => { const lx = -42 + dz.tw / 2 + 6 / k, ly = st.d * f; return dBoxes.filter(b => overlap({ x0: lx - dz.tw / 2, x1: lx + dz.tw / 2, y0: ly - dz.th / 2, y1: ly + dz.th / 2 }, b)).length; };
+    const dAt = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].reduce((a, f) => (dHits(f) < dHits(a) ? f : a), 0.1);
+    s += dimLine(-42, 0, -42, st.d, dLabel, C1, k, 1, dAt, null, opt.editable ? 'd' : null);
     const pod = doc.items.find(it => it.type === 'podium');
     if (sel && sel.type !== 'player' && sel.type !== 'text' && sel.type !== 'cable') {
       const bb = bboxOf(sel);
