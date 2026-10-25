@@ -859,8 +859,7 @@
     $('modeBlocks').classList.toggle('active', S.blocks);
     $('modeBlocks').setAttribute('aria-pressed', S.blocks ? 'true' : 'false');
     document.body.classList.toggle('blocks-on', S.blocks);
-    renderAll();
-    if (on) toast('🧩 パートのかたまりをドラッグで動かせます。ほかのパートの上で離すと、並び順を入れかえます');
+    renderAll(); // 使い方は図の上の帯に出る（お知らせは重なるので出さない）
   }
   $('modeBlocks').onclick = () => setBlocks(!S.blocks);
 
