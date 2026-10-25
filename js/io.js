@@ -136,7 +136,7 @@ window.SS = window.SS || {};
 
   // ホールの設備（反射板・プロセニアム・緞帳線・迫り・オーケストラピットのふた・花道・出入り口）。入力したものだけ描く
   // k：文字の大きさの基準（marksSVG と同じ。画面でも図面でも、見た目の大きさを一定にする）
-  R.fixturesSVG = function (stage, k) {
+  R.fixturesSVG = function (stage, k, items) {
     if (!SS.fixtureGeom) return '';
     const g = SS.fixtureGeom(stage);
     const col = '#6d4c8f', fs = 12 / k, halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
@@ -176,9 +176,14 @@ window.SS = window.SS || {};
           s += `<path d="M${X(band.uIn)} ${lineY(band.back, band.uIn)}L${X(band.uOut)} ${lineY(band.back, band.uOut)}M${X(band.uIn)} ${lineY(band.front, band.uIn)}L${X(band.uOut)} ${lineY(band.front, band.uOut)}" ${dash}/>`;
         });
       }
-      // 名前は、前の帯（下手側）の上に。帯がなければ、いちばん外の弧の上
-      if (band) { const u = (band.uIn + band.uOut) / 2; s += lab(cx - u, (lineY(band.back, u) + lineY(band.front, u)) / 2, '円形の迫り', 'middle'); }
-      else { const top = rg.arcs.reduce((m, a) => Math.min(m, a[0] - a[1]), Infinity); if (isFinite(top)) s += lab(cx, Math.max(fs, top + fs * 0.9), '円形の迫り', 'middle'); }
+      // 名前は、前の帯（下手・上手）か、いちばん外の弧の上のうち、人や物が少ない所に
+      const cands = [];
+      if (band) { const u = (band.uIn + band.uOut) / 2, y = (lineY(band.back, u) + lineY(band.front, u)) / 2; cands.push([cx - u, y], [cx + u, y]); }
+      const top = rg.arcs.reduce((m, a) => Math.min(m, a[0] - a[1]), Infinity);
+      if (isFinite(top)) cands.push([cx, Math.max(fs, top + fs * 0.9)]);
+      const near = ([x, y]) => (items || []).filter(it => it.type !== 'hina' && Math.abs(it.x - x) < fs * 4 && Math.abs(it.y - y) < fs * 1.5 + 30).length;
+      const best = cands.reduce((a, c) => (a && near(a) <= near(c) ? a : c), null);
+      if (best) s += lab(best[0], best[1], '円形の迫り', 'middle');
     }
     g.lifts.forEach((l, i) => {
       s += `<rect x="${l.x0}" y="${l.y0}" width="${l.x1 - l.x0}" height="${l.y1 - l.y0}" fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="10 6"/>`;
@@ -250,7 +255,7 @@ window.SS = window.SS || {};
   R.marksSVG = function (doc, k, dimsOn, compact, mobile) {
     const st = doc.stage, fy = R.frontY(st), cx = st.w / 2;
     const col = '#5b6678', halo = `stroke="#fff" stroke-width="${3 / k}" paint-order="stroke" stroke-linejoin="round"`;
-    let s = R.fixturesSVG(st, k) + '<g class="marks" pointer-events="none">';
+    let s = R.fixturesSVG(st, k, doc.items) + '<g class="marks" pointer-events="none">';
     // 舞台奥：「奥の幅」の寸法の文字の上。その右に「センター」、中心線はそこから客席側のふちまで
     const shaped = R.backWidth(st) < st.w - 1 && !mobile;
     // 「奥の幅」の寸法の字（高さ約19px）から十分に離す。中心線は寸法の字の下から引き、字の上を通らないようにする
