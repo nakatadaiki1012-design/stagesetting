@@ -1191,8 +1191,34 @@ window.SS = window.SS || {};
     camera.updateProjectionMatrix();
   }
 
+  // パート名の札が重なるときは、カメラに近い札だけ出す（重なった札は読めないので）
+  let declutterTick = 0;
+  function declutterLabels() {
+    const cv = $('c3d'), H = cv.clientHeight || 1, f = 1 / Math.tan((camera.fov * Math.PI) / 360);
+    const list = [];
+    const v = new T.Vector3();
+    scene.traverse(o => {
+      if (!(o.userData && o.userData.isLabel) || !o.parent || !o.parent.visible) return;
+      o.getWorldPosition(v);
+      const d = v.distanceTo(camera.position);
+      v.project(camera);
+      if (v.z > 1) { o.visible = false; return; }
+      const w = (o.scale.x * f * H) / 2, h = (o.scale.y * f * H) / 2;
+      const x = ((v.x + 1) / 2) * cv.clientWidth, y = ((1 - v.y) / 2) * H;
+      list.push({ o, d, x0: x - w * 0.42, x1: x + w * 0.42, y0: y - h * 0.4, y1: y + h * 0.4 });
+    });
+    list.sort((a, b) => a.d - b.d);
+    const kept = [];
+    list.forEach(q => {
+      const hit = kept.some(k => q.x0 < k.x1 && k.x0 < q.x1 && q.y0 < k.y1 && k.y0 < q.y1);
+      q.o.visible = !hit;
+      if (!hit) kept.push(q);
+    });
+  }
+
   function loop() {
     raf = requestAnimationFrame(loop);
+    if (labelsOn && declutterTick++ % 6 === 0) declutterLabels();
     // カメラが壁の外（うしろ）に回ったときは、その壁を隠して舞台を見えるように
     const cp = camera.position;
     shellWalls.forEach(sw => { const v = (cp.x - sw.x) * sw.nx + (cp.z - sw.z) * sw.nz > -0.3; sw.objs.forEach(o => { o.visible = v; }); });
