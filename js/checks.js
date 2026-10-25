@@ -30,7 +30,9 @@ window.SS = window.SS || {};
     if (it.type === 'player') return (it.label || '奏者') + (it.name ? `（${it.name}）` : '');
     if (it.type === 'hina') {
       const n = hno && hno.get(it);
-      return it.perc ? '打楽器の段' : n && /^\d+$/.test(n) ? `ひな壇${n}段目` : `ひな壇${n || ''}`;
+      if (it.lift && it.lift.rect) return '迫り' + String(n || '').replace(/^R/, '');
+      const base = it.lift ? '迫り' : 'ひな壇';
+      return it.perc ? '打楽器の段' : it.lift && it.lift.center ? '迫りの中央' : n && /^\d+$/.test(n) ? `${base}${n}段目` : `${base}${n || ''}`;
     }
     const c = SS.CATALOG[it.type];
     return (c && c.name) || it.type;
@@ -73,7 +75,7 @@ window.SS = window.SS || {};
       const bd = fx.rings.band;
       g.rings = { cx, arcs: fx.rings.arcs.filter(a => num(a[0]) && num(a[1]) && +a[1] > 0).map(a => [+a[0], +a[1]]), band: bd && num(bd.uIn) && num(bd.uOut) && Array.isArray(bd.back) && Array.isArray(bd.front) ? bd : null };
     }
-    g.lifts = (fx.lifts || []).filter(l => num(l.x) && num(l.y) && num(l.w) && num(l.h)).map(l => ({ x0: +l.x, y0: +l.y, x1: +l.x + +l.w, y1: +l.y + +l.h, name: l.name || '' }));
+    g.lifts = (fx.lifts || []).map((l, idx) => ({ l, idx })).filter(({ l }) => num(l.x) && num(l.y) && num(l.w) && num(l.h)).map(({ l, idx }) => ({ x0: +l.x, y0: +l.y, x1: +l.x + +l.w, y1: +l.y + +l.h, name: l.name || '', hgt: num(l.hgt) ? +l.hgt : 0, idx }));
     if (fx.pit && num(fx.pit.depth) && +fx.pit.depth > 0) {
       const w = num(fx.pit.w) ? +fx.pit.w : stage.w;
       g.pit = { x0: cx - w / 2, x1: cx + w / 2, y0: R().frontY(stage), y1: R().frontY(stage) + +fx.pit.depth };
@@ -152,7 +154,7 @@ window.SS = window.SS || {};
   // 段の印の場所：ふつうは段の外枠。迫りの段（U字の帯）は外枠が舞台いっぱいになるので、帯の真ん中（奥）に小さく
   function spotOf(p) {
     const lf = SS.hinaLift && SS.hinaLift(p.it);
-    if (!lf) return p.b;
+    if (!lf || lf.rect) return p.b;
     const r = lf.center ? 0 : (lf.rIn + Math.min(lf.rOut, lf.rIn + 150)) / 2, cy = (lf.cyIn + lf.cyOut) / 2;
     const x = lf.part === 'sides' ? lf.cx + (p.b.x0 + p.b.x1 > 2 * lf.cx ? 1 : -1) * r : lf.cx, y = lf.part === 'sides' ? cy : cy - r;
     return { x0: x - 70, x1: x + 70, y0: y - 45, y1: y + 45 };
@@ -262,6 +264,7 @@ window.SS = window.SS || {};
       if (bad.length) out.push({ kind: 'proscenium', msg: `プロセニアム（舞台の額縁）の壁にかかっています：${names(bad, hno)}`, spots: bad.map(it => bx.get(it)) });
     }
     fg.lifts.forEach((l, i) => {
+      if (l.hgt > 0) return; // 上げて段にした迫りは、段として確かめる（ふちにかかる・上がる段）
       const bad = hitList(b => overlap(b, l, 1));
       if (bad.length) out.push({ kind: 'lift', msg: `迫り${l.name ? '「' + l.name + '」' : fg.lifts.length > 1 ? i + 1 : ''}の上にあります（床が動く所・継ぎ目を確認してください）：${names(bad, hno)}`, spots: [l].concat(bad.map(it => bx.get(it))) });
     });

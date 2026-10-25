@@ -506,7 +506,7 @@ details.co-same { margin: 6px 0; font-size: 13px; } details.co-same summary { cu
 details.fixtures { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin: 6px 0 10px; }
 details.fixtures summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 details.fixtures .field { font-size: 12.5px; }
-.fx-lift { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 4px; margin: 4px 0; align-items: center; }
+.fx-lift { display: grid; grid-template-columns: repeat(4, 1fr) 1.3fr auto; gap: 4px; margin: 4px 0; align-items: center; }
 .fx-lift input { min-width: 0; }
 .fx-lift button { border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 4px; }
 .fx-door { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 4px; margin: 4px 0; align-items: center; }
@@ -655,3 +655,5 @@ details.fold.ai-box { background: linear-gradient(180deg, #f3f7ff, #fff); border
 .ring-note { margin: 4px 0 8px; padding: 6px 8px; font-size: 12px; line-height: 1.6; background: #f6f0fb; border: 1px solid #d9c8ea; border-radius: 8px; color: #4b3566; }
 .ring-note .link-btn { display: inline; margin-left: 4px; padding: 0; border: none; background: none; color: #6d4c8f; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .ring-jump { color: #a5401b; background: #fff4ec; border: 1px solid #f1c8a8; border-radius: 6px; padding: 4px 6px; }
+.fx-lift input { padding: 4px 3px; font-size: 12px; -moz-appearance: textfield; }
+.fx-lift input::-webkit-outer-spin-button, .fx-lift input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

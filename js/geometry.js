@@ -241,7 +241,7 @@ window.SS = window.SS || {};
     const EDGE = 32; // 段のふちから椅子の中心まで（椅子の半分＋少し）
     const arc = SS.hinaArc && SS.hinaArc(t);
     let tight = false;
-    const lf = SS.hinaLift && SS.hinaLift(t);
+    const lf = SS.hinaLift && SS.hinaLift(t) && !SS.hinaLift(t).rect ? SS.hinaLift(t) : null;
     if (lf) {
       // 迫りの段（U字の帯）：半径で列に分け、帯の弧に沿って等しく並べる
       const dep = Math.min(lf.rOut - lf.rIn, 400);
@@ -296,7 +296,7 @@ window.SS = window.SS || {};
   };
   // 段のふちから edge より内側へ入れる（打楽器など、列にしない人用）
   G.clampOnTier = function (p, t, edge) {
-    const lf = SS.hinaLift && SS.hinaLift(t);
+    const lf = SS.hinaLift && SS.hinaLift(t) && !SS.hinaLift(t).rect ? SS.hinaLift(t) : null;
     if (lf) {
       const u = SS.liftUD(lf, p.x, p.y), r = Math.max(lf.rIn + edge, Math.min(lf.rOut - edge, u.r)), lim = Math.max(0, SS.liftHalf(lf, r) - edge);
       const q = SS.liftXY(lf, Math.max(-lim, Math.min(lim, u.s * (r / u.r))), r);
@@ -322,7 +322,7 @@ window.SS = window.SS || {};
   G.pushOffTier = function (p, t, clear) {
     clear = clear || 30;
     if (!SS.hinaContains(t, p.x, p.y, clear)) return false;
-    const lf = SS.hinaLift && SS.hinaLift(t);
+    const lf = SS.hinaLift && SS.hinaLift(t) && !SS.hinaLift(t).rect ? SS.hinaLift(t) : null;
     if (lf) {
       const u = SS.liftUD(lf, p.x, p.y), nr = u.r < (lf.rIn + lf.rOut) / 2 ? Math.max(30, lf.rIn - clear) : lf.rOut + clear;
       const q = SS.liftXY(lf, u.s * (nr / u.r), nr);

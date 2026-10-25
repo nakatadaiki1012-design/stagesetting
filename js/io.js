@@ -182,6 +182,7 @@ window.SS = window.SS || {};
     }
     g.lifts.forEach((l, i) => {
       s += `<rect x="${l.x0}" y="${l.y0}" width="${l.x1 - l.x0}" height="${l.y1 - l.y0}" fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="10 6"/>`;
+      if (l.hgt > 0) return; // 上げた迫りは段として描く（名前も段に）
       s += `<path d="M${l.x0} ${l.y0}L${l.x1} ${l.y1}M${l.x1} ${l.y0}L${l.x0} ${l.y1}" stroke="${col}" stroke-width="1.2" stroke-opacity=".6"/>`;
       s += lab(l.x0 + 4 / k, l.y0 + fs * 0.8, `迫り${l.name ? ' ' + SS.esc(l.name) : g.lifts.length > 1 ? i + 1 : ''}`);
     });
@@ -876,7 +877,7 @@ window.SS = window.SS || {};
     const items = doc.items, tiers = items.filter(it => it.type === 'hina');
     const hno = SS.hinaNumbers ? SS.hinaNumbers(items) : new Map();
     const tierAt = (x, y) => tiers.filter(t => SS.hinaContains(t, x, y, 0)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
-    const nameOf = t => { const base = SS.hinaLift && SS.hinaLift(t) ? '迫り' : 'ひな壇'; return t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `${base}${hno.get(t)}段目` : `${base}${hno.get(t) || ''}`; };
+    const nameOf = t => { if (t.lift && t.lift.rect) return '迫り' + String(hno.get(t) || '').replace(/^R/, '') + (t.lift.name ? `（${t.lift.name}）` : ''); const base = SS.hinaLift && SS.hinaLift(t) ? '迫り' : 'ひな壇'; return t.perc ? '打楽器の段' : /^\d+$/.test(hno.get(t) || '') ? `${base}${hno.get(t)}段目` : `${base}${hno.get(t) || ''}`; };
     const ps = items.filter(it => it.type === 'player');
     // 床の列：指揮台からの距離（指揮台がなければ、客席側の縁からの距離）で、40cm 以上あいたところで分ける
     const pod = items.find(it => it.type === 'podium');

@@ -34,13 +34,16 @@ window.SS = window.SS || {};
   ];
   // ひな壇の番号（組み図・部材の表で使う）。段（step）が重ならなければ段の数字、重なるときは前から A, B, C…
   SS.hinaNumbers = function (items) {
-    const hs = items.filter(it => it.type === 'hina');
+    // 四角い迫り（ホールの設備）は、ひな壇とは別に「迫り1・迫り2…」
+    const rl = items.filter(it => it.type === 'hina' && it.lift && it.lift.rect);
+    const hs = items.filter(it => it.type === 'hina' && !(it.lift && it.lift.rect));
     const allLift = hs.length && hs.every(h => h.lift);
     const steps = hs.map(h => h.step).filter(v => v || (allLift && v === 0));
     const map = new Map();
     // 迫りの段は、左右に分かれた同じ段（両はしだけ上げる）があるので、同じ番号でもよい。中央（step 0）は「中央」
     if (steps.length === hs.length && (new Set(steps).size === steps.length || allLift)) hs.forEach(h => map.set(h, h.step === 0 ? '中央' : String(h.step)));
     else hs.slice().sort((a, b) => b.y - a.y || a.x - b.x).forEach((h, i) => map.set(h, i < 26 ? String.fromCharCode(65 + i) : 'Z' + (i - 25)));
+    rl.forEach((t, k) => map.set(t, 'R' + (rl.length > 1 ? k + 1 : '')));
     return map;
   };
 
@@ -1913,6 +1916,15 @@ window.SS = window.SS || {};
     }
     return tiers;
   };
+  // 四角い迫り（ホールの設備の「迫り」に高さを入れたもの）を段にする。どのホールでも
+  A.rectLiftTiers = function (stage) {
+    const g = SS.fixtureGeom ? SS.fixtureGeom(stage) : null;
+    if (!g) return [];
+    return g.lifts.filter(l => l.hgt > 0).map(l => {
+      const poly = [[l.x0, l.y0], [l.x1, l.y0], [l.x1, l.y1], [l.x0, l.y1]].map(p => [Math.round(p[0]), Math.round(p[1])]);
+      return { type: 'hina', hgt: l.hgt, rot: 0, auto: true, x: Math.round((l.x0 + l.x1) / 2), y: Math.round((l.y0 + l.y1) / 2), w: Math.round(l.x1 - l.x0), h: Math.round(l.y1 - l.y0), lift: { poly, rect: true, idx: l.idx, name: l.name || '' } };
+    });
+  };
   // line＝true：合唱・ビッグバンドのように横一直線の列（ひな壇ありで並べた列を、段ごと・床は前後の位置で列にし、
   //   横の間隔をそのまま帯の弧に沿った長さにする）。false：扇に並べた列（指揮者からの距離で列にし、向きはそのまま）
   function ringStage(r, stage, line) {
@@ -2264,6 +2276,9 @@ window.SS = window.SS || {};
     const r = best;
     // 円形の迫りがあるホール：迫りの帯をぜんぶ段にして、列を帯にのせる（A.build で ひな壇なしにして並べてある）
     if (st._ring && !r.bent) { r.ringFallback = ringStage(r, stage, st.type === 'choir' || st.type === 'bigband'); r.bent = true; }
+    // 高さを入れた四角い迫りは、そのまま段に（並べ方はそのまま。上にいる人・物は、その高さの段の上）
+    const rl = A.rectLiftTiers(stage);
+    if (rl.length) r.items = rl.concat(r.items);
     if (st.hina && st.hina.curve && !r.bent) { r.curveFallback = bendTiers(r.items, r.c, stage); r.bent = true; }
     markLeads(r.items, r.c, st.type);
     // 指揮台（ビッグバンドは指揮者なし、合唱は自分で置く）

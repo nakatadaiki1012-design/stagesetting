@@ -2651,7 +2651,7 @@
     const allPlayers = sel.every(it => it.type === 'player');
     const one = sel.length === 1 ? sel[0] : null;
     const esc = SS.esc;
-    let h = `<div class="hint"><b>${sel.length}個</b>選択中${one ? '：' + esc(one.type === 'player' ? '奏者' : SS.hinaLift(one) ? '迫りの段（ホールの円形の迫り）' : (SS.CATALOG[one.type] || {}).name || '') : ''}</div>`;
+    let h = `<div class="hint"><b>${sel.length}個</b>選択中${one ? '：' + esc(one.type === 'player' ? '奏者' : SS.hinaLift(one) ? (one.lift.rect ? '迫りの段' : '迫りの段（ホールの円形の迫り）') : (SS.CATALOG[one.type] || {}).name || '') : ''}</div>`;
     const same = key => { const v = sel[0][key]; return sel.every(it => it[key] === v) ? v : ''; };
     if (allPlayers || (one && one.type !== 'player')) {
       h += `<label class="field">${allPlayers ? 'パート名' : '表示する文字'}<input id="propLabel" list="partList" value="${esc(same('label') || '')}" placeholder="${sel.length > 1 && !same('label') ? '（いろいろ）' : ''}"></label>`;
@@ -2690,8 +2690,13 @@
     }
     if (one && SS.hinaLift(one)) {
       // ホールの迫りでできた段：高さだけ
+      if (one.lift.rect) {
+        h += `<label class="field">この迫りの高さ（cm）<input id="propHgt" type="number" min="0" max="200" step="1" inputmode="numeric" value="${Math.round(one.hgt || 0)}"></label>`;
+        h += `<p class="hint small">「安全・ホールの設備」の<b>迫り</b>を上げてできた段です。平台は要りません。舞台に作りつけなので、動かせません（場所・大きさは「安全・ホールの設備」で）。0にすると上げません。</p>`;
+      } else {
       h += `<label class="field">この帯の高さ（cm）<input id="propHgt" type="number" min="0" max="200" step="1" inputmode="numeric" value="${Math.round(one.hgt || 0)}"></label>`;
       h += `<p class="hint small">ホールの<b>円形の迫り</b>（点線の帯）を上げてできた段です。平台は要りません。舞台に作りつけなので、動かせません。高さは並べ直しても覚えておきます（0にすると、その帯は上げません）。実際に上がる高さは、ホールで確かめてください。</p>`;
+      }
     } else if (one && one.type === 'hina') {
       const m = SS.hinaMaterials(one);
       h += `<label class="field">高さ<select id="propHgt">${SS.RISER_HEIGHTS.map(x => `<option value="${x.v}"${Math.abs(x.v - (one.hgt || 21.2)) < 0.6 ? ' selected' : ''}>${x.name}：${x.how}</option>`).join('')}</select></label>`;
@@ -2751,10 +2756,13 @@
     bind('propHgt', 'change', el => {
       one.hgt = Math.max(0, +el.value || 0);
       // 迫りの段：帯ごとの高さを、ホールの設備（舞台）に覚えておく（並べ直しても同じ高さ）
+      const lfr = SS.hinaLift(one);
+      if (lfr && lfr.rect) { const L = (doc().stage.fixtures || {}).lifts || []; if (L[lfr.idx]) L[lfr.idx].hgt = one.hgt || null; renderFixtures(); if (!(one.hgt > 0)) { syncRectLifts(); return; } renderProps(); return; }
       const lf = SS.hinaLift(one), rgs = lf && doc().stage.fixtures && doc().stage.fixtures.rings;
       if (rgs) {
         rgs.hgts = rgs.hgts || [];
-        for (let j = lf.j0; j <= lf.j1; j++) rgs.hgts[j] = one.hgt;
+        if (lf.center) rgs.center = one.hgt; // 中央
+        else for (let j = lf.j0; j <= lf.j1; j++) rgs.hgts[j] = one.hgt;
         // 両はしだけ上げた帯は、左右の2つとも同じ高さに
         doc().items.forEach(t => { const l2 = SS.hinaLift(t); if (l2 && l2.j0 === lf.j0) t.hgt = one.hgt; });
         if (!$('ringBox').hidden) renderRingBox();
@@ -3041,18 +3049,24 @@
   const FX_FIELDS = ['fxShell', 'fxCurtain', 'fxProY', 'fxProW', 'fxPitD', 'fxPitW', 'fxHanaX', 'fxHanaW', 'fxHanaL'];
   const mToCm = v => (v === '' || v == null || !isFinite(+v) ? null : Math.round(+v * 100));
   const cmToM = v => (v == null || v === '' ? '' : Math.round(+v) / 100);
+  // 高さを入れた四角い迫りを、段として作り直す（かんたん編成の配置は並べ直す）
+  function syncRectLifts() {
+    if (doc().items.some(it => it.auto)) { applyAuto({ noHistory: true, quiet: true }); return; }
+    doc().items = SS.auto.rectLiftTiers(doc().stage).map(t => Object.assign(t, { id: newId(), auto: false })).concat(doc().items.filter(it => !(it.lift && it.lift.rect)));
+    renderAll();
+  }
   function renderFixtures() {
     const fx = doc().stage.fixtures || {};
     const vals = { fxShell: fx.shell, fxCurtain: fx.curtain, fxProY: fx.proscenium && fx.proscenium.y, fxProW: fx.proscenium && fx.proscenium.w, fxPitD: fx.pit && fx.pit.depth, fxPitW: fx.pit && fx.pit.w, fxHanaX: fx.hanamichi && fx.hanamichi.x, fxHanaW: fx.hanamichi && fx.hanamichi.w, fxHanaL: fx.hanamichi && fx.hanamichi.len };
     FX_FIELDS.forEach(id => { if (document.activeElement !== $(id)) $(id).value = cmToM(vals[id]); });
     const box = $('fxLifts');
     if (box.contains(document.activeElement)) return;
-    box.innerHTML = (fx.lifts || []).map((l, i) => `<div class="fx-lift" data-lift="${i}">${['x', 'y', 'w', 'h'].map(k => `<input type="number" step="0.1" min="0" data-k="${k}" value="${cmToM(l[k])}" aria-label="${{ x: '下手の端から', y: '奥のふちから', w: '幅', h: '奥行' }[k]}">`).join('')}<button type="button" data-del="${i}" title="この迫りを消す">✕</button></div>`).join('');
+    box.innerHTML = (fx.lifts || []).map((l, i) => `<div class="fx-lift" data-lift="${i}">${['x', 'y', 'w', 'h'].map(k => `<input type="number" step="0.1" min="0" data-k="${k}" value="${cmToM(l[k])}" aria-label="${{ x: '下手の端から', y: '奥のふちから', w: '幅', h: '奥行' }[k]}">`).join('')}<input type="number" step="1" min="0" max="200" data-k="hgt" value="${l.hgt > 0 ? Math.round(l.hgt) : ''}" placeholder="高さcm" title="上げる高さ（cm）。入れると段になります" aria-label="上げる高さ（cm）"><button type="button" data-del="${i}" title="この迫りを消す">✕</button></div>`).join('');
     box.querySelectorAll('input').forEach(inp => {
       inp.addEventListener('focus', () => pushHistory());
-      inp.addEventListener('change', () => { readFixtures(); render(); });
+      inp.addEventListener('change', () => { readFixtures(); syncRectLifts(); render(); });
     });
-    box.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { pushHistory(); const f = doc().stage.fixtures; f.lifts.splice(+b.getAttribute('data-del'), 1); readFixtures(); render(); renderFixtures(); }; });
+    box.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { pushHistory(); const f = doc().stage.fixtures; f.lifts.splice(+b.getAttribute('data-del'), 1); readFixtures(); syncRectLifts(); render(); renderFixtures(); }; });
     renderDoors();
   }
   // 出入り口（上手・下手の扉）の入力欄
@@ -3098,7 +3112,7 @@
     const old = (doc().stage.fixtures || {}).lifts || [];
     const lifts = [...$('fxLifts').querySelectorAll('.fx-lift')].map((row, i) => {
       const o = old[i] && old[i].name ? { name: old[i].name } : {};
-      row.querySelectorAll('input').forEach(inp => { o[inp.getAttribute('data-k')] = mToCm(inp.value); });
+      row.querySelectorAll('input').forEach(inp => { const k = inp.getAttribute('data-k'); o[k] = k === 'hgt' ? (+inp.value > 0 ? Math.min(200, Math.round(+inp.value)) : null) : mToCm(inp.value); });
       return o;
     });
     if (lifts.length) fx.lifts = lifts;
