@@ -1419,12 +1419,13 @@
   }
 
   // ------------------------------------------------------------ 通知・ダイアログ
-  let toastTimer = null;
+  let toastTimer = null, toastAt = 0;
   function toast(msg, withUndo) {
     const t = $('toast');
     t.innerHTML = SS.esc(msg) + (withUndo ? ' <button class="toast-undo" id="toastUndo">元に戻す</button>' : '');
     t.classList.toggle('has-btn', !!withUndo);
     t.classList.add('show');
+    toastAt = Date.now();
     if (withUndo) $('toastUndo').onclick = () => { undo(); t.classList.remove('show'); };
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), withUndo ? 4500 : 2600);
@@ -1432,6 +1433,8 @@
   SS.toast = toast;
 
   function openModal(html) {
+    // 開く前から出ていたお知らせは閉じる（画面の題名を隠さないように）。開くときに出したものは残す
+    if (Date.now() - toastAt > 400) $('toast').classList.remove('show');
     $('modalBody').innerHTML = html;
     $('modal').classList.remove('hidden');
     document.body.classList.add('modal-open');
