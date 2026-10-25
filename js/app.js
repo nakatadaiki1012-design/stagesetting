@@ -4789,6 +4789,8 @@
     // ホールの迫りで並べるときは、平台の置き方の代わりに「せりの上げ方」
     const liftMode = rings && H.lift !== false && !H.curve;
     $('ringBox').hidden = !liftMode;
+    // せりで並べるときは、ひな壇の段数は使わない（帯の数はホールで決まり、上げない帯は高さ0に）
+    ['hinaSteps', 'hinaStepsHint'].forEach(id => { $(id).hidden = liftMode; });
     ['hinaTypes', 'hinaTypesLbl'].forEach(id => { $(id).hidden = liftMode; });
     if (liftMode) renderRingBox();
     renderRingNote();
@@ -4930,7 +4932,7 @@
   }
   // 円形の迫りがあるホール：迫りで並べていることと、上げ方を変える場所を、ホールを選ぶ欄のすぐ下に
   function renderRingNote() {
-    const E = doc().ensemble, ringOn = !!SS.ringGeom(doc().stage) && E && E.hina && E.hina.lift !== false && !E.hina.curve && (E.hina.steps || 0) > 0;
+    const E = doc().ensemble, ringOn = !!SS.ringGeom(doc().stage) && E && E.hina && E.hina.lift !== false && !E.hina.curve;
     $('ringNote').hidden = !ringOn;
     if (!ringOn) return;
     $('ringNote').innerHTML = '🎪 このホールは、ひな壇の代わりに<b>円形の迫り</b>を上げて段にしています。<button type="button" class="link-btn" id="ringNoteGo">せりの上げ方を変える ▶</button>';

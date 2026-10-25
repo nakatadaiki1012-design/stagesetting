@@ -2126,7 +2126,8 @@ window.SS = window.SS || {};
   A.build = function (st, stage) {
     // 円形の迫りがあるホール（ミューザ）は、ひな壇の平台を使わず、迫りの帯をぜんぶ段にする
     // （「ひな壇の形」で「まっすぐ」「弧」を選んだとき・「ひな壇 なし」のときは、ふつうの並べ方）
-    if (!st._ring && st.hina && st.hina.lift !== false && !st.hina.curve && (st.hina.steps || 0) > 0 && SS.ringGeom(stage)) {
+    // （段数は使わない。上げない帯は「せりの上げ方」で高さ0に）
+    if (!st._ring && st.hina && st.hina.lift !== false && !st.hina.curve && SS.ringGeom(stage)) {
       // 扇に並べる編成は、ひな壇なしで並べてから帯にのせる（合唱・ビッグバンドは、ひな壇ありの列のまま）
       st = Object.assign({}, st, { _ring: true, hina: Object.assign({}, st.hina, st.type === 'choir' || st.type === 'bigband' ? {} : { steps: 0 }) });
     }
