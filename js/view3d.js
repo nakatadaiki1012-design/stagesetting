@@ -1076,7 +1076,8 @@ window.SS = window.SS || {};
     const doc = SS.app.doc();
     const c = SS.app.conductor();
     const target = new T.Vector3(stageW / 2, 0.8, stageD * 0.5);
-    if (m === 'audience') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(12, stageW * 0.9), phi: 1.3, theta: 0 }); $('v3title').textContent = '客席から'; }
+    // 客席から：縦長の画面（スマホ）では少し引いて、舞台の左右が切れないように
+    if (m === 'audience') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(12, stageW * 0.9) * Math.min(1.45, Math.max(1, 1.3 / (camera.aspect || 1.5))), phi: 1.3, theta: 0 }); $('v3title').textContent = '客席から'; }
     else if (m === 'top') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(stageW, stageD) * 1.25, phi: 0.02, theta: 0 }); $('v3title').textContent = '真上から'; }
     else if (m === 'orbit') { Object.assign(orbit, { target, r: Math.max(12, stageW * 0.85), phi: 1.05, theta: 0.6 }); $('v3title').textContent = '自由に回す'; }
     else if (m === 'conductor') {
