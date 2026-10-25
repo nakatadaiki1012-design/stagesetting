@@ -1355,7 +1355,10 @@
     const st = doc().stage;
     const mx = opts().dims ? 110 : 80;
     // 左右は「下手」「上手」、上は「舞台奥」、下は「客席」の文字の分もあける（文字の大きさは画面上で一定）
-    const kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
+    let kk = Math.min(r.width / (st.w + 2 * mx + 160), 2);
+    // 高さで大きさが決まるとき（横長の画面）は、文字の分の余白も、その大きさで計算し直す
+    const kh = (r.height - 60) / (SS.render.frontOuter(st) + 34 + 70 / kk + Math.max(95, 40 + 52 / kk));
+    if (kh < kk) kk = Math.max(0.05, (r.height - 60 - 122) / (SS.render.frontOuter(st) + 34 + 40));
     let x0 = -mx - 48 / kk, y0 = Math.min(-95, -40 - 52 / kk), x1 = st.w + 80 + 48 / kk, y1 = SS.render.frontOuter(st) + 34 + 70 / kk;
     if (isMobile()) {
       // スマホ：舞台を画面の幅いっぱいに（左は「奥行」の寸法の線の分だけ。下手・上手は舞台の前の角の下に出す）
