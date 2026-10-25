@@ -13,6 +13,7 @@ window.SS = window.SS || {};
   let hiddenHead = null;
   let labelsOn = true;
   let stageW = 14, stageD = 9;
+  let shellWalls = []; // 反射板の壁（カメラが壁の外に回ったら、その壁を隠す）
   let baseLights = [], rig = null, sceneRH = new Map(); // 照明テスト：もとの明かり・足した明かり・段の高さ
   V.clothes = 'black';
 
@@ -838,6 +839,7 @@ window.SS = window.SS || {};
     const W = st.w / 100, D = st.d / 100;
     stageW = W; stageD = D;
     scene = new T.Scene();
+    shellWalls = [];
     scene.background = new T.Color('#0d0e11');
     scene.fog = new T.Fog('#0d0e11', 35, 80);
     scene.environment = makeEnvironment();
@@ -930,6 +932,9 @@ window.SS = window.SS || {};
       glow.position.set((a[0] + b[0]) / 2, shellH - 0.3, (a[1] + b[1]) / 2);
       glow.rotation.y = w.rotation.y; glow.translateZ(depthOff + 0.2);
       scene.add(glow);
+      // 壁の内側（舞台の側）の向き
+      const nin = new T.Vector3(0, 0, 1).applyQuaternion(q);
+      shellWalls.push({ objs: [w, base, dif, glow], x: w.position.x, z: w.position.z, nx: nin.x, nz: nin.z });
     };
     if (st.shape === 'poly') {
       // 図面の形：前のふち（客席側）以外のすべての辺に壁を立てる
@@ -1187,6 +1192,9 @@ window.SS = window.SS || {};
 
   function loop() {
     raf = requestAnimationFrame(loop);
+    // カメラが壁の外（うしろ）に回ったときは、その壁を隠して舞台を見えるように
+    const cp = camera.position;
+    shellWalls.forEach(sw => { const v = (cp.x - sw.x) * sw.nx + (cp.z - sw.z) * sw.nz > -0.3; sw.objs.forEach(o => { o.visible = v; }); });
     renderer.render(scene, camera);
   }
 
