@@ -4981,7 +4981,7 @@
       ? `<b class="${h.q === 'est' || h.q === 'approx' ? 'q-est' : 'q-ok'}">${SS.HALL_Q[h.q]}</b><br>${h.shape === 'poly' ? `いちばん広い所の幅${h.fw}m／奥の壁${h.bw}m／奥行（中央）${h.d}m、図面のとおりの形` : h.shape === 'arc' ? `幅${h.fw}m／奥の幅${h.bw}m／奥行（中央）${h.d}m、前のふちは弧` : `反射板設置時：前の幅${h.fw}m／奥の幅${h.bw}m／奥行${h.d}m`}。${h.note ? SS.esc(h.note) + '。' : ''}<a href="${h.src}" target="_blank" rel="noopener">出典</a>。<br>本番前にホールの「反射板設置時の舞台図面」で確認し、違っていたら下の「ステージの大きさ・形」で直してください。`
       : `いまのステージ：前の幅${st.w / 100}m／奥の幅${Math.round(SS.render.backWidth(st)) / 100}m／奥行${st.d / 100}m`;
   }
-  $('btn3d').onclick = () => SS.view3d.open(null);
+  $('btn3d').onclick = () => { $('toast').classList.remove('show'); SS.view3d.open(null); }; // 前のお知らせが3Dの上に残らないように
   SS.app = { doc, conductor, players, toast, selected, touch: () => scheduleSave() };
 
   // ------------------------------------------------------------ 見るだけの共有リンク（#v=）
