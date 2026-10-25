@@ -1,7 +1,7 @@
 // 操作のなめらかさ・速さを測るテスト
 // 使い方：アプリのフォルダでサーバーを立ててから（例：npx http-server -p 8765 .）
 //   node tests/perf.test.js [http://localhost:8765/index.html] [--json 結果を書くファイル] [--check]
-// 測ること（ふつうの速さと、CPUを4倍遅くした状態＝スマホの代わり。吹奏楽44人とオーケストラ71人）：
+// 測ること（ふつうの速さと、CPUを4倍遅くした状態＝スマホの代わり。吹奏楽44人とオーケストラ61人）：
 //   ドラッグ（1人・全員）・ホイールで拡大縮小・手のひらで画面を動かす …… 1秒あたりのコマ数・いちばん長いコマ・長い処理（50ms以上）の回数
 //   ▲を1回押す …… 数字が変わるまで・並び終わるまでの時間
 //   ひな形の切りかえ・ホールの切りかえ（オーケストラで神奈川県立音楽堂） …… 並び終わるまでの時間
@@ -128,7 +128,7 @@ async function measureHall(env) {
   for (const [W, rate, type] of [[1400, 1, 'band'], [1400, 4, 'band'], [1400, 1, 'orch'], [1400, 4, 'orch'], [390, 4, 'band']]) {
     if (only && only !== `${W}x${rate}${type}`) continue;
     const env = await setup(b, W, rate, type);
-    const name = `${W === 390 ? 'スマホ' : 'PC'}・${type === 'orch' ? 'オケ71人' : '吹奏楽44人'}・CPU×${rate}`;
+    const name = `${W === 390 ? 'スマホ' : 'PC'}・${type === 'orch' ? 'オケ61人' : '吹奏楽44人'}・CPU×${rate}`;
     const r = { name, W, rate, type };
     r.drag1 = await measureDrag(env, false);
     r.dragAll = await measureDrag(env, true);

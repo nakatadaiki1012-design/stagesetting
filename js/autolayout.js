@@ -317,7 +317,7 @@ window.SS = window.SS || {};
     orch: {
       name: 'オーケストラ',
       parts: [
-        ['Vn1', 14], ['Vn2', 12], ['Va', 10], ['Vc', 8], ['Cb', 6],
+        ['Vn1', 12], ['Vn2', 10], ['Va', 8], ['Vc', 6], ['Cb', 4],
         ['Picc', 0], ['Fl', 2], ['Ob', 2], ['E.H.', 0], ['Cl', 2], ['B.Cl', 0], ['Fg', 2], ['C.Fg', 0],
         ['Hr', 4], ['Tp', 2], ['Tb', 3], ['Tuba', 1], ['Timp', 1], ['Perc', 2], ['Hp', 0], ['Pf', 0],
       ],
@@ -1540,6 +1540,21 @@ window.SS = window.SS || {};
     const secRange = {}, secR = {};
     const rad = d => (d * Math.PI) / 180;
     const spS = tune.spacing, gapR = Math.max(100, tune.gap * 0.9);
+    // 広い舞台では、扇を横長（だ円）にして左右の空いた所も使う（ex：横に何倍のばすか）。弧に沿った長さで間隔をそろえる
+    const ex = tune.ex || 1;
+    const pol = (R, a) => ({ x: c.x + R * Math.sin(a) * ex, y: c.y - R * Math.cos(a) });
+    const speed = a => Math.sqrt(ex * ex * Math.cos(a) ** 2 + Math.sin(a) ** 2);
+    // 角度 a から弧に沿って dist だけ進んだ所の角度
+    const stepAng = (a, dist, R) => {
+      if (ex === 1) return a + dist / R;
+      const d = Math.sign(dist), h = 0.002;
+      let left = Math.abs(dist);
+      while (left > 0) { const ds = R * speed(a + d * h / 2) * h; if (ds >= left) return a + d * h * (left / ds); left -= ds; a += d * h; }
+      return a;
+    };
+    const arcLen = (a0, a1, R) => { if (ex === 1) return (a1 - a0) * R; let L = 0; const k = 24, h = (a1 - a0) / k; for (let i = 0; i < k; i++) L += R * speed(a0 + (i + 0.5) * h) * h; return L; };
+    // 列の数を決めるときの、扇全体での平均ののび
+    const fAvg = arcLen(-rad(84), rad(84), 1) / rad(168);
     // パートごとの扇形（角度の範囲）は、人数に比例して最初に決めて、どの列（リング）でも同じにする。
     // 前のリングから順に、各パートの扇の中に「真ん中から」座る（2人で1本の譜面台なので、なるべく偶数）。
     // こうすると、パートの境目が指揮者から放射状にまっすぐ通り、Vn1・Vn2・Va・Vc のかたまりがくずれない
@@ -1547,7 +1562,7 @@ window.SS = window.SS || {};
     const sumS = secs.reduce((a2, q) => a2 + n[q.k], 0) || 1;
     const GAPA = rad(gapDeg);
     // 扇に入る人数（となりのパートの端の人とは、1人分の間隔をあける）。4人以上の列は偶数に（2人で1本）
-    const seatsIn = (w, R, left) => { let m = Math.min(left, Math.max(1, Math.floor(((w + GAPA) * R) / spS))); if (m > 3 && m % 2 && m < left) m--; return m; };
+    const seatsIn = (w, R, left, L) => { let m = Math.min(left, Math.max(1, Math.floor(((L == null ? w * R * fAvg : L) + GAPA * R) / spS))); if (m > 3 && m % 2 && m < left) m--; return m; };
     const fits = (w, K, cnt) => { let left = cnt; for (let r = 0; r < K && left > 0; r++) left -= seatsIn(w, tune.r0 + r * gapR, left); return left <= 0; };
     // いちばん少ない列の数で全員が入るように、パートごとに要る角度を求め、余った角度は人数の割合で分ける
     const FAN = rad(fan) - GAPA * (secs.length - 1);
@@ -1564,7 +1579,7 @@ window.SS = window.SS || {};
       const R = tune.r0 + ring * gapR;
       secs.forEach(q => {
         if (q.left <= 0) return;
-        const m = seatsIn(q.w1 - q.w0, R, q.left);
+        const m = seatsIn(q.w1 - q.w0, R, q.left, ex === 1 ? null : arcLen(Math.max(q.w0, -rad(84)), Math.min(q.w1, rad(84)), R));
         const mid = (q.w0 + q.w1) / 2;
         // いちばん外のパート（下手の Vn1・上手の Vc など）は、客席側のはしから順に座る（1プルトが指揮者のすぐ横。どのリングも同じはしからそろう）。
         // 内側のパートは扇の真ん中から
@@ -1576,18 +1591,18 @@ window.SS = window.SS || {};
         const dir = from > 0 ? -1 : 1;
         // 使う弧の長さ：人数×間隔（最後が1人のプルトは1人分だけ）
         const used = m * spS;
-        const start = from < 0 ? e0 + deskW / 2 / R : from > 0 ? e1 - deskW / 2 / R : mid - (used / 2 - deskW / 2) / R;
+        const start = from < 0 ? stepAng(e0, deskW / 2, R) : from > 0 ? stepAng(e1, -deskW / 2, R) : stepAng(mid, -(used / 2 - deskW / 2), R);
         // 表（プルトの客席側の席）が先
         const outer = from !== 0 ? dir : mid < 0 ? 1 : -1;
         for (let k = 0; k < desks; k++) {
           const two = m - k * 2 >= 2;
           // 1人だけのプルトは、前のプルトに詰めて（となりのパートにはみ出さない）
-          const ac = start + dir * (k * deskW - (two ? 0 : (deskW - spS) / 2)) / R;
-          const pc = G().fromPolar(R, ac, c), rot = G().faceAngle(pc, c);
+          const ac = stepAng(start, dir * (k * deskW - (two ? 0 : (deskW - spS) / 2)), R);
+          const pc = pol(R, ac), rot = G().faceAngle(pc, c);
           const offs = two ? [-outer * pair / 2, outer * pair / 2] : [0];
           offs.forEach(o => {
-            const a = ac + o / R;
-            const p = G().fromPolar(R, a, c);
+            const a = stepAng(ac, o, R);
+            const p = pol(R, a);
             items.push({ type: 'player', label: q.k, x: p.x, y: p.y, rot, desk: `${q.k}-${q.desk + k + 1}` });
             q.a0 = Math.min(q.a0, (a * 180) / Math.PI); q.a1 = Math.max(q.a1, (a * 180) / Math.PI);
           });
@@ -1607,8 +1622,8 @@ window.SS = window.SS || {};
       const vr = secRange.Vc ? (flip < 0 ? [-secRange.Vc[1], -secRange.Vc[0]] : secRange.Vc) : [60, 88];
       const midD = Math.min((vr[0] + vr[1]) / 2 - 4, 66);
       // その方向（チェロの角度の範囲の少し外まで）で、いちばん後ろにいる弦の人より後ろに
-      const inDir = it => { const a = (flip * Math.atan2(it.x - c.x, c.y - it.y) * 180) / Math.PI; return a >= vr[0] - 12 && a <= vr[1] + 12; };
-      const behind = Math.max(secR.Vc || 0, ...items.filter(inDir).map(it => Math.hypot(it.x - c.x, it.y - c.y)));
+      const inDir = it => { const a = (flip * Math.atan2((it.x - c.x) / ex, c.y - it.y) * 180) / Math.PI; return a >= vr[0] - 12 && a <= vr[1] + 12; };
+      const behind = Math.max(secR.Vc || 0, ...items.filter(inDir).map(it => Math.hypot((it.x - c.x) / ex, it.y - c.y)));
       // コントラバスの譜面台は約78cm前にあるので、前の列（チェロ）から25cm多めに離す
       let left = n.Cb, R = (behind || maxR) + gapR + 25, cbDesk = 0;
       while (left > 0) {
@@ -1620,7 +1635,7 @@ window.SS = window.SS || {};
         // チェロが下手側（対向配置）のときは、下手の外側へ寄せる（真ん中の奥に来ると、ひな壇が奥へ下がる）
         const mid = midD >= 0 ? Math.min(rad(midD), edge - half) : -edge + half;
         deskRow(m, 95, 84).forEach(([off, dn]) => {
-          const p = G().fromPolar(R, flip * (mid + off / R), c);
+          const p = pol(R, flip * stepAng(mid, off, R));
           items.push({ type: 'player', label: 'Cb', x: p.x, y: p.y, rot: G().faceAngle(p, c), desk: `Cb-${cbDesk + dn}` });
         });
         cbDesk += Math.ceil(m / 2);
@@ -1716,15 +1731,17 @@ window.SS = window.SS || {};
     // ひな壇の前のふちは、弦のいちばん奥の人（いすの後ろ 約25cm）から clear だけ離す
     // （上手の横にいるコントラバスは、奥までは来ないので数えない）
     const yStr = items.length ? Math.min(...items.map(it => it.y)) - 25 : c.y - maxR;
-    const tp = tiersAndPerc(stage, yStr - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: maxR, side: !n.Hp && !n.Pf, mode: 'orch', pts: items.slice(), timpTier: !!(timpOnTop && timpSet.length) });
+    // 打楽器を横に置くときの目安の半径（だ円のときは、いちばん遠い弦の人まで）
+    const Rfar = Math.max(maxR, ...items.map(it => Math.hypot(it.x - c.x, it.y - c.y)));
+    const tp = tiersAndPerc(stage, yStr - tune.clear, specs, H, perc, timpOnTop ? 'left' : st.percPlace || 'back', { c, R: ex === 1 ? maxR : Rfar, side: !n.Hp && !n.Pf, mode: 'orch', pts: items.slice(), timpTier: !!(timpOnTop && timpSet.length) });
     items.push(...tp.items);
     rep('Hp', n.Hp).forEach((l, i) => {
       // 奏者は指揮者の方を向き、ハープはその前（響板の上が奏者側）
-      const p = G().fromPolar(maxR + 40, -1.25 + i * 0.22, c);
+      const p = pol(maxR + 40, -1.25 + i * 0.22);
       const r = G().faceAngle(p, c), a = r * Math.PI / 180;
       items.push({ type: 'player', label: 'Hp', x: p.x, y: p.y, rot: r }, { type: 'harp', x: p.x - Math.sin(a) * 70, y: p.y + Math.cos(a) * 70, rot: r + 180 });
     });
-    rep('Pf', n.Pf).forEach(() => { const p = G().fromPolar(maxR + 120, -0.85, c); items.push(...pianoAt(p.x, p.y)); });
+    rep('Pf', n.Pf).forEach(() => { const p = pol(maxR + 120, -0.85); items.push(...pianoAt(p.x, p.y)); });
     if (st.strRiser) items.push(...stringRisers(items, c, st.strRiser));
     const all = tp.tiers.concat(items);
     return { items: all, c, overlap: overlapCheck(tp, all) };
@@ -1785,6 +1802,9 @@ window.SS = window.SS || {};
     { spacing: 78, gap: 108, r0: 185, span: 1.14, clear: 50 },
     { spacing: 77, gap: 108, r0: 185, span: 0.97, clear: 50 },
     { spacing: 74, gap: 102, r0: 175, span: 0.98, clear: 45 },
+    // オーケストラ：弦の扇を横長（だ円）にして、広い舞台の左右も使う
+    { spacing: 80, gap: 112, r0: 190, span: 1, clear: 50, ex: 1.3 },
+    { spacing: 78, gap: 108, r0: 185, span: 1, clear: 50, ex: 1.5 },
     // ここから先は、ひな壇の奥行を 4×6尺1枚（121cm）まで詰める
     { spacing: 82, gap: 118, r0: 195, span: 1.1, clear: 50, slim: true },
     { spacing: 80, gap: 112, r0: 190, span: 1.14, clear: 45, slim: true },
@@ -2236,7 +2256,8 @@ window.SS = window.SS || {};
     let best = null;
     // となりとの間隔：ゆったり＝1割広い並べ方から試す（入らなければ、ふつうの並べ方へ）／つめる＝1割近くつめた並べ方だけ
     const scaleTune = (t, f) => Object.assign({}, t, { spacing: Math.round(t.spacing * f), gap: Math.round(t.gap * f), r0: Math.round(t.r0 * f), scaled: f });
-    const tunes = st.space === 'wide' ? TUNES.map(t => scaleTune(t, 1.1)).concat(TUNES) : st.space === 'tight' ? TUNES.map(t => scaleTune(t, 0.92)) : TUNES;
+    const TU = TUNES.filter(t => !t.ex || (f === orch && !st._ring)); // だ円の扇はオーケストラ・弦楽だけ（円形の迫りのホールでは円のまま）
+    const tunes = st.space === 'wide' ? TU.map(t => scaleTune(t, 1.1)).concat(TU) : st.space === 'tight' ? TU.map(t => scaleTune(t, 0.92)) : TU;
     for (const tune of tunes) {
       let s3 = s2;
       // 奥行が足りないときの詰めた並べ方：奥行121cmより深い段（段ごとの置き方もふくむ）は 4×6尺1枚に
@@ -2256,7 +2277,7 @@ window.SS = window.SS || {};
       const score = outside * 10 + hinaOut * 10 + (r.overlap ? 5 : 0) + clash * 2 + (tune.slim ? 1 : 0);
       r.slim = !!(tune.slim && s3 !== s2);
       r.tune = tune;
-      if (A.debug) A.debug.push({ tune, outside, hinaOut, overlap: r.overlap, clash, score });
+      if (A.debug) A.debug.push({ tune, outside, hinaOut, overlap: r.overlap, clash, score, items: r.items });
       // ゆったり：同じ点数なら、間隔の広いほうを
       if (!best || score < best.score || (st.space === 'wide' && score === best.score && tune.spacing > best.tune.spacing)) best = Object.assign(r, { score, outside });
       if (score === 0) break;
