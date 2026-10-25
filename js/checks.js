@@ -149,6 +149,14 @@ window.SS = window.SS || {};
     });
   };
 
+  // 段の印の場所：ふつうは段の外枠。迫りの段（U字の帯）は外枠が舞台いっぱいになるので、帯の真ん中（奥）に小さく
+  function spotOf(p) {
+    const lf = SS.hinaLift && SS.hinaLift(p.it);
+    if (!lf) return p.b;
+    const r = lf.center ? 0 : (lf.rIn + Math.min(lf.rOut, lf.rIn + 150)) / 2, cy = (lf.cyIn + lf.cyOut) / 2;
+    const x = lf.part === 'sides' ? lf.cx + (p.b.x0 + p.b.x1 > 2 * lf.cx ? 1 : -1) * r : lf.cx, y = lf.part === 'sides' ? cy : cy - r;
+    return { x0: x - 70, x1: x + 70, y0: y - 45, y1: y + 45 };
+  }
   SS.checks = function (doc) {
     const st = doc.stage, out = [];
     const items = doc.items.filter(it => !NOT_THING.has(it.type));
@@ -185,7 +193,7 @@ window.SS = window.SS || {};
     riders.forEach(it => { const p = platformUnder(it, plats); if (p) on.get(p).push(it); });
     plats.forEach(p => {
       if (p.h < HIGH || reached.has(p) || !on.get(p).length) return;
-      out.push({ kind: 'stairs', msg: `${nameOf(p.it, hno)}（高さ${cm(p.h)}）に上がる段がありません。「上がり段」を段の横か前に付けるか、1段低い段とつなげてください`, spots: [p.b] });
+      out.push({ kind: 'stairs', msg: `${nameOf(p.it, hno)}（高さ${cm(p.h)}）に上がる段がありません。「上がり段」を段の横か前に付けるか、1段低い段とつなげてください`, spots: [spotOf(p)] });
     });
 
     // ---- 重い楽器の搬入経路（段の横・前・後ろに、幅1.2mほど空いた床があるか）

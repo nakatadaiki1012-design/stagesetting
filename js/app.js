@@ -4594,15 +4594,21 @@
     const pt = j => (rgs.parts && rgs.parts[j]) || 'all';
     const same = p => !(+rgs.center > 0) && p.hgts.every((v, j) => j >= n || Math.abs(v - hg(j)) < 0.6) && Array.from({ length: n }, (_, j) => (p.parts[j] || 'all') === pt(j)).every(Boolean);
     let h = `<p class="hint small" style="margin:8px 0 4px"><b>せりの上げ方</b>（点線の帯ごと。0cm＝上げない）</p><div class="ring-presets">${SS.auto.RING_PRESETS.map(p => `<button class="btn${same(p) ? ' active' : ''}" data-rpre="${p.id}">${SS.esc(p.name)}</button>`).join('')}</div><div class="ring-rows">`;
+    // 中央（いちばん内側の弧の内側。指揮者のまわり）
+    h += `<label class="ring-row"><b>中央</b><small>指揮者のまわり</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rc="1" value="${Math.round(+rgs.center || 0)}"> cm</span><span></span></label>`;
     for (let j = 0; j < n; j++) {
       const last = j === n - 1;
       h += `<label class="ring-row"><b>${j + 1}段目</b><small>${j === 0 ? 'いちばん内側' : last ? '奥の壁まで' : ''}</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rh="${j}" value="${Math.round(hg(j))}"> cm</span><select data-rp="${j}">${Object.keys(RING_PART_NAMES).filter(k => !(last && k === 'sides')).map(k => `<option value="${k}"${pt(j) === k ? ' selected' : ''}>${RING_PART_NAMES[k]}</option>`).join('')}</select></label>`;
     }
+    h += '</div><div>';
+    // となりの帯との高さの差が大きい所（25cmより大きいと、1回で上り下りできない）
+    const lv = [+rgs.center || 0].concat(Array.from({ length: n }, (_, j) => (pt(j) === 'none' ? 0 : hg(j))));
+    const jumps = [];
+    for (let j = 1; j < lv.length; j++) if (Math.abs(lv[j] - lv[j - 1]) > 25) jumps.push(`${j === 1 ? '中央' : (j - 1) + '段目'}と${j}段目（${Math.round(Math.abs(lv[j] - lv[j - 1]))}cm）`);
+    if (jumps.length) h += `<p class="hint small ring-jump">⚠ 高さの差が25cmより大きい所があります：${jumps.join('、')}。上り下りに上がり段が要ります（あいだの帯を中くらいの高さにすると、そのまま上り下りできます）。</p>`;
     // 楽器がまたがるので、まとめて1つの段にした帯
     const merged = doc().items.filter(it => SS.hinaLift(it) && it.lift.merged);
     if (merged.length) h += `<p class="hint small ring-merged">${merged.map(t => `${t.lift.j0 + 1}〜${t.lift.j1 + 1}段目は、打楽器などがまたがるので、まとめて1つの段（${Math.round(t.hgt)}cm）にしています`).join('。')}。</p>`;
-    // 中央（いちばん内側の弧の内側）
-    h += `<label class="ring-row"><b>中央</b><small>1段目の内側</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rc="1" value="${Math.round(+rgs.center || 0)}"> cm</span><span></span></label>`;
     h += '</div><p class="hint small">「まん中だけ」は真ん中から左右60°まで、「両はしだけ」はその外側（U字の足まで）を上げます。並べ直しても覚えておきます。実際に上がる高さ・範囲は、ホールで確かめてください。</p>';
     $('ringBox').innerHTML = h;
     $('ringBox').querySelectorAll('[data-rpre]').forEach(b => { b.onclick = () => {
@@ -4745,7 +4751,8 @@
     const lays = SS.auto.layoutsOf(st.type), lay2 = st.layout === 'custom' && st.customRows ? { name: SS.auto.CUSTOM_NAME } : lays[st.layout] || lays[Object.keys(lays)[0]];
     $('layoutBoxNow').textContent = (['band', 'brass', 'choir'].includes(st.type) ? (lay2 ? lay2.name.split('（')[0] : '') : st.type === 'bigband' ? '標準（サックス前・Tb・Tp）' : st.antiphonal ? '対向配置' : '通常配置') + (SPACE[st.space] || '');
     document.querySelectorAll('#ensSpace [data-space]').forEach(b => b.classList.toggle('on', b.getAttribute('data-space') === (st.space || 'normal')));
-    $('hinaBoxNow').textContent = H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.types && H.types.some(Boolean) ? '・段ごと' : ''}${H.curve ? '・弧' : ''}` : 'なし';
+    const ringsNow = !!SS.ringGeom(doc().stage) && H.lift !== false && !H.curve;
+    $('hinaBoxNow').textContent = ringsNow ? 'ホールの円形の迫り' : H.steps ? `${H.steps}段・${cur ? cur.name.replace(/ /g, '') : ''}${H.types && H.types.some(Boolean) ? '・段ごと' : ''}${H.curve ? '・弧' : ''}` : 'なし';
   }
   function renderSteppers() {
     const st = ens();

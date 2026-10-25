@@ -355,8 +355,10 @@ window.SS = window.SS || {};
           if (lf) {
             // ホールの円形の迫りでできた段：U字の帯（平台はない）。段の名前は下手側の帯の上に、弧に沿って
             body += `<path d="M${SS.hinaOutline(it).map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L')}Z" fill="${col}" fill-opacity=".9" stroke="#8a6d3b" stroke-width="3" stroke-linejoin="round"/>`;
-            const rm = (lf.rIn + Math.min(lf.rOut, lf.rIn + 160)) / 2, cym = (lf.cyIn + lf.cyOut) / 2, ph = -Math.min(Math.PI / 3.2, (lf.phi != null ? lf.phi : Math.PI / 2) - 120 / rm);
-            const tx = lf.cx + rm * Math.sin(ph), ty = cym - rm * Math.cos(ph);
+            const rm = (lf.rIn + Math.min(lf.rOut, lf.rIn + 160)) / 2, cym = (lf.cyIn + lf.cyOut) / 2;
+            // 中央は、下手の足の下（前のふちの近く）に横書き。帯は、帯の真ん中に弧に沿って
+            const ph = lf.center ? 0 : -Math.min(Math.PI / 3.2, (lf.phi != null ? lf.phi : Math.PI / 2) - 120 / rm);
+            const tx = lf.center ? lf.cx - lf.rOut + 90 : lf.cx + rm * Math.sin(ph), ty = lf.center ? lf.fOut - 30 : cym - rm * Math.cos(ph);
             const tag = `${it.perc ? '打楽器の段 ' : lf.center ? '迫り 中央 ' : it.step ? '迫り ' + it.step + '段 ' : '迫り '}${Math.round(hv)}cm`;
             text += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" dy="0.35em" text-anchor="middle" font-size="${opts.contestSheet ? 14 : 22}" font-weight="700" fill="#6b5024" stroke="#f6eddc" stroke-width="3" paint-order="stroke" transform="rotate(${((ph * 180) / Math.PI).toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${esc(tag)}</text>`;
             break;
