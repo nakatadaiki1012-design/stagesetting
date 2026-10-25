@@ -353,7 +353,9 @@ window.SS = window.SS || {};
   const fmtM = cm => (cm / 100).toFixed(2).replace(/0$/, '') + 'm';
   // 寸法の文字の大きさ（画面の拡大率 k に合わせる）
   let DS = 1; // 寸法の字の大きさの倍率（スマホの画面では小さく）
-  const labelSize = (label, k) => { const fs = (13 * DS) / k; return { fs, tw: label.length * fs * 0.62 + 10 / k, th: fs + 6 / k }; };
+  // 日本語は1文字ぶん、英数字は0.6文字ぶんの幅で見積もる
+  const textEm = t => [...t].reduce((a, c) => a + (c.charCodeAt(0) > 0xff ? 1 : 0.6), 0);
+  const labelSize = (label, k) => { const fs = (13 * DS) / k; return { fs, tw: textEm(label) * fs + 10 / k, th: fs + 6 / k }; };
   const overlap = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
   let placed = null; // この回に描いた寸法の文字の四角（重なりを避けるため）
   // pos を渡すと、文字をその位置に置き、線の真ん中から細い引き出し線を引く
@@ -366,7 +368,7 @@ window.SS = window.SS || {};
     else s += `<path d="M${x1} ${y1 - tk}V${y1 + tk}M${x2} ${y2 - tk}V${y2 + tk}" stroke="${color}" stroke-width="${sw}"/>`;
     const f = at == null ? 0.5 : at;
     const mx = x1 + (x2 - x1) * f, my = y1 + (y2 - y1) * f;
-    const { tw, th } = labelSize(label, k);
+    const { tw, th } = labelSize(label + (edit ? ' ✎' : ''), k);
     let lx = vert ? mx + (side || 1) * (tw / 2 + 6 / k) : mx, ly = vert ? my : my + (side || -1) * (th / 2 + 3 / k);
     if (pos) {
       lx = pos.x; ly = pos.y;
@@ -445,7 +447,7 @@ window.SS = window.SS || {};
         const blocks = placed.slice().concat(opt.knobs ? R.stageKnobs(st).map(q => ({ x0: q.x - knobR, x1: q.x + knobR, y0: q.y - knobR, y1: q.y + knobR })) : []);
         // 奏者・楽器の上にも重ねない（スマホのように字が大きく見えるとき、舞台の外の「前の幅」の線の上へ逃がす）
         doc.items.forEach(it => { if (SS.isPlatform(it) || ['stairs', 'podium', 'text', 'cable'].includes(it.type)) return; blocks.push(it.type === 'player' ? { x0: it.x - 26, x1: it.x + 26, y0: it.y - 26, y1: it.y + 26 } : bboxOf(it)); });
-        const fl = placed[0], fy2 = R.frontOuter(st) + 34;
+        const fl = placed[0], fy2 = fl ? (fl.y0 + fl.y1) / 2 : R.frontOuter(st) + 34;
         const cands = [
           { x: lxLine + tw / 2 + g, y: my },                       // 線の右
           { x: pb.x0 - 30 - tw / 2 - g, y: my },                   // 指揮台の左
