@@ -35,10 +35,11 @@ window.SS = window.SS || {};
   // ひな壇の番号（組み図・部材の表で使う）。段（step）が重ならなければ段の数字、重なるときは前から A, B, C…
   SS.hinaNumbers = function (items) {
     const hs = items.filter(it => it.type === 'hina');
-    const steps = hs.map(h => h.step).filter(Boolean);
+    const allLift = hs.length && hs.every(h => h.lift);
+    const steps = hs.map(h => h.step).filter(v => v || (allLift && v === 0));
     const map = new Map();
-    // 迫りの段は、左右に分かれた同じ段（両はしだけ上げる）があるので、同じ番号でもよい
-    if (steps.length === hs.length && (new Set(steps).size === steps.length || hs.every(h => h.lift))) hs.forEach(h => map.set(h, String(h.step)));
+    // 迫りの段は、左右に分かれた同じ段（両はしだけ上げる）があるので、同じ番号でもよい。中央（step 0）は「中央」
+    if (steps.length === hs.length && (new Set(steps).size === steps.length || allLift)) hs.forEach(h => map.set(h, h.step === 0 ? '中央' : String(h.step)));
     else hs.slice().sort((a, b) => b.y - a.y || a.x - b.x).forEach((h, i) => map.set(h, i < 26 ? String.fromCharCode(65 + i) : 'Z' + (i - 25)));
     return map;
   };
@@ -1863,6 +1864,15 @@ window.SS = window.SS || {};
     let level = 0;
     const hgtAt = j => (custom ? A.ringHgt(stage, j) : RING_HGT[Math.min(level, RING_HGT.length - 1)]);
     const mergeOf = j => (merges || []).find(m => j >= m[0] && j <= m[1] && Array.from({ length: m[1] - m[0] + 1 }, (_, k) => (parts[m[0] + k] || 'all') === (parts[m[0]] || 'all') && A.ringHgt(stage, m[0] + k) > 0).every(Boolean)) || null;
+    // 中央（いちばん内側の弧の内側）：高さ rings.center（はじめは上げない）
+    if (+rgs.center > 0) {
+      const A0 = rg.arcs[0], tE = Math.PI / 2 + Math.max(0, A0.end - A0.cy) / A0.r, poly = [];
+      for (let i = 0; i <= 48; i++) { const t = -tE + (2 * tE * i) / 48, q = Math.abs(t), sg = Math.sign(t || 1); poly.push(q <= Math.PI / 2 ? [rg.cx + A0.r * Math.sin(t), A0.cy - A0.r * Math.cos(t)] : [rg.cx + sg * A0.r, A0.cy + (q - Math.PI / 2) * A0.r]); }
+      const pr = poly.map(p => [Math.round(p[0]), Math.round(p[1])]), xs = pr.map(q => q[0]), ys = pr.map(q => q[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      tiers.push({ type: 'hina', step: 0, hgt: +rgs.center, rot: 0, auto: true, x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2), w: x1 - x0, h: y1 - y0,
+        lift: { poly: pr, cx: rg.cx, cyIn: A0.cy, rIn: 0, cyOut: A0.cy, rOut: A0.r, fIn: A0.end, fOut: A0.end, j0: -1, j1: -1, center: true } });
+    }
     for (let j = 0; j < nB; j++) {
       const m = mergeOf(j);
       if (m && j > m[0]) continue; // まとめた帯の2つ目以降

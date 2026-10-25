@@ -4592,7 +4592,7 @@
     if (!rgs || !rg) { $('ringBox').innerHTML = ''; return; }
     const n = rg.arcs.length, hg = j => (rgs.hgts && rgs.hgts[j] != null ? +rgs.hgts[j] : SS.auto.RING_HGT[Math.min(j, SS.auto.RING_HGT.length - 1)]);
     const pt = j => (rgs.parts && rgs.parts[j]) || 'all';
-    const same = p => p.hgts.every((v, j) => j >= n || Math.abs(v - hg(j)) < 0.6) && Array.from({ length: n }, (_, j) => (p.parts[j] || 'all') === pt(j)).every(Boolean);
+    const same = p => !(+rgs.center > 0) && p.hgts.every((v, j) => j >= n || Math.abs(v - hg(j)) < 0.6) && Array.from({ length: n }, (_, j) => (p.parts[j] || 'all') === pt(j)).every(Boolean);
     let h = `<p class="hint small" style="margin:8px 0 4px"><b>せりの上げ方</b>（点線の帯ごと。0cm＝上げない）</p><div class="ring-presets">${SS.auto.RING_PRESETS.map(p => `<button class="btn${same(p) ? ' active' : ''}" data-rpre="${p.id}">${SS.esc(p.name)}</button>`).join('')}</div><div class="ring-rows">`;
     for (let j = 0; j < n; j++) {
       const last = j === n - 1;
@@ -4601,12 +4601,14 @@
     // 楽器がまたがるので、まとめて1つの段にした帯
     const merged = doc().items.filter(it => SS.hinaLift(it) && it.lift.merged);
     if (merged.length) h += `<p class="hint small ring-merged">${merged.map(t => `${t.lift.j0 + 1}〜${t.lift.j1 + 1}段目は、打楽器などがまたがるので、まとめて1つの段（${Math.round(t.hgt)}cm）にしています`).join('。')}。</p>`;
+    // 中央（いちばん内側の弧の内側）
+    h += `<label class="ring-row"><b>中央</b><small>1段目の内側</small><span><input type="number" min="0" max="200" step="1" inputmode="numeric" data-rc="1" value="${Math.round(+rgs.center || 0)}"> cm</span><span></span></label>`;
     h += '</div><p class="hint small">「まん中だけ」は真ん中から左右60°まで、「両はしだけ」はその外側（U字の足まで）を上げます。並べ直しても覚えておきます。実際に上がる高さ・範囲は、ホールで確かめてください。</p>';
     $('ringBox').innerHTML = h;
     $('ringBox').querySelectorAll('[data-rpre]').forEach(b => { b.onclick = () => {
       const p = SS.auto.RING_PRESETS.find(x => x.id === b.getAttribute('data-rpre'));
       pushHistory(); // 「戻す」で、せりの上げ方も配置も前のとおりに
-      rgs.hgts = p.hgts.slice(0, n); rgs.parts = Array.from({ length: n }, (_, j) => p.parts[j] || 'all');
+      rgs.hgts = p.hgts.slice(0, n); rgs.parts = Array.from({ length: n }, (_, j) => p.parts[j] || 'all'); delete rgs.center;
       renderRingBox(); ringChanged();
       toast(`せりの上げ方：${p.name}`, true);
     }; });
@@ -4615,6 +4617,11 @@
       pushHistory();
       rgs.hgts = Array.from({ length: n }, (_, k) => hg(k));
       rgs.hgts[j] = Math.max(0, Math.min(200, +inp.value || 0));
+      renderRingBox(); ringChanged();
+    }; });
+    $('ringBox').querySelectorAll('[data-rc]').forEach(inp => { inp.onchange = () => {
+      pushHistory();
+      rgs.center = Math.max(0, Math.min(200, +inp.value || 0));
       renderRingBox(); ringChanged();
     }; });
     $('ringBox').querySelectorAll('[data-rp]').forEach(sel => { sel.onchange = () => {
