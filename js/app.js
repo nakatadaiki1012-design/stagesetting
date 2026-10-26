@@ -42,6 +42,7 @@
       underlay: doc.underlay || null,
       options: Object.assign(defaultOptions(), doc.options ? LEGACY_OPTIONS : {}, doc.options || {}),
       ensemble: doc.ensemble || null,
+      autoKey: doc.autoKey || null, // 自動で並べたときの舞台・編成（並べ直しで、手で動かした所を残すか決める）
       hall: doc.hall || '',
       lighting: doc.lighting || null, // 3D の照明のテスト（ピンスポットなど）
       // 図面の情報欄（会場・日付・版・作成者・メモ）。古い保存データには無いので空で補う
@@ -2393,8 +2394,10 @@
       if (!o || !b) return;
       it.x = b.x + o.x; it.y = b.y + o.y;
       if (o === zero || it.type === 'player') it.rot = b.rot || 0;
+      it.ax = b.ax; it.ay = b.ay; it.ar = b.ar; // 自動の席も、今の並べ方のものに
       if (it.type === 'hina' && o === zero) Object.assign(it, { w: b.w, h: b.h, rot: b.rot || 0 });
     });
+    d.autoKey = autoKeyOf(d, d.ensemble);
     // 席に戻さなかった人：まわりと重ならないように少しずつ離す（席に戻した人は動かさない）
     const loose = players.filter(p => !off.get(p)).concat(d.items.filter(it => it.type === 'player' && !it.auto));
     if (loose.length) { G.fixOverlap(loose, opts().seatR * 2 + 8, snapped); fitInStage(loose); }
@@ -3415,6 +3418,7 @@
     const made = t.make();
     const keep = doc();
     S.doc = normalize({ title: keep.title, subtitle: keep.subtitle, stage: Object.assign({ shape: made.stage.shape || keep.stage.shape }, made.stage), items: made.items, options: keep.options, underlay: keep.underlay, ensemble: made.ensemble || null, info: keep.info, parts: keep.parts, partIdx: keep.partIdx, roster: keep.roster });
+    if (S.doc.ensemble) S.doc.autoKey = autoKeyOf(S.doc, S.doc.ensemble);
     // 舞台奥の通路の幅は、設定した値のまま（ひな形は60cmで作ってあるので、違えば並べ直す）
     if (keep.stage.backAisle != null) {
       S.doc.stage.backAisle = keep.stage.backAisle;
@@ -4682,6 +4686,7 @@
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
         <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列をまとめて選択。右の「選択中」タブの「複製・削除・同じパートを選ぶ」は1つ以上、「位置合わせ」は2つ以上選んだときに出ます。</li>
         <li><b>部品を足す</b>：「部品」で押してから、置きたい場所をタップ。楽器は実寸（cm）です。</li>
+        <li><b>並べ直しても、手で動かした所は残る</b>：パートごとまとめて動かした所（ホルンを右へ、など）や、マリンバと奏者を動かした所は、▲▼で人数を変えて並べ直したあとも同じだけずらします（⚠ が増える所はずらしません）。ホール・編成の種類・並び方を変えたときは、はじめから並べます。</li>
         <li><b>✨ きれいに整える</b>：ざっくり置いたあと押すと、列を自動で見つけて<b>扇形（または横一列）・等間隔・指揮者向き</b>にそろえます。かんたん編成・ひな形で作った図では、ずれた人を<b>自動の並べ方の席</b>へ戻します（パートごと動かした所はその場所のまま形を整え、1m以上動かした人はそのまま）。手で作った図では、いくつかの整え方を試して ⚠ がいちばん少ないものを使います。打楽器・ピアノなど楽器についている人は、楽器のそばのままです。</li>
         <li><b>まとめて作る</b>：「もっと…」→「一括作成」で「8,10,12」のように人数を入れると扇形の席が一気にできます。パート名や名前もまとめて入れられます。</li>
         <li><b>トレース</b>：「もっと…」→「トレース」で、いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
@@ -4850,6 +4855,8 @@
     const lights = {};
     d.items.filter(it => it.type === 'player' && it.light).forEach(it => { lights[it.label] = (lights[it.label] || 0) + 1; });
     const hadAuto = d.items.some(it => it.auto);
+    // 手で動かした所（パートごと・楽器・段）を覚えておき、並べ直したあとも同じだけずらす
+    const memo = autoMemory(d, st);
     const keepTypes = new Set(['text', 'box', 'circle', 'mic', 'amp', 'micTall', 'monitor', 'cable', 'outlet', 'tap', 'stairs', 'door', 'runway', 'mc']);
     d.items = d.items.filter(it => (hadAuto ? !it.auto : keepTypes.has(it.type)));
     // ビッグバンドは指揮者なし（指揮台は置かない）
@@ -4864,6 +4871,8 @@
       if (it.type === 'player' && lights[it.label]) { it.light = true; lights[it.label]--; }
       d.items.push(it);
     });
+    const keptMoves = memo ? applyAutoMemory(d, memo, r.items) : [];
+    d.autoKey = autoKeyOf(d, st);
     S.sel.clear();
     renderAll();
     renderEnsNow();
@@ -4876,13 +4885,68 @@
     if (opts2.quiet) return;
     if (!S.fit.fits) return;
     if (!$('ringBox').hidden) renderRingBox();
-    if (r.offstage && st.percWing) toast(`打楽器（${r.offstage}台）は、下手のそでに置いています`);
-    else if (r.percMoved) toast('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
-    else if (r.slim) toast('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
-    else if (r.lowFallback) toast('上手の外側に場所がないので、低音はそれぞれの列に入れました');
-    else if (r.curveFallback) toast('舞台からはみ出す・床の人とぶつかる段は、弧にせず、まっすぐのままにしました');
-    else if (st.space === 'wide' && r.tune && !r.tune.scaled) toast('舞台がせまいので、「ゆったり」にはできませんでした（ふつうの間隔で並べました）', true);
-    else if (r.tune && r.tune.spacing <= 74 && st.space !== 'tight') toast('舞台がせまいので、となりとの間隔をつめて並べました。窮屈なときは、人数・段数を見直すか、右の「整える」の「↔ 間隔を広げる」を試してください', true);
+    // 手で動かした所を残したときは、ほかのお知らせのうしろにつなげる
+    const km = keptMoves.length ? `手で動かした所（${keptMoves.slice(0, 4).join('・')}${keptMoves.length > 4 ? ' など' : ''}）は、動かした場所のままにしました` : '';
+    const say = (msg, u) => toast(msg + (km ? '。' + km : ''), u || !!km);
+    if (r.offstage && st.percWing) say(`打楽器（${r.offstage}台）は、下手のそでに置いています`);
+    else if (r.percMoved) say('打楽器が入りきらないので、打楽器の場所を「' + $('percPlace').querySelector(`option[value="${r.percMoved}"]`).textContent + '」にして並べました');
+    else if (r.slim) say('奥行が足りないので、ひな壇を 4×6尺1枚分（121cm）に詰めました');
+    else if (r.lowFallback) say('上手の外側に場所がないので、低音はそれぞれの列に入れました');
+    else if (r.curveFallback) say('舞台からはみ出す・床の人とぶつかる段は、弧にせず、まっすぐのままにしました');
+    else if (st.space === 'wide' && r.tune && !r.tune.scaled) say('舞台がせまいので、「ゆったり」にはできませんでした（ふつうの間隔で並べました）', true);
+    else if (r.tune && r.tune.spacing <= 74 && st.space !== 'tight') say('舞台がせまいので、となりとの間隔をつめて並べました。窮屈なときは、人数・段数を見直すか、右の「整える」の「↔ 間隔を広げる」を試してください', true);
+    else if (km) toast(km, true);
+  }
+
+  // ---- 並べ直しても、手で動かした所を残す ----
+  // 舞台・編成の種類・並び方などが同じときだけ（変えたときは、並びが大きく変わるので使わない）
+  function autoKeyOf(d, st) { const g = d.stage; return JSON.stringify([g.w, g.d, g.bw, g.shape, g.sag, st.type, st.layout, !!st.antiphonal, st.percPlace]); }
+  // 物の見分け方：奏者はパート名（打楽器などの奏者は、自分の楽器の種類）、段は何段目か、楽器は種類
+  function memKeyOf(it, items) {
+    // 楽器と奏者のまとまり（打楽器など）は、まとまりごと（楽器の種類で見分ける）
+    if (it.grp) {
+      const inst = [...new Set(items.filter(o => o.grp === it.grp && o.type !== 'player').map(o => o.type))].sort().join('+');
+      if (inst) return 'g:' + inst;
+    }
+    if (it.type === 'player') return 'p:' + it.label;
+    if (it.type === 'hina') return 'h:' + (it.step != null ? it.step : '') + (it.perc ? 'perc' : '') + (SS.hinaLift(it) ? ':L' : '');
+    if (it.type === 'podium' || it.type === 'text') return null;
+    return 't:' + it.type;
+  }
+  // 自動の席（ax・ay）から、パート（種類）ごとに同じ向きに同じくらい（35cm以上）ずれている所＝手で動かした所
+  function autoMemory(d, st) {
+    if (d.autoKey && d.autoKey !== autoKeyOf(d, st)) return null; // 記録がない図（はじめに開いた図など）は、同じとみなす
+    const groups = new Map();
+    d.items.filter(it => it.auto && it.ax != null).forEach(it => {
+      const k = memKeyOf(it, d.items);
+      if (!k) return;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push({ x: it.x - it.ax, y: it.y - it.ay });
+    });
+    const out = new Map();
+    groups.forEach((vs, k) => {
+      const m = { x: G.mean(vs.map(v => v.x)), y: G.mean(vs.map(v => v.y)) }, mm = Math.hypot(m.x, m.y);
+      const spread = G.mean(vs.map(v => Math.hypot(v.x - m.x, v.y - m.y)));
+      if (mm > 35 && spread < Math.max(18, mm * 0.3)) out.set(k, m);
+    });
+    return out.size ? out : null;
+  }
+  // 並べ直した物を、覚えた分だけずらす。⚠ が増えるずらしはやめる。残したパート名を返す
+  function applyAutoMemory(d, memo, items) {
+    const total = () => SS.checks(d).reduce((a, w) => a + (w.spots ? w.spots.length : 1), 0);
+    const byKey = new Map();
+    items.forEach(it => { const k = memKeyOf(it, items); if (k && memo.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(it); } });
+    // 1つずつ：ずらす → 段にきちんと乗せる。⚠ が増える・舞台からはみ出すときは、やめる
+    let c0 = total();
+    [...byKey.keys()].forEach(k => {
+      const m = memo.get(k), g = byKey.get(k), back = g.map(it => ({ it, x: it.x, y: it.y, rot: it.rot }));
+      g.forEach(it => { it.x += m.x; it.y += m.y; });
+      settleOnTiers(g.filter(it => it.type === 'player'));
+      const out = g.some(it => !onExtension(it) && !SS.render.insideStage(d.stage, it, it.type === 'player' ? 26 : 0));
+      const c1 = total();
+      if (out || c1 > c0) { back.forEach(o => { o.it.x = o.x; o.it.y = o.y; o.it.rot = o.rot; }); byKey.delete(k); } else c0 = c1;
+    });
+    return [...new Set([...byKey.keys()].map(k => (k.startsWith('p:') ? k.slice(2) : k.startsWith('h:') ? 'ひな壇' : k.startsWith('g:') ? ((SS.CATALOG[k.slice(2).split('+')[0]] || {}).name || '打楽器') : (SS.CATALOG[k.slice(2)] || {}).name || k.slice(2))))];
   }
 
   const HOLD_DELAY = 380, HOLD_REPEAT = 110;

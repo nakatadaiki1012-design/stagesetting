@@ -1295,7 +1295,7 @@ window.SS = window.SS || {};
     delete slim.underlay;
     // ピンスポットの「当てる人」は部品の番号で覚える（共有リンクでは部品の id を省くため）
     if (slim.lighting && slim.lighting.spots) slim.lighting.spots.forEach(sp => { const i = doc.items.findIndex(it => it.id === sp.target); sp.target = i >= 0 ? '#' + i : ''; });
-    const slimItems = list => (list || []).forEach(it => { it.x = Math.round(it.x); it.y = Math.round(it.y); it.rot = Math.round(it.rot || 0); delete it.id; });
+    const slimItems = list => (list || []).forEach(it => { it.x = Math.round(it.x); it.y = Math.round(it.y); it.rot = Math.round(it.rot || 0); delete it.id; delete it.ax; delete it.ay; delete it.ar; }); // 自動の席（ax・ay・ar）は共有リンクに入れない（短くするため）
     slimItems(slim.items);
     (slim.parts || []).forEach(p => slimItems(p.items)); // 1部・2部…のほかの部
     const bytes = new TextEncoder().encode(JSON.stringify(slim));

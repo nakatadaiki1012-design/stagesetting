@@ -2199,12 +2199,17 @@ window.SS = window.SS || {};
       r.items.forEach(it => mirrorItem(it, W));
       if (r.c) r.c = { x: W - r.c.x, y: r.c.y };
       if (r.percMoved === 'left') r.percMoved = 'right';
-      return r;
+      return stampSeats(r);
     }
     const r = buildInner(st, stage);
     if (r && r.items) { A.groupStations(r.items); keepPercFromStrings(r, stage); A.percStands(r.items); }
-    return r;
+    return stampSeats(r);
   };
+  // 自動の席（ax・ay・ar）を覚えさせる：あとで、手で動かした所（パートごと動かした など）を見分けるため
+  function stampSeats(r) {
+    if (r && r.items) r.items.forEach(it => { it.ax = Math.round(it.x); it.ay = Math.round(it.y); it.ar = Math.round(it.rot || 0); });
+    return r;
+  }
   // 打楽器（床に置く物）を、弦楽器のすぐ横（2m以内）には置かない。舞台がせまくて入りきらないときも。
   // まとまり（楽器と奏者）ごとに、いちばん近い空いている床（ひな壇にかからず、弦から2m以上、奥の通路の外）へ動かす。
   // 舞台の上にどうしても場所がないときは、下手のそでに置いて offstage の印を付ける（「入りきりません」の案内に出す）
