@@ -2404,6 +2404,7 @@
     // パートごと動かした人・席に戻さなかった人：段のふちにかかっていれば、段の上へきちんと（または床へ）
     const shifted = players.filter(p => off.get(p) && off.get(p) !== zero);
     settleOnTiers(shifted.concat(loose));
+    nudgePlayers(loose.filter(p => !onExtension(p)));
     return { snapped: snapped.length, kept: loose.filter(p => p.auto).length, groupMoved };
   }
 
@@ -2456,10 +2457,13 @@
 
   // 楽器についている人が、自分の楽器やまわりと重なっているとき：その人だけを少しずつ（6〜30cm）動かして、⚠ が減る所へ
   function nudgeAttached() {
+    nudgePlayers(doc().items.filter(p => p.type === 'player' && attachedToInstrument(p) && !onExtension(p)));
+  }
+  function nudgePlayers(list) {
     const d = doc();
     const ovIn = p => SS.checks(d).filter(w => w.kind === 'overlap').reduce((a, w) => a + w.spots.filter(b => p.x > b.x0 - 100 && p.x < b.x1 + 100 && p.y > b.y0 - 100 && p.y < b.y1 + 100).length, 0);
     const total = () => SS.checks(d).reduce((a, w) => a + (w.spots ? w.spots.length : 1), 0);
-    d.items.filter(p => p.type === 'player' && attachedToInstrument(p) && !onExtension(p)).forEach(p => {
+    list.forEach(p => {
       if (!ovIn(p)) return;
       const c0 = total(), r0 = p.rot || 0;
       // まず向き（譜面台が楽器のすき間からずれていることが多い）
