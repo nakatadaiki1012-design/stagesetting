@@ -4937,14 +4937,23 @@
     const byKey = new Map();
     items.forEach(it => { const k = memKeyOf(it, items); if (k && memo.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(it); } });
     // 1つずつ：ずらす → 段にきちんと乗せる。⚠ が増える・舞台からはみ出すときは、やめる
+    // 同じだけずれている所（全体をまとめて動かした など）は、まとめて1回で試す（だめなら1つずつ）
     let c0 = total();
-    [...byKey.keys()].forEach(k => {
-      const m = memo.get(k), g = byKey.get(k), back = g.map(it => ({ it, x: it.x, y: it.y, rot: it.rot }));
-      g.forEach(it => { it.x += m.x; it.y += m.y; });
-      settleOnTiers(g.filter(it => it.type === 'player'));
-      const out = g.some(it => !onExtension(it) && !SS.render.insideStage(d.stage, it, it.type === 'player' ? 26 : 0));
+    const tryKeys = ks => {
+      const g = ks.flatMap(k => byKey.get(k).map(it => ({ it, m: memo.get(k) }))), back = g.map(o => ({ it: o.it, x: o.it.x, y: o.it.y, rot: o.it.rot }));
+      g.forEach(o => { o.it.x += o.m.x; o.it.y += o.m.y; });
+      settleOnTiers(g.map(o => o.it).filter(it => it.type === 'player'));
+      const out = g.some(o => !onExtension(o.it) && !SS.render.insideStage(d.stage, o.it, o.it.type === 'player' ? 26 : 0));
       const c1 = total();
-      if (out || c1 > c0) { back.forEach(o => { o.it.x = o.x; o.it.y = o.y; o.it.rot = o.rot; }); byKey.delete(k); } else c0 = c1;
+      if (out || c1 > c0) { back.forEach(o => { o.it.x = o.x; o.it.y = o.y; o.it.rot = o.rot; }); return false; }
+      c0 = c1;
+      return true;
+    };
+    const clusters = [];
+    [...byKey.keys()].forEach(k => { const m = memo.get(k), cl = clusters.find(c => Math.hypot(c.m.x - m.x, c.m.y - m.y) < 10); if (cl) cl.ks.push(k); else clusters.push({ m, ks: [k] }); });
+    clusters.forEach(cl => {
+      if (cl.ks.length > 1 && tryKeys(cl.ks)) return;
+      cl.ks.forEach(k => { if (!tryKeys([k])) byKey.delete(k); });
     });
     return [...new Set([...byKey.keys()].map(k => (k.startsWith('p:') ? k.slice(2) : k.startsWith('h:') ? 'ひな壇' : k.startsWith('g:') ? ((SS.CATALOG[k.slice(2).split('+')[0]] || {}).name || '打楽器') : (SS.CATALOG[k.slice(2)] || {}).name || k.slice(2))))];
   }
