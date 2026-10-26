@@ -58,9 +58,20 @@ window.SS = window.SS || {};
     return inside;
   };
 
+  // 扇の横ののび（自動の並べ方は、広い舞台では横長の扇にする）：列がいちばんきれいに分かれる値（1〜1.6）
+  const arcErrOf = (items, c) => { const ar = G.arcRows(items, c); return mean(ar.map(r => std(r.map(it => G.polar(it, c).r)))) + ar.length * 2; };
+  const squash = (items, c, ex) => items.map(it => ({ x: c.x + (it.x - c.x) / ex, y: it.y, it }));
+  G.fitEx = function (items, c) {
+    if (items.length < 6) return 1;
+    let best = 1, bestE = arcErrOf(items, c);
+    for (let ex = 1.1; ex <= 1.61; ex += 0.1) { const e = arcErrOf(squash(items, c, ex), c); if (e < bestE * 0.85) { bestE = e; best = ex; } }
+    return best;
+  };
   // 扇形っぽいか・直線っぽいか判定
   G.guessShape = function (items, c) {
     if (items.length < 3) return 'arc';
+    const ex = G.fitEx(items, c);
+    if (ex > 1) items = squash(items, c, ex);
     const ar = G.arcRows(items, c);
     const lr = G.lineRows(items);
     const arcErr = mean(ar.map(r => std(r.map(it => G.polar(it, c).r)))) + ar.length * 2;
@@ -139,6 +150,14 @@ window.SS = window.SS || {};
   // curve：弧のゆるさ（1＝扇形、0＝まっすぐ）。ゆるくするときは、各列の人がいる辺りを動かさずに半径を大きくする
   G.tidyArc = function (items, c, opt) {
     opt = Object.assign({ symmetric: true, evenRows: true, minGap: 62, face: true, curve: 1 }, opt);
+    // 横長の扇：横を縮めて丸い扇としてそろえ、もとの横長にもどす（向きは、もどしてから指揮者へ）
+    const ex = opt.ex || (opt.curve >= 0.999 ? G.fitEx(items, c) : 1);
+    if (ex > 1) {
+      const pts = squash(items, c, ex);
+      const n = G.tidyArc(pts, c, Object.assign({}, opt, { ex: 1, face: false, minGap: opt.minGap }));
+      pts.forEach(q => { q.it.x = c.x + (q.x - c.x) * ex; q.it.y = q.y; if (opt.face) q.it.rot = G.faceAngle(q.it, c); });
+      return n;
+    }
     const d1 = G.arcShift(opt.curve);
     const rows = G.arcRows(items, c);
     // それぞれの列の半径 R と、弧に沿った位置 s
@@ -159,13 +178,22 @@ window.SS = window.SS || {};
       const yRef = c.y - R * Math.cos(sRef / R);
       const cy = d1 > 0 ? yRef + R1 * Math.cos(sRef / R1) : c.y;
       const pol = x.row.map((it, i) => ({ it, s: x.s[i] })).sort((a, b) => a.s - b.s);
-      const ss = evenOut(pol.map(p => p.s), 0, Object.assign({}, opt, { minGapV: opt.minGap }));
-      pol.forEach((p, i) => {
-        const th = ss[i] / R1;
+      // 2人で1本の譜面台の組（同じ desk）は、ひとまとまりで等間隔に（2人のあいだは今のまま、55〜80cm）
+      const deskOf = p => (p.it.it || p.it).desk;
+      const units = [];
+      for (let i = 0; i < pol.length; i++) {
+        const a = pol[i], b = pol[i + 1];
+        if (b && deskOf(a) && deskOf(a) === deskOf(b)) { units.push({ ps: [a, b], s: (a.s + b.s) / 2, h: Math.max(27, Math.min(40, (b.s - a.s) / 2)) }); i++; }
+        else units.push({ ps: [a], s: a.s, h: 0 });
+      }
+      const size = mean(units.map(u => u.ps.length));
+      const ss = evenOut(units.map(u => u.s), 0, Object.assign({}, opt, { minGapV: opt.minGap * size }));
+      units.forEach((u, i) => u.ps.forEach((p, j) => {
+        const th = (ss[i] + (u.ps.length === 2 ? (j ? u.h : -u.h) : 0)) / R1;
         p.it.x = c.x + R1 * Math.sin(th);
         p.it.y = cy - R1 * Math.cos(th);
-        if (opt.face) p.it.rot = G.faceAngle(p.it, c);
-      });
+        if (opt.face) p.it.rot = G.faceAngle(units.length && u.ps.length === 2 ? { x: c.x + R1 * Math.sin(ss[i] / R1), y: cy - R1 * Math.cos(ss[i] / R1) } : p.it, c);
+      }));
     });
     return rows.length;
   };
@@ -370,9 +398,18 @@ window.SS = window.SS || {};
           }
         }
       }
+      // 動かさない人（fixed）と近すぎる人は、その人だけを離す
+      items.forEach(a => fixed.forEach(b => {
+        if (a === b) return;
+        let dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy);
+        if (d >= minD) return;
+        if (d < 0.01) { dx = 0; dy = -1; d = 1; }
+        const push = minD - d + 0.2;
+        a.x += (dx / d) * push; a.y += (dy / d) * push;
+        moved = true;
+      }));
       if (!moved) break;
     }
-    void fixed;
   };
 
   // 扇形・直線の座席を作る
