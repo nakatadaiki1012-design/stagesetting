@@ -302,16 +302,17 @@ window.SS = window.SS || {};
     cyl(g, 0.05, 0.055, 0.1, skin, 0, hipY + torsoH + 0.05, -0.01);
     const neckY = hipY + torsoH;
     const headY = neckY + 0.17;
+    // 頭：幅約16cm・高さ約23cm・奥行約20cm（大人の頭の大きさ）
     const hd = sph(g, 0.1, skin, 0, headY, 0.005);
-    hd.scale.set(0.92, 1.08, 1);
+    hd.scale.set(0.8, 1.12, 0.98);
     // 耳・鼻
-    [-1, 1].forEach(sx => { const e = sph(g, 0.024, skin, sx * 0.092, headY - 0.005, -0.005); e.scale.set(0.5, 1, 0.8); head.push(e); });
+    [-1, 1].forEach(sx => { const e = sph(g, 0.022, skin, sx * 0.081, headY - 0.005, -0.005); e.scale.set(0.5, 1, 0.8); head.push(e); });
     head.push(sph(g, 0.016, skin, 0, headY - 0.015, 0.1));
     head.push(hd);
     const hair = sph(g, 0.108, hairC, 0, headY + 0.035, -0.022, { roughness: 0.9 });
-    hair.scale.set(0.98, 0.9, 1.02);
+    hair.scale.set(0.86, 0.92, 1.0);
     head.push(hair);
-    if (longHair) head.push(box(g, 0.2, 0.22, 0.08, hairC, 0, headY - 0.07, -0.08, { roughness: 0.9 }));
+    if (longHair) head.push(box(g, 0.175, 0.22, 0.08, hairC, 0, headY - 0.07, -0.08, { roughness: 0.9 }));
     const shL = [0.19, neckY - 0.06, -0.02], shR = [-0.19, neckY - 0.06, -0.02];
     const my = headY - 0.05, mouth = [0, my, 0.1];
     // 楽器と手の位置
@@ -844,10 +845,10 @@ window.SS = window.SS || {};
     scene.fog = new T.Fog('#0d0e11', 35, 80);
     scene.environment = makeEnvironment();
     baseLights = [];
-    const hemi = new T.HemisphereLight('#fff1dc', '#2a2420', 0.35);
+    const hemi = new T.HemisphereLight('#fff1dc', '#2a2420', 0.26); // まわりからの柔らかい光（弱めにして、影をはっきり）
     scene.add(hemi); baseLights.push(hemi);
     // 舞台照明（前明かりと天井の明かり）
-    const key = new T.DirectionalLight('#fff0d8', 0.75);
+    const key = new T.DirectionalLight('#fff0d8', 0.95);
     key.position.set(W * 0.5, 16, D + 10);
     key.target.position.set(W / 2, 0, D * 0.45);
     key.castShadow = true;
@@ -864,7 +865,7 @@ window.SS = window.SS || {};
       scene.add(sp); scene.add(sp.target); baseLights.push(sp);
     });
     for (let i = 0; i < 3; i++) {
-      const pl = new T.PointLight('#fff2dd', 0.35, 18, 1.6);
+      const pl = new T.PointLight('#fff2dd', 0.28, 18, 1.6);
       pl.position.set(W * (0.25 + i * 0.25), 6.5, D * 0.45);
       scene.add(pl); baseLights.push(pl);
     }
@@ -978,14 +979,47 @@ window.SS = window.SS || {};
         seatPos.push([x, y, z]);
       }
     }
-    const cushion = new T.InstancedMesh(new T.BoxGeometry(0.48, 0.12, 0.45), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
-    const back = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.6, 0.08), mat('#7a1a26', { roughness: 0.9 }), seatPos.length);
-    const m4 = new T.Matrix4();
-    seatPos.forEach((p, i) => {
-      m4.makeTranslation(p[0], p[1] + 0.45, p[2]); cushion.setMatrixAt(i, m4);
-      m4.makeTranslation(p[0], p[1] + 0.75, p[2] + 0.24); back.setMatrixAt(i, m4);
+    // ホールのいす：布張りの背もたれ（少しうしろへ傾く・上が丸い）、はね上がった座面（空席）、木のひじ掛け、脚
+    const fabric = mat('#7a1a26', { roughness: 0.95 }), wood = mat('#4a2e1c', { roughness: 0.45 });
+    const backGeo = new T.CylinderGeometry(0.235, 0.235, 0.09, 20, 1, false, 0, Math.PI); // 上の丸み（半円）
+    backGeo.rotateX(Math.PI / 2); backGeo.rotateZ(Math.PI / 2);
+    const parts = [
+      { geo: new T.BoxGeometry(0.47, 0.5, 0.09), m: fabric, at: [0, 0.68, 0.24], rx: -0.12 },   // 背もたれ
+      { geo: backGeo, m: fabric, at: [0, 0.93, 0.27], rx: -0.12, sy: 0.35 },                    // 背もたれの上の丸み
+      { geo: new T.BoxGeometry(0.44, 0.42, 0.08), m: fabric, at: [0, 0.6, 0.08], rx: -0.15 },  // はね上がった座面
+      { geo: new T.BoxGeometry(0.06, 0.06, 0.42), m: wood, at: [0.275, 0.63, 0.06] },            // ひじ掛け
+      { geo: new T.BoxGeometry(0.05, 0.6, 0.06), m: mat('#1c1c1f', { roughness: 0.6 }), at: [0.275, 0.3, 0.2] }, // 脚
+    ];
+    parts.forEach(pt => {
+      const im = new T.InstancedMesh(pt.geo, pt.m, seatPos.length);
+      const q = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), pt.rx || 0), sc = new T.Vector3(1, pt.sy || 1, 1);
+      const m4 = new T.Matrix4();
+      seatPos.forEach((p, i) => { m4.compose(new T.Vector3(p[0] + pt.at[0], p[1] + pt.at[1], p[2] + pt.at[2]), q, sc); im.setMatrixAt(i, m4); });
+      im.castShadow = false; im.receiveShadow = true;
+      scene.add(im);
     });
-    scene.add(cushion); scene.add(back);
+    // 客席の床は、列ごとに段々に上がる（いすが浮かないように）
+    for (let row = 1; row < 20; row++) {
+      const z = D + 2.8 + row * 0.95, top = -1.0 + row * 0.14;
+      const step = new T.Mesh(new T.BoxGeometry(W + 4.6, top + 1.0, 0.95), mat('#3a2426', { roughness: 0.95 }));
+      step.position.set(W / 2, (top - 1.0) / 2, z); step.receiveShadow = true; scene.add(step);
+    }
+    // 2階席（客席のうしろ）：手すり・床・いす。うしろの壁
+    {
+      const z0 = D + 2.8 + AUD.balconyRow * 0.95, fy = AUD.balconyFloor;
+      box(scene, W + 6, 0.35, 8, '#2a1d17', W / 2, fy - 0.18, z0 + 4);
+      box(scene, W + 6, 0.8, 0.14, '#5a3a24', W / 2, fy + 0.4, z0 + 0.1, { roughness: 0.4 }); // 手すり（高さ80cm）
+      const lamp = new T.Mesh(new T.BoxGeometry(W + 6, 0.04, 0.04), new T.MeshBasicMaterial({ color: '#ffcf8a' }));
+      lamp.position.set(W / 2, fy - 0.38, z0 + 0.05); scene.add(lamp);
+      const bs = [];
+      for (let r = 0; r < 6; r++) for (let x = -2; x < W + 2; x += 0.55) bs.push([x, fy + r * 0.3, z0 + 1.2 + r * 0.95]);
+      const bseat = new T.InstancedMesh(new T.BoxGeometry(0.5, 0.8, 0.5), mat('#7a1a26', { roughness: 0.9 }), bs.length);
+      const mb = new T.Matrix4();
+      bs.forEach((q, i) => { mb.makeTranslation(q[0], q[1] + 0.4, q[2]); bseat.setMatrixAt(i, mb); });
+      scene.add(bseat);
+      for (let r = 1; r < 6; r++) box(scene, W + 6, r * 0.3, 0.95, '#2a1d17', W / 2, fy + (r * 0.3) / 2, z0 + 1.2 + r * 0.95);
+      box(scene, W + 8, 14, 0.3, '#2b1f19', W / 2, 5, z0 + 7.5, { roughness: 0.9 });
+    }
     // 客席の横の壁（木の縦格子）とバルコニー席
     const hallTex = panelTexture('#8a5a32', true);
     [-3, W + 3].forEach((x, si) => {
@@ -1069,6 +1103,11 @@ window.SS = window.SS || {};
   }
 
   // ---------------------------------------------------------------- カメラ
+  // 客席：列の間隔 0.95m、1列ごとに床が14cm上がる（1列目の床は舞台より1m低い）。2階席は20列目のうしろの上
+  const AUD = {
+    balconyRow: 21, balconyFloor: 5.2,
+    seats: { front: { row: 3, name: '1階前方（4列目）' }, mid: { row: 11, name: '1階中央（12列目）' }, rear: { row: 18, name: '1階後方（19列目）' }, bal: { row: 21, row2: 0, bal: true, name: '2階正面（最前列）' } },
+  };
   function setCam(m, arg) {
     if (hiddenHead) { hiddenHead.forEach(h => { h.visible = true; }); hiddenHead = null; }
     mode = m;
@@ -1077,7 +1116,18 @@ window.SS = window.SS || {};
     const c = SS.app.conductor();
     const target = new T.Vector3(stageW / 2, 0.8, stageD * 0.5);
     // 客席から：縦長の画面（スマホ）では少し引いて、舞台の左右が切れないように
-    if (m === 'audience') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(12, stageW * 0.9) * Math.min(1.45, Math.max(1, 1.3 / (camera.aspect || 1.5))), phi: 1.3, theta: 0 }); $('v3title').textContent = '客席から'; }
+    if (m === 'audience' && arg && AUD.seats[arg]) {
+      // その客席に座った目の高さから、舞台の真ん中を見る（ふつうの人の目に近い画角）
+      const q = AUD.seats[arg], z = stageD + 2.8 + q.row * 0.95;
+      const y = q.bal ? AUD.balconyFloor + 0.3 * q.row2 + 1.15 : -1.0 + q.row * 0.14 + 1.15;
+      mode = 'fp';
+      fp.pos = new T.Vector3(stageW / 2 + 0.9, y, q.bal ? stageD + 2.8 + AUD.balconyRow * 0.95 + 1.2 + q.row2 * 0.95 : z);
+      const tx = stageW / 2, ty = 0.9, tz = stageD * 0.5;
+      fp.yaw = Math.atan2(tx - fp.pos.x, tz - fp.pos.z);
+      fp.pitch = Math.atan2(ty - fp.pos.y, Math.hypot(tx - fp.pos.x, tz - fp.pos.z));
+      fp.fov = 45;
+      $('v3title').textContent = q.name + 'から（座った目の高さ）';
+    } else if (m === 'audience') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(12, stageW * 0.9) * Math.min(1.45, Math.max(1, 1.3 / (camera.aspect || 1.5))), phi: 1.3, theta: 0 }); $('v3title').textContent = '客席から'; }
     else if (m === 'top') { mode = 'orbit'; Object.assign(orbit, { target, r: Math.max(stageW, stageD) * 1.25, phi: 0.02, theta: 0 }); $('v3title').textContent = '真上から'; }
     else if (m === 'orbit') { Object.assign(orbit, { target, r: Math.max(12, stageW * 0.85), phi: 1.05, theta: 0.6 }); $('v3title').textContent = '自由に回す'; }
     else if (m === 'conductor') {
@@ -1430,7 +1480,8 @@ window.SS = window.SS || {};
       cv.addEventListener('pointercancel', onUp);
       cv.addEventListener('wheel', e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.001)); }, { passive: false });
       window.addEventListener('resize', resize);
-      document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => setCam(b.getAttribute('data-cam')); });
+      document.querySelectorAll('.v3-bar [data-cam]').forEach(b => { b.onclick = () => { if (b.getAttribute('data-cam') === 'audience') return setCam('audience', $('v3seat').value); $('v3seat').value = ''; setCam(b.getAttribute('data-cam')); }; });
+      $('v3seat').onchange = e => setCam('audience', e.target.value);
       $('v3clothes').onchange = e => { V.clothes = e.target.checked ? 'part' : 'black'; const id = hiddenHead && hiddenHead[0] && hiddenHead[0].userData.playerId; disposeScene(); buildScene(); rig = null; applyLighting(); if (id) setCam('seat', id); };
       $('v3labelSize').onchange = e => {
         V.labelSize = e.target.value;
