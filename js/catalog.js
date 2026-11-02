@@ -640,5 +640,10 @@ window.SS = window.SS || {};
   // 平台（1枚ずつ置くもの）。種類を足したら、ここを使うところはみな同じように扱う
   SS.RISERS = Object.keys(SS.CATALOG).filter(k => SS.CATALOG[k].shape === 'riser' && !SS.CATALOG[k].as);
   SS.isRiser = it => !!it && SS.RISERS.includes(it.type);
+  // 大きさが決まっている規格品（平台・いす・譜面台・ティンパニ・ピアノなど）：大きさは変えられない（実物と違う大きさにしない）
+  SS.FIXED_SIZE = new Set([...SS.RISERS, 'chair', 'stand', 'timp32', 'timp29', 'timp26', 'timp23', 'sd', 'cym', 'piano', 'pianoFull', 'marimba', 'marimba43', 'vib', 'glock']);
+  SS.fixedSize = it => !!it && SS.FIXED_SIZE.has(it.type);
+  // 規格の大きさと違うか（古い保存データなど）
+  SS.offSize = it => { const c = SS.CATALOG[it.type]; return SS.fixedSize(it) && c && ((it.w && Math.abs(it.w - c.w) > 0.5) || (it.h && Math.abs(it.h - c.h) > 0.5)); };
   SS.isPlatform = it => !!it && (it.type === 'hina' || SS.isRiser(it));
 })(window.SS);

@@ -248,6 +248,9 @@ window.SS = window.SS || {};
     // ---- 人や物どうしの重なり（椅子・譜面台・楽器）
     overlaps(doc, items, bx, hno, out);
 
+    // ---- 物理的にありえない置き方
+    physical(doc, items, bx, hno, fg, out);
+
     // ---- ホールの設備との重なり
     const hitList = test => items.filter(it => test(bx.get(it))); // 段・奏者・楽器・上がり段など
     if (fg.shell) {
@@ -368,6 +371,72 @@ window.SS = window.SS || {};
       else if (sh.kind === 'stand') { const t = tierOf(sh.it.x, sh.it.y); if (t && tierOf(sh.x, sh.y) !== t && !(sh.it2 && tierOf(sh.it2.x, sh.it2.y) !== t)) edge.push(sh); }
     });
     if (edge.length) out.push({ kind: 'tieredge', msg: `ひな壇の縁にかかっています（${edge.length}か所：${names(edge.map(s => s.it), hno)}${edge.some(s => s.kind === 'stand') ? 'の椅子・譜面台' : ''}）。段の上か床に、きちんと置いてください（「✨きれいに整える」でも直せます）`, spots: edge.map(s => ({ x0: s.x - s.r - 6, x1: s.x + s.r + 6, y0: s.y - s.r - 6, y1: s.y + s.r + 6 })) });
+  }
+
+  // 台（ひな壇・平台）の上か。m：ふちの余裕（＋で外まで、−で内側だけ）
+  function platContains(it, x, y, m) {
+    if (it.type === 'hina') return SS.hinaContains(it, x, y, m);
+    const s = SS.itemSize(it, {}), a = -((it.rot || 0) * Math.PI) / 180, dx = x - it.x, dy = y - it.y;
+    const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+    return Math.abs(lx) <= s.w / 2 + (m || 0) && Math.abs(ly) <= s.h / 2 + (m || 0);
+  }
+  // 台の中の点（外枠の中を細かく見て、台の上にある点）
+  function platSamples(it, b) {
+    const out = [];
+    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 6; j++) {
+      const x = b.x0 + ((b.x1 - b.x0) * i) / 12, y = b.y0 + ((b.y1 - b.y0) * j) / 6;
+      if (platContains(it, x, y, -6)) out.push({ x, y });
+    }
+    return out;
+  }
+  // 物の形の点（いすは実際の形、ほかは外枠の角と辺の真ん中）
+  function shapePts(it, b) {
+    if (it.type === 'player') return SS.chairCorners(it);
+    const xm = (b.x0 + b.x1) / 2, ym = (b.y0 + b.y1) / 2;
+    return [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1], [xm, b.y0], [xm, b.y1], [b.x0, ym], [b.x1, ym]].map(([x, y]) => ({ x, y }));
+  }
+  const AUDIO_FLOOR = new Set(['mic', 'micTall', 'monitor', 'cable', 'outlet', 'tap']);
+  function physical(doc, items, bx, hno, fg, out) {
+    const st = doc.stage;
+    const onExt = q => (fg.pit && inBox(q, fg.pit)) || (fg.hanamichi && inBox(q, fg.hanamichi)) || (SS.onRunway && SS.onRunway(doc.items, q));
+    // 1) 舞台のふちにまたがっている（一部が床の外。床のない所には置けない）
+    //    まるごと舞台の外（そで・客席）に置いた物は、わざと置いたものとして数えない
+    const off = items.filter(it => {
+      if (AUDIO_FLOOR.has(it.type) || it.offstage || (SS.hinaLift && SS.hinaLift(it))) return false;
+      const pts = shapePts(it, bx.get(it));
+      if (pts.some(onExt)) return false;
+      return pts.some(q => R().insideStage(st, q, 6)) && pts.some(q => !R().insideStage(st, q, -8));
+    });
+    if (off.length) out.push({ kind: 'offedge', msg: `舞台のふちにかかっていて、一部が床の外に出ています（床のない所には置けません）：${names(off, hno)}`, spots: off.map(it => bx.get(it)) });
+    // 2) 台（ひな壇・平台）どうしが重なっている（台は同じ場所に2つ置けない。台の上にまるごと乗せた台はよい）
+    const plats = items.filter(it => PLATFORM.has(it.type) && !(SS.hinaLift && SS.hinaLift(it)));
+    const smp = new Map(plats.map(it => [it, platSamples(it, bx.get(it))]));
+    const clash = [], cspots = [];
+    for (let i = 0; i < plats.length; i++) for (let j = i + 1; j < plats.length; j++) {
+      const a = plats[i], b = plats[j], ba = bx.get(a), bb = bx.get(b);
+      if (!overlap(ba, bb, 6)) continue;
+      const ai = smp.get(a).filter(q => platContains(b, q.x, q.y, -6)), bi = smp.get(b).filter(q => platContains(a, q.x, q.y, -6));
+      if (!ai.length && !bi.length) continue;
+      if ((smp.get(a).length && ai.length === smp.get(a).length) || (smp.get(b).length && bi.length === smp.get(b).length)) continue; // まるごと上に乗せてある
+      clash.push(a, b);
+      cspots.push({ x0: Math.max(ba.x0, bb.x0), x1: Math.min(ba.x1, bb.x1), y0: Math.max(ba.y0, bb.y0), y1: Math.min(ba.y1, bb.y1) });
+    }
+    if (clash.length) out.push({ kind: 'platform', msg: `ひな壇・平台どうしが重なっています（${cspots.length}か所：${names(clash, hno)}）。台は同じ場所に2つ置けません。くっつけて並べてください`, spots: cspots });
+    // 3) 段と段（台と台）のあいだのすき間：3〜40cm は足がはまる・いすの脚が落ちる（くっつけるか、45cm以上あけて通路に）
+    const gaps = [], gspots = [];
+    const straight = it => !(it.type === 'hina' && SS.hinaArc && SS.hinaArc(it)) && Math.abs(((((it.rot || 0) % 90) + 90) % 90)) < 1;
+    for (let i = 0; i < plats.length; i++) for (let j = i + 1; j < plats.length; j++) {
+      const a = plats[i], b = plats[j];
+      if (!straight(a) || !straight(b)) continue;
+      const A = bx.get(a), B = bx.get(b);
+      const gx = Math.max(B.x0 - A.x1, A.x0 - B.x1), gy = Math.max(B.y0 - A.y1, A.y0 - B.y1);
+      const ox = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), oy = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0);
+      const g = gx > 3 && gx <= 40 && oy >= 45 ? gx : gy > 3 && gy <= 40 && ox >= 45 ? gy : 0;
+      if (!g) continue;
+      gaps.push(a, b);
+      gspots.push(gx > 3 && gx <= 40 && oy >= 45 ? { x0: Math.min(A.x1, B.x1) - 6, x1: Math.max(A.x0, B.x0) + 6, y0: Math.max(A.y0, B.y0), y1: Math.min(A.y1, B.y1) } : { x0: Math.max(A.x0, B.x0), x1: Math.min(A.x1, B.x1), y0: Math.min(A.y1, B.y1) - 6, y1: Math.max(A.y0, B.y0) + 6 });
+    }
+    if (gaps.length) out.push({ kind: 'gap', msg: `段と段のあいだに、足やいすの脚が落ちるすき間（3〜40cm）があります（${gspots.length}か所：${names(gaps, hno)}）。くっつけるか、45cm以上あけてください`, spots: gspots });
   }
 
   // 段の4つの辺のどこかに、幅 PATH_W・奥行 PATH_W の空いた床（または同じ高さの段）があるか

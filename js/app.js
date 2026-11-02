@@ -1117,6 +1117,32 @@
           unitOf(it).forEach(o => { if (!moved.has(o)) { o.y -= need; moved.add(o); } });
         });
       });
+      // 台（ひな壇・平台）どうしの重なり・あいだのすき間：小さいほうの台を、上の人・物ごと動かして、ぴったりくっつける
+      if (has('platform') || has('gap')) {
+        const ps = () => d.items.filter(it => PLAT.has(it.type) && !SS.hinaLift(it) && !(it.type === 'hina' && SS.hinaArc(it)) && !(((it.rot || 0) % 90 + 90) % 90));
+        const area = it => { const b = SS.itemAABB(it, {}); return (b.x1 - b.x0) * (b.y1 - b.y0); };
+        for (let i = 0; i < 12; i++) {
+          const list = ps();
+          let did = false;
+          for (let a = 0; a < list.length && !did; a++) for (let b = a + 1; b < list.length && !did; b++) {
+            const A = SS.itemAABB(list[a], {}), B = SS.itemAABB(list[b], {});
+            const gx = Math.max(B.x0 - A.x1, A.x0 - B.x1), gy = Math.max(B.y0 - A.y1, A.y0 - B.y1);
+            if (gx > 40 || gy > 40 || (gx <= 3 && gx >= -1 && gy <= 0) || (gy <= 3 && gy >= -1 && gx <= 0) || (gx > 3 && gy > 3)) continue;
+            const [big, small] = area(list[a]) >= area(list[b]) ? [list[a], list[b]] : [list[b], list[a]];
+            const P = SS.itemAABB(big, {}), Q = SS.itemAABB(small, {});
+            // 小さい台を動かす向き：右・左・前・後ろのうち、動かす量がいちばん少ないもの
+            const moves = [[P.x1 - Q.x0, 0], [P.x0 - Q.x1, 0], [0, P.y1 - Q.y0], [0, P.y0 - Q.y1]].sort((u, v) => Math.hypot(...u) - Math.hypot(...v));
+            for (const [dx, dy] of moves) {
+              if (Math.hypot(dx, dy) > 120) break;
+              const c0 = count(), u = unitOf(small);
+              u.forEach(o => { o.x += dx; o.y += dy; });
+              if (count() < c0) { did = true; break; }
+              u.forEach(o => { o.x -= dx; o.y -= dy; });
+            }
+          }
+          if (!did) break;
+        }
+      }
       // ひな壇の縁・舞台からのはみ出し・段が通路にかかる：✨きれいに整えると同じ
       if (has('tieredge') || has('aisle') || has('shell')) attempt(() => tidyAuto(undefined, true));
       // 重なり：奏者を少しずつ離す。打楽器の楽器が重なるときは、打楽器を並べ直す
@@ -1275,7 +1301,7 @@
       s += `<line x1="0" y1="${-sz.h / 2 - 4}" x2="0" y2="${-back}" stroke="#2f6fde" stroke-width="${2 / k}"/>`;
       s += `<circle data-handle="rotate" cx="0" cy="${-back}" r="${hr * 1.3}" fill="#fff" stroke="#2f6fde" stroke-width="${2.5 / k}" style="cursor:grab"/>`;
       s += `<text x="0" y="${-back}" dy="0.35em" text-anchor="middle" font-size="${12 / k}" fill="#2f6fde" pointer-events="none">↻</text>`;
-      if (it.type !== 'player' && !(SS.hinaShaped && SS.hinaShaped(it))) {
+      if (it.type !== 'player' && !(SS.hinaShaped && SS.hinaShaped(it)) && !SS.fixedSize(it)) {
         s += `<rect data-handle="resize" x="${sz.w / 2 + 6 - hr}" y="${sz.h / 2 + 6 - hr}" width="${hr * 2}" height="${hr * 2}" fill="#2f6fde" stroke="#fff" stroke-width="${1.5 / k}" style="cursor:nwse-resize"/>`;
       }
       s += '</g>';
@@ -1672,12 +1698,7 @@
         const ly = -vx * Math.sin(a) + vy * Math.cos(a);
         it.w = Math.max(10, Math.round((Math.abs(lx) * 2 - 12) / 5) * 5);
         it.h = Math.max(10, Math.round((Math.abs(ly) * 2 - 12) / 5) * 5);
-        if (it.type === 'hina') {
-          // ひな壇は平台の枚数単位で大きさが変わる
-          const pn = SS.panelSize(it);
-          it.w = Math.max(1, Math.round(it.w / pn.w)) * pn.w;
-          it.h = Math.max(1, Math.round(it.h / pn.d)) * pn.d;
-        }
+        if (it.type === 'hina') snapHinaSize(it); // ひな壇は平台の枚数単位で大きさが変わる
         render();
         renderProps(true);
         break;
@@ -1714,6 +1735,74 @@
     }
   });
 
+  /**
+   * 動かして離したとき：動かした物のまわりだけで ⚠（重なり・床の外・台の重なり・段のすき間）を数え、動かす前より増えていたら、
+   * 6cm〜80cm の範囲で、増えない（いちばん近い）所へずらす。ずらした距離（cm）を返す（ずらさなければ 0）
+   */
+  const PHYS = new Set(['overlap', 'offedge', 'platform', 'gap']);
+  function placeNicely(orig) {
+    const d = doc(), moved = [...orig.keys()].map(byId).filter(Boolean);
+    if (!moved.length || moved.length > 24 || moved.some(onExtension)) return 0;
+    const box0 = moved.map(it => SS.itemAABB(it, {})), M = 420;
+    const near = b => box0.some(a => b.x1 > a.x0 - M && b.x0 < a.x1 + M && b.y1 > a.y0 - M && b.y0 < a.y1 + M);
+    // まわりの物だけで数える（速くするため）。元の位置も入れて数えられるように、まわりは広めに
+    const ob = [...orig.values()].map(o => ({ x0: o.x - 1, x1: o.x + 1, y0: o.y - 1, y1: o.y + 1 }));
+    const nearOrig = b => ob.some(a => b.x1 > a.x0 - M && b.x0 < a.x1 + M && b.y1 > a.y0 - M && b.y0 < a.y1 + M);
+    const sub = { stage: d.stage, items: d.items.filter(it => moved.includes(it) || (() => { const b = SS.itemAABB(it, {}); return near(b) || nearOrig(b); })()) };
+    const score = () => SS.checks(sub).filter(w => PHYS.has(w.kind)).reduce((a, w) => a + w.spots.length, 0);
+    const now = moved.map(it => ({ it, x: it.x, y: it.y }));
+    // 動かした物にかかる問題があるときだけ（もとからある、ほかの所の問題には手を出さない）
+    const hitMoved = () => SS.checks(sub).filter(w => PHYS.has(w.kind)).some(w => w.spots.some(sp => moved.some(it => { const b = SS.itemAABB(it, {}); return sp.x0 < b.x1 + 4 && b.x0 - 4 < sp.x1 && sp.y0 < b.y1 + 4 && b.y0 - 4 < sp.y1; })));
+    if (!hitMoved()) return 0;
+    const s0 = score();
+    if (s0 <= 0) return 0;
+    // 目標：動かした物がないときと同じ数（＝動かした物のせいの問題が0）。届かなければ、いちばん減る所
+    const all = sub.items;
+    sub.items = all.filter(it => !moved.includes(it));
+    const goal = score();
+    sub.items = all;
+    const before = s0 - 1;
+    const shift = (dx, dy) => now.forEach(o => { o.it.x = o.x + dx; o.it.y = o.y + dy; });
+    const inside = () => moved.every(it => it.offstage || SS.render.insideStage(d.stage, it, it.type === 'player' ? 24 : 0) || !SS.render.insideStage(d.stage, { x: now.find(o => o.it === it).x, y: now.find(o => o.it === it).y }, 0));
+    let best = null;
+    // 台を動かしたとき：近くの台の辺にぴったりくっつく位置を先に試す（すき間も重なりもない並べ方）
+    const PL = it => SS.isPlatform(it) && !SS.hinaLift(it);
+    const movedPl = moved.filter(PL);
+    if (movedPl.length) {
+      const U = movedPl.map(it => SS.itemAABB(it, {})).reduce((u, b) => ({ x0: Math.min(u.x0, b.x0), x1: Math.max(u.x1, b.x1), y0: Math.min(u.y0, b.y0), y1: Math.max(u.y1, b.y1) }));
+      const cands = [];
+      sub.items.filter(it => PL(it) && !moved.includes(it)).forEach(t => {
+        const B = SS.itemAABB(t, {});
+        if (B.x0 > U.x1 + 150 || U.x0 > B.x1 + 150 || B.y0 > U.y1 + 150 || U.y0 > B.y1 + 150) return;
+        cands.push([B.x1 - U.x0, 0], [B.x0 - U.x1, 0], [0, B.y1 - U.y0], [0, B.y0 - U.y1]);
+      });
+      cands.filter(([dx, dy]) => Math.hypot(dx, dy) <= 150).sort((u, v) => Math.hypot(...u) - Math.hypot(...v)).forEach(([dx, dy]) => {
+        shift(dx, dy);
+        const sc = score();
+        if (inside() && sc <= before && (!best || sc < best.sc)) best = { dx, dy, sc, r: Math.round(Math.hypot(dx, dy)) };
+      });
+      if (best && best.sc > goal) best = null; // くっつけても残るときは、まわりも探す
+    }
+    for (const r of best ? [] : [6, 12, 20, 30, 45, 60, 80, 100, 130]) {
+      for (let k = 0; k < 16; k++) {
+        const a = (k * Math.PI) / 8, dx = Math.round(Math.cos(a) * r), dy = Math.round(Math.sin(a) * r);
+        shift(dx, dy);
+        const sc = score();
+        if (inside() && sc <= before && (!best || sc < best.sc)) best = { dx, dy, sc, r };
+      }
+      if (best && best.sc <= goal) break;
+    }
+    if (!best) { shift(0, 0); return 0; }
+    shift(best.dx, best.dy);
+    return best.r;
+  }
+  // ひな壇の幅・奥行を、平台の枚数ぶんにそろえる（平台に半端な大きさはない）
+  function snapHinaSize(it) {
+    if (SS.hinaLift(it)) return;
+    const pn = SS.panelSize(it);
+    it.w = Math.max(1, Math.round(it.w / pn.w)) * pn.w;
+    it.h = Math.max(1, Math.round(it.h / pn.d)) * pn.d;
+  }
   // 動かしたあと、段の縁にかかった人を段の上か床へ。直した人数を返す
   function settleAfterDrag(e) {
     if (e.altKey || !((drag.kind === 'move' && drag.moved) || (drag.it && drag.it.type === 'hina'))) return 0;
@@ -1776,7 +1865,12 @@
     //（かるい描き直しのときは、上で描き直す前に済ませてある）
     const settled = drag.settled != null ? drag.settled : settleAfterDrag(e);
     if (settled && drag.settled == null) render();
-    if (settled) toast(`段の縁にかかっていた${settled}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true);
+    // 離した所で、重なる・床からはみ出す・台が重なる・段のあいだにすき間ができるなら、いちばん近い置ける所へ少しずらす
+    const placed = drag.kind === 'move' && drag.moved && !e.altKey ? placeNicely(drag.orig) : 0;
+    if (placed) render();
+    if (placed && settled) toast(`段の縁にかかっていた${settled}人をきちんと置き、重ならない所へ${placed}cmずらしました（Alt を押しながら動かすと、そのまま）`, true);
+    else if (placed) toast(`重なり・床の外にならないよう、${placed}cmずらして置きました（Alt を押しながら動かすと、そのまま）`, true);
+    else if (settled) toast(`段の縁にかかっていた${settled}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true);
     if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
       // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ
       const now = Date.now();
@@ -2165,7 +2259,10 @@
     pushHistory();
     doc().items.push(it);
     S.sel = new Set([it.id]);
+    // 置いた所で重なる・床からはみ出すなら、いちばん近い置ける所へ少しずらす（台はとなりの台にぴったり）
+    const moved = !['text', 'box', 'circle', 'cable', 'door', 'runway'].includes(it.type) ? placeNicely(new Map([[it.id, { x: it.x, y: it.y }]])) : 0;
     renderAll();
+    if (moved) toast(`重なり・床の外にならないよう、${moved}cmずらして置きました`, true);
     return it;
   }
 
@@ -2891,7 +2988,12 @@
       h += `<p class="hint small" style="margin:6px 0 0">平台 ${SS.esc(m.panelName)}：${arcH ? `扇に並べて${m.panels}枚（前の列${SS.hinaPanels(one).filter(q => q.row === 0).length}枚）` : `横${m.across}枚×奥${m.deep}枚＝${m.panels}枚`}</p>`;
       h += `<p class="hint small">必要な部材の目安：平台 ${m.panels}枚${m.legs ? `／${m.legName} ${m.legs}個` : ''}</p>`;
     }
-    if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable' && !SS.hinaLift(one)) {
+    if (one && SS.fixedSize(one)) {
+      // 規格品：大きさは実物のまま（変えられない）
+      const c = SS.CATALOG[one.type];
+      h += `<p class="hint small">大きさ：${Math.round(c.w)}×${Math.round(c.h)}cm（規格品なので、実物の大きさのままです${c.note ? '。' + SS.esc(c.note) : ''}）</p>`;
+      if (SS.offSize(one)) h += `<button class="btn" id="propStdSize">実物の大きさ（${Math.round(c.w)}×${Math.round(c.h)}cm）に戻す</button>`;
+    } else if (one && one.type !== 'player' && one.type !== 'text' && one.type !== 'cable' && !SS.hinaLift(one)) {
       h += `<div class="row2"><label class="field">${SS.hinaArc && SS.hinaArc(one) ? '前のふちの弧の長さ(cm)' : '幅(cm)'}<input id="propW" type="number" min="10" step="5" value="${one.w}"></label><label class="field">奥行(cm)<input id="propH" type="number" min="10" step="5" value="${one.h}"></label></div>`;
     }
     if (one && one.type !== 'cable' && !SS.hinaLift(one)) {
@@ -2935,6 +3037,9 @@
     bind('propFont', 'input', el => { one.fontSize = +el.value; });
     bind('propW', 'input', el => { if (+el.value >= 10) one.w = +el.value; });
     bind('propH', 'input', el => { if (+el.value >= 10) one.h = +el.value; });
+    // ひな壇：入れ終わったら、平台の枚数ぶんの大きさにそろえる（半端な大きさの平台はないので）
+    ['propW', 'propH'].forEach(id => { const el = $(id); if (el && one && one.type === 'hina') el.addEventListener('change', () => { snapHinaSize(one); el.value = id === 'propW' ? one.w : one.h; render(); renderProps(); }); });
+    if ($('propStdSize')) $('propStdSize').onclick = () => { pushHistory(); const c = SS.CATALOG[one.type]; one.w = c.w; one.h = c.h; render(); renderProps(); };
     bind('propRot', 'input', el => { const d = +el.value - (one.rot || 0); const gm = matesOf(one).map(m => ({ m, x: m.x, y: m.y, rot: m.rot || 0 })); one.rot = +el.value; turnMates(one, gm, d); $('propRotVal').textContent = el.value + '°'; });
     bind('propHgt', 'change', el => {
       one.hgt = Math.max(0, +el.value || 0);
@@ -4696,6 +4801,9 @@
         <li><b>トレース</b>：「もっと…」→「トレース」で、いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
         <li><b>舞台図面として配る</b>：上の「📤 書き出す」で <b>画像（PNG・SVG）・PDF・印刷</b> をえらべます。<b>用紙（A4・A3、縦・横）と縮尺（1/50・1/100・1/200・用紙に合わせる）</b>をえらぶと、紙の上の長さが実際の寸法どおりになります（1/100 なら 1m が 1cm）。図には<b>上手・下手・客席・センター</b>、スケールバー、右下に<b>情報欄</b>（公演名・会場・日付・版・作った人・縮尺・メモ）が入ります。情報欄の中身は、この画面の「図面の情報欄」で入れます。舞台が用紙に入らないときは、入る縮尺を教えてくれます。印刷は倍率「100%」で。</li>
         <li><b>白黒◯×</b>：「設定」の奏者の表し方、または「📤 書き出す」の画像・PDF・印刷の画面の「表示」で <b>白黒◯×（椅子○・譜面台×）</b> をえらぶと、コピーやFAXでも読める白黒の線の図になります（前の「コンクール用」「図面用」は、これ1つにまとめました）。</li>
+        <li><b>物理的にありえない置き方</b>：舞台のふちにまたがる物（一部が床の外）・台（ひな壇・平台）どうしの重なり・段と段のあいだのすき間（3〜40cm）も「⚠ 確認」に出ます。「🔧 自動で直す」で台をぴったりくっつけられます。</li>
+        <li><b>自動の位置調整</b>：動かして離したとき・部品を置いたときに、重なる・床からはみ出す・台が重なる所なら、いちばん近い置ける所へ自動でずらします（台は、となりの台にぴったり）。<b>Alt を押しながら</b>動かすと、そのまま置けます。</li>
+        <li><b>実物の規格</b>：平台・いす・譜面台・ティンパニ・ピアノ・マリンバなどの規格品は、大きさを変えられません。ひな壇の幅・奥行は平台の枚数ぶんにそろいます。</li>
         <li><b>⚠ 確認</b>：舞台奥の通路が狭い・<b>指揮台の前が1mより狭い</b>・<b>椅子・譜面台・楽器が重なっている</b>・<b>ひな壇の縁にかかっている</b>・高い段に上がり段がない・重い楽器を段に上げる通路（幅1.2m）がない・緞帳線や迫りの上に物がある、などを見つけると、舞台図の左上に <b>「⚠ 確認 ○件」</b> が出ます。押すと一覧が開き、1つ押すとその場所を<b>赤い点線の枠</b>で示します。一覧のいちばん上の<b>「🔧 自動で直す」</b>を押すと、指揮台の前・舞台奥の通路・ひな壇の縁・重なり・上がり段を、形をくずさずに直します。舞台に物理的に入りきらないときは、一覧のいちばん上に<b>「この舞台では◯人がゆったり入りません」</b>と出し、<b>本当に入る案だけ</b>をボタンで選べます（例：「弦を2プルトずつ減らす（53人）→ 入ります」。間隔をつめる・打楽器を舞台そでに・ひな壇を減らす・弦を減らす、を変えることの少ない順に試します）。どの案でも入らないときは<b>「この舞台には、この編成は入りません」</b>と出し、舞台の大きさの確認をすすめます。打楽器は、入りきらないときでも弦楽器のすぐ横の床には置きません。打楽器奏者にも1人1本の譜面台を、楽器の向こう側（ティンパニは真ん中の太鼓のすき間）に置きます。大太鼓は奏者から見て縦長で、奏者の右手側の横に置きます。いくつかの直し方を試して ⚠ がいちばん少ないものを使い、残った所は、枠にかかっている物を楽器と奏者のまとまりごと少しずつ動かして探します（出入り口・緞帳線・迫りなども）。⚠ が増える手直しは残しません（「戻す」で元に戻せます）。直せなかった所は一覧に残ります。</li>
         <li><b>舞台奥の通路</b>：反射板とひな壇・楽器のあいだを空けます（はじめは60cm）。幅は「かんたん編成」の「安全・ホールの設備」の「舞台奥の通路」で変えられ、かんたん編成・ひな形はこの幅を空けて並べます。</li>
         <li><b>ひな壇の組み図</b>：ひな壇には平台1枚ずつの<b>番号</b>（1-3 ＝ 1段目の、前の列の下手から3枚目）と<b>足（箱馬）の位置</b>が出ます。番号は「編成表」の部材の表と同じです。「📤 書き出す」の画面の<b>「中身」で「ひな壇の組み図」</b>をえらぶと、組み図と部材の表だけを1枚にして出せます。</li>
@@ -4955,8 +5063,11 @@
     };
     const clusters = [];
     [...byKey.keys()].forEach(k => { const m = memo.get(k), cl = clusters.find(c => Math.hypot(c.m.x - m.x, c.m.y - m.y) < 10); if (cl) cl.ks.push(k); else clusters.push({ m, ks: [k] }); });
+    const nKeys = byKey.size;
     clusters.forEach(cl => {
       if (cl.ks.length > 1 && tryKeys(cl.ks)) return;
+      // 全体のほとんどを同じだけ動かした（全体をまとめて動かした）ときは、まとめての判断だけ（1パートずつ試し直さない。速くするため）
+      if (cl.ks.length >= Math.max(3, nKeys * 0.7)) { cl.ks.forEach(k => byKey.delete(k)); return; }
       cl.ks.forEach(k => { if (!tryKeys([k])) byKey.delete(k); });
     });
     return [...new Set([...byKey.keys()].map(k => (k.startsWith('p:') ? k.slice(2) : k.startsWith('h:') ? 'ひな壇' : k.startsWith('g:') ? ((SS.CATALOG[k.slice(2).split('+')[0]] || {}).name || '打楽器') : (SS.CATALOG[k.slice(2)] || {}).name || k.slice(2))))];

@@ -2160,7 +2160,7 @@ window.SS = window.SS || {};
   function clashCount(items, stage, c, aisle) {
     if (!SS.checks) return 0;
     const ws = SS.checks({ stage, items: items.concat([{ type: 'podium', x: c.x, y: c.y, rot: 0 }]) });
-    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || w.kind === 'rail' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
+    return ws.filter(w => w.kind === 'overlap' || w.kind === 'tieredge' || w.kind === 'loadin' || w.kind === 'door' || w.kind === 'edge' || w.kind === 'rail' || w.kind === 'offedge' || w.kind === 'platform' || w.kind === 'gap' || (aisle && w.kind === 'aisle')).reduce((a, w) => a + (w.kind === 'loadin' || w.kind === 'rail' ? 1 : w.spots.length), 0);
   }
 
   // 左右を入れかえる（「打楽器は上手」のときに使う）
