@@ -1311,27 +1311,38 @@ window.SS = window.SS || {};
 
   // ---- ブラウザ内の保存 ----
   const LIST_KEY = 'stagesetting.saved.v1';
+  // 保存一覧に入れてよい1件（中の配置図が読めるもの）
+  const okEntry = x => !!x && typeof x === 'object' && typeof x.id === 'string' && SS.store.isDoc(x.doc);
+  // 保存一覧をそのまま（読めない1件もふくめて）。一覧そのものが壊れていたら、壊れたデータを取っておいて空として扱う
+  function listRaw() {
+    return SS.store.readJSON(LIST_KEY, v => Array.isArray(v), []).value;
+  }
+  // 画面に出す一覧（読める1件だけ）
   R.savedList = function () {
-    try { return JSON.parse(localStorage.getItem(LIST_KEY) || '[]'); } catch (e) { return []; }
+    return listRaw().filter(okEntry);
   };
+  // 書けなかったら例外（呼ぶ側で「容量がいっぱいです」と知らせる）。読めない1件は消さずに残す
+  function writeList(list) {
+    if (!SS.store.writeJSON(LIST_KEY, list)) throw new Error('quota');
+  }
   // prev：版を上げたときの、上げる前の配置図（前の版としてとっておき、あとでくらべられる。10版まで）
   R.saveToList = function (name, doc, prev) {
-    const list = R.savedList();
+    const list = listRaw();
     const slimOf = d => { const x = JSON.parse(JSON.stringify(d)); delete x.underlay; return x; };
     const slim = slimOf(doc);
-    let existing = list.find(x => x.name === name);
+    let existing = list.find(x => okEntry(x) && x.name === name);
     if (existing) { existing.doc = slim; existing.date = Date.now(); }
     else { existing = { id: Date.now().toString(36), name, date: Date.now(), doc: slim }; list.unshift(existing); }
     if (prev) {
       const v = (prev.info && prev.info.version) || 1;
-      existing.versions = (existing.versions || []).filter(x => x.version !== v);
+      existing.versions = (Array.isArray(existing.versions) ? existing.versions : []).filter(x => x && x.version !== v);
       existing.versions.unshift({ version: v, date: Date.now(), doc: slimOf(prev) });
       existing.versions = existing.versions.slice(0, 10);
     }
-    localStorage.setItem(LIST_KEY, JSON.stringify(list));
+    writeList(list);
   };
   R.deleteFromList = function (id) {
-    localStorage.setItem(LIST_KEY, JSON.stringify(R.savedList().filter(x => x.id !== id)));
+    writeList(listRaw().filter(x => !(x && x.id === id)));
   };
 
   SS.render = R;

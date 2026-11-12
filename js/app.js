@@ -31,14 +31,30 @@
   }
   // 前からある保存データ・共有リンクには、項目がないときの前の標準を使う（その人が見ていた表示を変えない）
   const LEGACY_OPTIONS = { grid: true, standLegs: true, hinaDetail: true };
+  // 読み込んだ部品を確かめる：種類のない物・壊れた物は外し、位置・向きが数でないときは直す
+  //（壊れた値が1つでもあると、図が描けなくなったり、保存したときに null になって次に開けなくなるため）
+  const finite = (v, def) => (typeof v === 'number' && isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : def);
+  function cleanItems(list, stage) {
+    if (!Array.isArray(list)) return [];
+    const cx = stage.w / 2, cy = stage.d / 2;
+    return list.filter(it => it && typeof it === 'object' && typeof it.type === 'string' && it.type)
+      .map(it => Object.assign({ rot: 0 }, it, { id: typeof it.id === 'string' && it.id ? it.id : newId(), x: finite(it.x, cx), y: finite(it.y, cy), rot: finite(it.rot, 0) }));
+  }
+  function cleanStage(st) {
+    const s = Object.assign({ w: 1400, d: 900, shape: 'rect' }, st && typeof st === 'object' ? st : {});
+    s.w = finite(s.w, 1400); s.d = finite(s.d, 900);
+    if (!(s.w > 0)) s.w = 1400;
+    if (!(s.d > 0)) s.d = 900;
+    return s;
+  }
   function normalize(doc) {
-    doc = doc || {};
+    doc = doc && typeof doc === 'object' ? doc : {};
     const d = {
       version: 1,
       title: doc.title || '',
       subtitle: doc.subtitle || '',
-      stage: Object.assign({ w: 1400, d: 900, shape: 'rect' }, doc.stage || {}),
-      items: (doc.items || []).map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })),
+      stage: cleanStage(doc.stage),
+      items: [],
       underlay: doc.underlay || null,
       options: Object.assign(defaultOptions(), doc.options ? LEGACY_OPTIONS : {}, doc.options || {}),
       ensemble: doc.ensemble || null,
@@ -50,9 +66,10 @@
       // コンクール提出用の図（団体名・メモ・用紙の向き・編成表を入れるか）
       contest: Object.assign({ org: '', memo: '', orient: 'landscape', legend: false }, doc.contest || {}),
     };
+    d.items = cleanItems(doc.items, d.stage);
     // 1部・2部…（2つ以上のときだけ）。いま開いている部の中身は items・ensemble にあり、parts の同じ番号の所は空
     const P = Array.isArray(doc.parts) && doc.parts.length > 1 ? doc.parts : null;
-    d.parts = P ? P.map((p, i) => ({ name: String((p && p.name) || `第${i + 1}部`), items: p && Array.isArray(p.items) ? p.items.map(it => Object.assign({ rot: 0 }, it, { id: it.id || newId() })) : [], ensemble: (p && p.ensemble) || null })) : null;
+    d.parts = P ? P.map((p, i) => ({ name: String((p && p.name) || `第${i + 1}部`), items: p && Array.isArray(p.items) ? cleanItems(p.items, d.stage) : [], ensemble: (p && p.ensemble) || null })) : null;
     d.partIdx = P ? Math.max(0, Math.min(P.length - 1, doc.partIdx | 0)) : 0;
     if (d.parts) { d.parts[d.partIdx].items = null; d.parts[d.partIdx].ensemble = null; }
     // 名簿・乗り番表（どの部にも共通）
@@ -1432,20 +1449,49 @@
   }
 
   // ------------------------------------------------------------ 保存
-  let saveTimer = null;
+  // 自動保存。書けなかったとき（容量いっぱい・プライベートモード）は黙らずに1回知らせる
+  // 舞台図（下絵）の画像が大きくて入らないときは、画像だけ外して配置図は保存する（そのことも1回知らせる）
+  let saveTimer = null, lastSaved = null;
+  const saveWarned = { fail: false, underlay: false };
+  function saveNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    if (S.viewOnly || !S.doc) return true;
+    let json;
+    try { json = JSON.stringify(doc()); } catch (e) { return false; }
+    if (json === lastSaved) return true;
+    if (SS.store.setRaw(AUTOSAVE_KEY, json)) { lastSaved = json; saveWarned.fail = false; return true; }
+    if (doc().underlay) {
+      const slim = JSON.stringify(Object.assign({}, doc(), { underlay: null }));
+      if (SS.store.setRaw(AUTOSAVE_KEY, slim)) {
+        lastSaved = json;
+        if (!saveWarned.underlay) { saveWarned.underlay = true; toast('舞台図の画像は大きすぎて、このブラウザに保存できません。配置図だけ保存しています（画像は「💾 保存/開く」の「ファイルに保存」で残せます）'); }
+        return true;
+      }
+    }
+    if (!saveWarned.fail) { saveWarned.fail = true; toast('このブラウザに自動保存できませんでした（保存場所がいっぱいか、プライベートモードです）。「💾 保存/開く」の「ファイルに保存」で残してください'); }
+    return false;
+  }
   function scheduleSave() {
     if (S.viewOnly) return; // 見るだけの表示：相手のブラウザに保存してある配置図を上書きしない
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc()));
-      } catch (e) {
-        try {
-          const d = Object.assign({}, doc(), { underlay: null });
-          localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(d));
-        } catch (e2) { /* 容量不足 */ }
-      }
-    }, 400);
+    saveTimer = setTimeout(saveNow, 400);
+  }
+  // 画面を閉じる・別のアプリに切りかえるときは、待たずにすぐ保存する（最後の操作が消えないように）
+  // 人数の▲▼などで並べ直しを待っている所があれば、先に並べ直してから保存する
+  const flushSave = () => { if (typeof flushAuto === 'function') flushAuto(); if (saveTimer) saveNow(); };
+  window.addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
+  // 別のタブ（ウィンドウ）でも同じアプリを開いて編集していると、自動保存がたがいに上書きし合う。気づいたら1回知らせる
+  let tabWarned = false;
+  window.addEventListener('storage', e => {
+    if (e.key !== AUTOSAVE_KEY || S.viewOnly || tabWarned || e.newValue == null || e.newValue === lastSaved) return;
+    tabWarned = true;
+    toast('別のタブ（ウィンドウ）でもこのアプリを開いて編集しています。自動保存がたがいに上書きし合うので、どちらか1つで編集してください');
+  });
+  // 今の自動保存を「前に開いていた配置図」として取っておく（ファイル・共有リンク・保存した図などで置き換える前）
+  function backupBeforeReplace(reason) {
+    flushSave();
+    SS.store.backupAutosave(AUTOSAVE_KEY, reason);
   }
 
   // ------------------------------------------------------------ 通知・ダイアログ
@@ -4255,6 +4301,7 @@
 
   // ------------------------------------------------------------ 保存・開く
   function loadDoc(d, msg) {
+    backupBeforeReplace(msg || '開く');
     pushHistory();
     S.doc = normalize(d);
     S.sel.clear();
@@ -4270,8 +4317,8 @@
     r.onload = () => {
       try {
         const d = JSON.parse(r.result);
-        if (!d || !Array.isArray(d.items)) throw new Error();
-        loadDoc(d, '読み込みました');
+        if (!SS.store.isDoc(d)) throw new Error();
+        loadDoc(d, (d.version | 0) > 1 ? '読み込みました（新しい版のアプリで作ったファイルです。一部が出ないことがあります）' : '読み込みました');
         closeModal();
       } catch (e) { toast('このファイルは読み込めませんでした'); }
     };
@@ -4325,9 +4372,11 @@
         <label class="btn filebtn">⬆ ファイルを開く<input type="file" id="openFile" accept=".json,application/json" hidden></label>
         <label class="btn filebtn">🔍 ファイルとくらべる<input type="file" id="cmpFile" accept=".json,application/json" hidden></label>
       </div>
+      ${backupHTML()}
       <hr>
       <button class="btn danger" id="newDoc">新しく白紙から作る</button>
     `);
+    bindBackupButtons();
     $('saveHere').onclick = () => {
       const name = $('saveName').value.trim() || '配置図';
       const v = doc().info.version || 1;
@@ -4349,7 +4398,7 @@
     document.querySelectorAll('[data-del]').forEach(b => {
       b.onclick = () => {
         const id = b.getAttribute('data-del');
-        askConfirm('この配置図を削除しますか？', '削除する', () => { try { SS.render.deleteFromList(id); } catch (e) { /* ignore */ } $('btnFile').onclick(); });
+        askConfirm('この配置図を削除しますか？', '削除する', () => { try { SS.render.deleteFromList(id); } catch (e) { toast('削除できませんでした'); } $('btnFile').onclick(); });
       };
     });
     $('saveFile').onclick = $('saveFileTop').onclick = saveToFile;
@@ -4373,6 +4422,25 @@
     };
     $('newDoc').onclick = () => { closeModal(); loadTemplate(SS.TEMPLATES.find(t => t.id === 'blank')); };
   };
+
+  // 「前に開いていた配置図」（ファイル・共有リンクなどで置き換える前の自動保存）と、読めなくなっていたデータ
+  function backupHTML() {
+    const b = SS.store.readBackup(), broken = SS.store.brokenEntries();
+    if (!b && !broken.length) return '';
+    const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    let h = '<h3 style="font-size:14px">もしものとき</h3>';
+    if (b) h += `<p class="hint">ファイル・共有リンク・保存した図を開く前に作業していた配置図（${fmt(b.date)}・${b.doc.items.filter(i => i && i.type === 'player').length}人）を取ってあります。</p>
+      <div class="btn-row"><button class="btn" id="restorePrev">↩ 前に開いていた配置図に戻す</button></div>`;
+    if (broken.length) h += `<p class="hint">読めなくなっていた保存データが${broken.length}件あります（消さずに取ってあります）。お問い合わせのときに添えてください。</p>
+      <div class="btn-row"><button class="btn" id="dlBroken">⬇ 読めなかったデータをファイルにする</button></div>`;
+    return h;
+  }
+  function bindBackupButtons() {
+    const r = $('restorePrev');
+    if (r) r.onclick = () => { const b = SS.store.readBackup(); if (b) { loadDoc(b.doc, '前に開いていた配置図に戻しました（「戻す」で元に戻せます）'); closeModal(); } };
+    const d = $('dlBroken');
+    if (d) d.onclick = () => SS.render.download(new Blob([JSON.stringify(SS.store.brokenEntries(), null, 1)], { type: 'application/json' }), 'stagesetting-読めなかったデータ.json');
+  }
 
   // ------------------------------------------------------------ 画像・印刷・共有
   // タイトル・サブタイトルの入力欄（画像・印刷の画面。入力した内容は配置図と一緒に保存・共有される）
@@ -5364,8 +5432,8 @@
     if (t) document.title = t + '｜ステージ配置図';
     $('viewOut').onclick = () => $('btnOut').click();
     $('viewEdit').onclick = () => askConfirm('この配置図を、このブラウザで編集できるようにします。\nこのブラウザに保存してある配置図は、この配置図に置き換わります（「戻す」で戻せます）。\n残しておきたいときは、先に今の配置図を「💾 保存/開く」でファイルにしてください。', '編集する', () => {
-      let prev = null;
-      try { const sv = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || 'null'); if (sv && Array.isArray(sv.items)) prev = sv; } catch (e) { /* ignore */ }
+      const prev = SS.store.readJSON(AUTOSAVE_KEY, SS.store.isDoc, null).value;
+      SS.store.backupAutosave(AUTOSAVE_KEY, '共有リンクを編集する');
       S.viewOnly = false;
       document.body.classList.remove('view-only');
       bar.remove();
@@ -5396,15 +5464,20 @@
       try {
         S.doc = normalize(await SS.render.decodeShare(m[1]));
         loaded = true;
+        SS.store.backupAutosave(AUTOSAVE_KEY, '共有リンクを開く');
         history.replaceState(null, '', location.pathname + location.search);
         setTimeout(() => toast('共有された配置図を開きました'), 300);
       } catch (e) { toast('共有リンクを読み込めませんでした'); }
     }
     if (!loaded) {
-      try {
-        const saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || 'null');
-        if (saved && Array.isArray(saved.items)) { S.doc = normalize(saved); loaded = true; }
-      } catch (e) { /* ignore */ }
+      // 自動保存が読めない（壊れている）ときは、壊れたデータを取っておいてから、取ってある「前に開いていた配置図」で開く
+      const r = SS.store.readJSON(AUTOSAVE_KEY, SS.store.isDoc, null);
+      if (r.value) { S.doc = normalize(r.value); loaded = true; }
+      else if (r.broken) {
+        const b = SS.store.readBackup();
+        if (b) { S.doc = normalize(b.doc); loaded = true; }
+        setTimeout(() => toast(b ? '自動保存したデータが読めなかったので、その前の配置図で開きました（読めなかったデータは「💾 保存/開く」に取ってあります）' : '自動保存したデータが読めませんでした（読めなかったデータは「💾 保存/開く」に取ってあります）'), 300);
+      }
     }
     if (!loaded) {
       const t = SS.TEMPLATES[0].make();
