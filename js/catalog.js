@@ -622,8 +622,13 @@ window.SS = window.SS || {};
   // 図の座標での外枠（向きも考える）
   SS.itemAABB = function (it, opts) {
     const b = SS.itemBounds(it, opts), a = ((it.rot || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-    const pts = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(([x, y]) => [it.x + x * c - y * s, it.y + x * s + y * c]);
-    return { x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])) };
+    // 4つの角を回して、いちばん外側を取る（配列を作らずに計算して速く）
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const x of [b.x0, b.x1]) for (const y of [b.y0, b.y1]) {
+      const X = it.x + x * c - y * s, Y = it.y + x * s + y * c;
+      if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
+    }
+    return { x0, x1, y0, y1 };
   };
 
   // パレット用の小さなアイコン

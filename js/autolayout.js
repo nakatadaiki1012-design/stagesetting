@@ -254,9 +254,11 @@ window.SS = window.SS || {};
       const d = SS.polyEdgeDist(px, py, lf.poly);
       return m > 0 ? inside || d <= m : inside && d >= -m;
     }
-    const t = -((it.rot || 0) * Math.PI) / 180, dx = px - it.x, dy = py - it.y;
+    const a = SS.hinaArc(it), dx = px - it.x, dy = py - it.y;
+    // まっすぐな段：外接円より遠い点は、向きを計算するまでもなく外（結果は同じで速い）
+    if (!a) { const hw = (it.w || 728) / 2 + Math.max(m, 0), hh = (it.h || 182) / 2 + Math.max(m, 0); if (dx * dx + dy * dy > hw * hw + hh * hh) return false; }
+    const t = -((it.rot || 0) * Math.PI) / 180;
     const lx = dx * Math.cos(t) - dy * Math.sin(t), ly = dx * Math.sin(t) + dy * Math.cos(t);
-    const a = SS.hinaArc(it);
     if (!a) return Math.abs(lx) <= (it.w || 728) / 2 + m && Math.abs(ly) <= (it.h || 182) / 2 + m;
     // 扇形の外形の中か（m の余裕は、中心から外へ／内へ・左右へ広げて近似。m がマイナスなら縁から m だけ内側）
     const inside = inPoly(lx, ly, SS.hinaOutline(it));

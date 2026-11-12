@@ -161,6 +161,9 @@ window.SS = window.SS || {};
   }
   SS.checks = function (doc) {
     const st = doc.stage, out = [];
+    // 花道（部品）は、点を1つ調べるたびに全部の部品から探さず、ここで1回だけ集めておく
+    const runways = doc.items.filter(r => r.type === 'runway');
+    doc = Object.assign({}, doc, { runways });
     const items = doc.items.filter(it => !NOT_THING.has(it.type));
     const hno = SS.hinaNumbers ? SS.hinaNumbers(doc.items) : new Map();
     const bx = new Map(items.map(it => [it, box(it)]));
@@ -218,7 +221,7 @@ window.SS = window.SS || {};
     // ---- 舞台の前の縁に近すぎる（1m以内。指揮台・花道の上・ピットのふたの上と、マイク・モニターは除く）
     {
       const EDGE = 100, AUDIO = new Set(['mic', 'micTall', 'monitor', 'podium', 'stairs']);
-      const onExt = it => (fg.pit && inBox(it, fg.pit)) || (fg.hanamichi && inBox(it, fg.hanamichi)) || (SS.onRunway && SS.onRunway(doc.items, it));
+      const onExt = it => (fg.pit && inBox(it, fg.pit)) || (fg.hanamichi && inBox(it, fg.hanamichi)) || (doc.runways.length > 0 && SS.onRunway(doc.runways, it));
       const bad = items.filter(it => {
         if (AUDIO.has(it.type) || PLATFORM.has(it.type) || onExt(it)) return false;
         const b = bx.get(it);
@@ -398,7 +401,7 @@ window.SS = window.SS || {};
   const AUDIO_FLOOR = new Set(['mic', 'micTall', 'monitor', 'cable', 'outlet', 'tap']);
   function physical(doc, items, bx, hno, fg, out) {
     const st = doc.stage;
-    const onExt = q => (fg.pit && inBox(q, fg.pit)) || (fg.hanamichi && inBox(q, fg.hanamichi)) || (SS.onRunway && SS.onRunway(doc.items, q));
+    const onExt = q => (fg.pit && inBox(q, fg.pit)) || (fg.hanamichi && inBox(q, fg.hanamichi)) || (doc.runways.length > 0 && SS.onRunway(doc.runways, q));
     // 1) 舞台のふちにまたがっている（一部が床の外。床のない所には置けない）
     //    まるごと舞台の外（そで・客席）に置いた物は、わざと置いたものとして数えない
     const off = items.filter(it => {
