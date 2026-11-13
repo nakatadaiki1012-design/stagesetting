@@ -48,6 +48,53 @@ window.SS = window.SS || {};
     return G.cluster1D(items, it => -it.y, gap || 45); // 前（下）の列から
   };
 
+  /**
+   * 1つの列に、同じ横位置（s）に前後2人がいるとき：本当は2つの列なので、前後（r）のいちばん大きなすき間で分ける。
+   * （ざっくり置いた図で、列と列が近すぎてつながってしまったとき。そのまま1列にそろえると、2人が同じ所に重なる）
+   * rows：列の配列、rk(it)：前後の位置、sk(it, row)：横の位置。minGap：となりとの間隔
+   */
+  G.splitStacked = function (rows, rk, sk, minGap) {
+    const out = [];
+    const work = rows.slice();
+    while (work.length) {
+      const row = work.shift();
+      if (row.length < 2) { out.push(row); continue; }
+      const ss = row.map(it => sk(it, row)), rs = row.map(rk);
+      let stacked = false;
+      for (let i = 0; i < row.length && !stacked; i++) for (let j = i + 1; j < row.length; j++) {
+        if (Math.abs(ss[i] - ss[j]) < minGap * 0.45 && Math.abs(rs[i] - rs[j]) > 22) { stacked = true; break; }
+      }
+      if (!stacked) { out.push(row); continue; }
+      const sorted = row.map((it, i) => ({ it, r: rs[i] })).sort((a, b) => a.r - b.r);
+      let bi = -1, bg = 0;
+      for (let i = 1; i < sorted.length; i++) { const g = sorted[i].r - sorted[i - 1].r; if (g > bg) { bg = g; bi = i; } }
+      if (bi < 0 || bg < 12) { out.push(row); continue; }
+      work.unshift(sorted.slice(0, bi).map(o => o.it), sorted.slice(bi).map(o => o.it));
+    }
+    const m = r => mean(r.map(rk));
+    return out.sort((a, b) => m(a) - m(b));
+  };
+  const arcS = (c) => (it, row) => { const R = mean(row.map(q => G.polar(q, c).r)); return G.polar(it, c).t * R; };
+  // 扇形の列（同じ所に前後2人いる列は分ける）
+  G.arcRowsSplit = function (items, c, minGap) {
+    return G.splitStacked(G.arcRows(items, c), it => G.polar(it, c).r, arcS(c), minGap || 62);
+  };
+  // 横一列の列（前の列から）
+  G.lineRowsSplit = function (items, minGap) {
+    return G.splitStacked(G.lineRows(items), it => -it.y, it => it.x, minGap || 62);
+  };
+  /**
+   * 床の人の列を見つける（扇形か横一列かを見分け、横長の扇はならしてから）。前の列から。戻り値：[[奏者…], …]
+   */
+  G.floorRows = function (items, c, minGap) {
+    if (items.length < 2) return [items.slice()];
+    const shape = G.guessShape(items, c);
+    if (shape !== 'arc') return G.lineRowsSplit(items, minGap);
+    const ex = G.fitEx(items, c);
+    const pts = squash(items, c, ex);
+    return G.arcRowsSplit(pts, c, minGap).map(r => r.map(q => q.it));
+  };
+
   // 点が多角形の中にあるか（投げ縄選択）
   G.inPolygon = function (p, poly) {
     let inside = false;
@@ -103,16 +150,19 @@ window.SS = window.SS || {};
   }
 
   // 1つの列の中で大きくあいている所（パートの切れ目・通路）で分ける
-  function segments(vals) {
+  function segments(vals, minGapV) {
     if (vals.length < 3) return [[0, vals.length - 1]];
     const gaps = [];
     for (let i = 1; i < vals.length; i++) gaps.push(vals[i] - vals[i - 1]);
     const sorted = gaps.slice().sort((a, b) => a - b);
-    const med = sorted[sorted.length >> 1];
+    // ふつうのすき間：小さい方の真ん中（すき間が2つ・4つのとき、大きな切れ目をふつうと見ないように）
+    const med = sorted[(sorted.length - 1) >> 1];
+    // となりとの間隔の3倍以上あいている所も切れ目（左右に分かれた列を、舞台の真ん中へ集めないように）
+    const big = minGapV ? minGapV * 3 : Infinity;
     const segs = [];
     let s = 0;
     for (let i = 1; i < vals.length; i++) {
-      if (gaps[i - 1] > med * 1.9) { segs.push([s, i - 1]); s = i; }
+      if (gaps[i - 1] > med * 1.9 || gaps[i - 1] > big) { segs.push([s, i - 1]); s = i; }
     }
     segs.push([s, vals.length - 1]);
     return segs;
@@ -120,7 +170,7 @@ window.SS = window.SS || {};
 
   // 位置 vals(並び済み) を等間隔にする。切れ目は残す。
   function evenOut(vals, center, opt) {
-    const segs = segments(vals);
+    const segs = segments(vals, opt.minGapV);
     const out = vals.slice();
     const whole = segs.length === 1;
     segs.forEach(([a, b]) => {
@@ -159,7 +209,8 @@ window.SS = window.SS || {};
       return n;
     }
     const d1 = G.arcShift(opt.curve);
-    const rows = G.arcRows(items, c);
+    // oneRow：選んだ人たちを1列とみなす（同じ所に前後2人いるときだけ分ける）
+    const rows = opt.oneRow ? G.splitStacked([items.slice()], it => G.polar(it, c).r, arcS(c), opt.minGap) : G.arcRowsSplit(items, c, opt.minGap);
     // それぞれの列の半径 R と、弧に沿った位置 s
     const info = rows.map(row => {
       const R = Math.max(40, mean(row.map(it => G.polar(it, c).r)));
@@ -201,7 +252,7 @@ window.SS = window.SS || {};
   // 横一列にそろえる
   G.tidyLine = function (items, c, opt) {
     opt = Object.assign({ symmetric: true, evenRows: true, minGap: 62 }, opt);
-    const rows = G.lineRows(items);
+    const rows = opt.oneRow ? G.splitStacked([items.slice()], it => -it.y, it => it.x, opt.minGap) : G.lineRowsSplit(items, opt.minGap);
     let ys = rows.map(row => -mean(row.map(it => it.y)));
     if (opt.evenRows) ys = evenRadii(ys);
     rows.forEach((row, ri) => {
@@ -322,6 +373,20 @@ window.SS = window.SS || {};
     });
     return tight;
   };
+  /**
+   * ひな壇 t の上の奏者の列（前の列から）。まっすぐの段は段の向きの列、弧の段・迫りの段は弧に沿った列（tidyOnTier と同じ分け方）
+   */
+  G.tierRows = function (items, t) {
+    const lf = SS.hinaLift && SS.hinaLift(t) && !SS.hinaLift(t).rect ? SS.hinaLift(t) : null;
+    const arc = !lf && SS.hinaArc && SS.hinaArc(t);
+    let key, dep;
+    if (lf) { key = it => SS.liftUD(lf, it.x, it.y).r; dep = Math.min(lf.rOut - lf.rIn, 400); }
+    else if (arc) { const C = tierWorld(t, { x: 0, y: arc.cy }); key = it => Math.hypot(it.x - C.x, it.y - C.y); dep = arc.h; }
+    else { key = it => -tierLocal(t, it).y; dep = t.h || 182; }
+    const P = items.map(it => ({ it, k: key(it) }));
+    return mergeRows(G.cluster1D(P, o => o.k, 45), o => o.k, Math.max(1, Math.floor(dep / 70))).map(r => r.map(o => o.it));
+  };
+
   // 段のふちから edge より内側へ入れる（打楽器など、列にしない人用）
   G.clampOnTier = function (p, t, edge) {
     const lf = SS.hinaLift && SS.hinaLift(t) && !SS.hinaLift(t).rect ? SS.hinaLift(t) : null;

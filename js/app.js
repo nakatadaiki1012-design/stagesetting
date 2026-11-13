@@ -1611,18 +1611,24 @@
     }
     if (itemEl) {
       const id = itemEl.getAttribute('data-id');
+      // ⬚・➰（囲んで選ぶ）のときは、タップで1人ずつ足す・外す（スマホでも Shift の代わりに）
+      const addMode = (S.mode === 'box' || S.mode === 'lasso') && !(e.shiftKey || e.ctrlKey || e.metaKey);
+      let untoggle = false;
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
         if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id);
+      } else if (addMode) {
+        if (S.sel.has(id)) untoggle = true; else S.sel.add(id);
       } else if (!S.sel.has(id)) {
         S.sel = new Set([id]);
       }
+      if (S.sel.has(id)) S.selAnchor = id;
       const orig = new Map();
       selected().forEach(it => orig.set(it.id, { x: it.x, y: it.y }));
       // 打楽器と奏者のまとまりは、いっしょに動かす（Alt を押しながらだと、それだけ）
       if (!e.altKey) selected().forEach(it => matesOf(it).forEach(m => { if (!orig.has(m.id)) orig.set(m.id, { x: m.x, y: m.y }); }));
       // ホールの迫りでできた段は、舞台に作りつけなので動かさない（上の人・物だけ動く）
       selected().forEach(it => { if (SS.hinaLift(it)) orig.delete(it.id); });
-      drag = { kind: 'move', start, orig, primary: id, moved: false };
+      drag = { kind: 'move', start, orig, primary: id, moved: false, addMode, untoggle };
       renderOverlay();
       renderProps();
       return;
@@ -1917,12 +1923,15 @@
     if (placed && settled) toast(`段の縁にかかっていた${settled}人をきちんと置き、重ならない所へ${placed}cmずらしました（Alt を押しながら動かすと、そのまま）`, true);
     else if (placed) toast(`重なり・床の外にならないよう、${placed}cmずらして置きました（Alt を押しながら動かすと、そのまま）`, true);
     else if (settled) toast(`段の縁にかかっていた${settled}人を、段の上か床にきちんと置きました（Alt を押しながら動かすと、そのまま）`, true);
-    if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
-      // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ
+    if (drag.kind === 'move' && !drag.moved && drag.addMode) {
+      // ⬚・➰ のとき：選んであった人をタップ → 外す
+      if (drag.untoggle) { S.sel.delete(drag.primary); if (S.selAnchor === drag.primary) S.selAnchor = null; }
+    } else if (drag.kind === 'move' && !drag.moved && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
+      // クリックだけ → その1つを選ぶ。すばやく2回タップ → その列をまとめて選ぶ。続けてタップ → パート → 楽器の仲間 → 全員
       const now = Date.now();
       if (lastTap && lastTap.id === drag.primary && now - lastTap.t < 400) {
-        selectRowOf(drag.primary);
-        lastTap = null;
+        if (lastTap.grown) growSelection(drag.primary); else selectRowOf(drag.primary);
+        lastTap = { id: drag.primary, t: now, grown: true };
       } else {
         S.sel = new Set([drag.primary]);
         lastTap = { id: drag.primary, t: now };
@@ -2057,14 +2066,62 @@
     (noHina.length ? noHina : hit).forEach(it => S.sel.add(it.id));
   }
 
-  // 同じ列（指揮者からの距離が同じくらい）の奏者をまとめて選ぶ
+  // ------------------------------------------------------------ まとめて選ぶ（列 → パート → 楽器の仲間 → 全員）
+  // 楽器の仲間（木管・金管・弦・合唱…）
+  const FAMILY = { fl: 'ww', dr: 'ww', cl: 'ww', sax: 'ww', hr: 'br', tp: 'br', tb: 'br', lb: 'br', vn: 'st', va: 'st', vc: 'st', cb: 'st', sop: 'ch', alt: 'ch', ten: 'ch', bas: 'ch', perc: 'perc', kb: 'kb' };
+  const FAMILY_NAME = { ww: '木管', br: '金管', st: '弦楽器', ch: '合唱', perc: '打楽器', kb: '鍵盤・ハープ' };
+  const familyOf = it => FAMILY[SS.partGroup(it.label).id] || null;
+  // その人が乗っているひな壇（いちばん高い段）。床なら null
+  function tierUnder(p) {
+    const tiers = doc().items.filter(it => it.type === 'hina');
+    const top = m => tiers.filter(t => SS.hinaContains(t, p.x, p.y, m)).sort((a, b) => (b.hgt || 0) - (a.hgt || 0))[0] || null;
+    return top(0) || top(14);
+  }
+  // 同じ列の奏者：同じひな壇（または床）の上で、段の向き・扇形・横一列に合わせて列を見つける
+  function rowOf(it) {
+    const t = tierUnder(it);
+    const pg = p => SS.partGroup(p.label).id;
+    const loose = p => /^(perc|kb)$/.test(pg(p)) || attachedToInstrument(p);
+    // 打楽器・鍵盤など列に並ばない人：同じ段（床）の、同じ仲間の人
+    if (loose(it)) return players().filter(p => tierUnder(p) === t && familyOf(p) === familyOf(it) && !onExtension(p));
+    const mates = players().filter(p => tierUnder(p) === t && !loose(p) && onExtension(p) === onExtension(it));
+    const minGap = opts().seatR * 2 + 14;
+    const rows = t ? G.tierRows(mates, t) : G.floorRows(mates, conductor(), minGap);
+    return rows.find(r => r.includes(it)) || [it];
+  }
+  // まとめて選ぶ段階：その人から見た、列・パート・楽器の仲間・全員（前より広いものだけ）
+  function growLevels(it) {
+    const ps = players();
+    const lv = [{ name: '列', ids: rowOf(it) }];
+    if (it.label) lv.push({ name: 'パート（' + it.label + '）', short: 'パート', ids: ps.filter(p => p.label === it.label) });
+    const fam = familyOf(it);
+    if (fam) lv.push({ name: FAMILY_NAME[fam] + '全体', short: FAMILY_NAME[fam], ids: ps.filter(p => familyOf(p) === fam) });
+    lv.push({ name: '奏者全員', short: '全員', ids: ps });
+    lv.forEach(l => { l.ids = new Set(l.ids.map(p => p.id)); l.short = l.short || l.name; });
+    // 前の段階と同じ人たちになる段階は飛ばす
+    return lv.filter((l, i) => i === 0 || l.ids.size > lv[i - 1].ids.size || [...l.ids].some(id => !lv[i - 1].ids.has(id)));
+  }
+  // 今の選択の次に広い段階（いまの選択をすべて含み、より多い所）。全員まで行ったら、また列から
+  function nextGrow(it) {
+    const lv = growLevels(it);
+    const cur = S.sel;
+    const contains = l => [...cur].every(id => l.ids.has(id)) && l.ids.size > cur.size;
+    return lv.find(contains) || lv[0];
+  }
+  function growSelection(id) {
+    const it = byId(id);
+    if (!it || it.type !== 'player') { S.sel = new Set([id]); return; }
+    const l = nextGrow(it);
+    S.sel = new Set(l.ids);
+    S.selAnchor = id;
+    toast(`${l.name}の${l.ids.size}人を選びました${l.name === '奏者全員' ? '' : '（もう一度押すと、もっと広く）'}`);
+  }
+  // 同じ列の奏者をまとめて選ぶ（2回タップ）
   function selectRowOf(id) {
     const it = byId(id);
     if (!it || it.type !== 'player') { S.sel = new Set([id]); return; }
-    const rows = G.arcRows(players(), conductor());
-    const row = rows.find(r => r.includes(it)) || [it];
-    S.sel = new Set(row.map(p => p.id));
-    toast(`この列の${row.length}人を選びました`);
+    S.sel = new Set([id]);
+    growSelection(id);
   }
 
   // ひな壇どうしのマグネット：動かしている段（選んだ段・平台・上がり段）の外枠を、ほかの段の外枠にくっつける／そろえる。
@@ -2146,7 +2203,9 @@
     ctxBar.hidden = false;
     const one = sel.length === 1 ? sel[0] : null;
     $('ctxCount').textContent = sel.length > 1 ? sel.length + '個' : (one.type === 'player' ? (one.label || '奏者') : (SS.CATALOG[one.type] || {}).name || '');
-    $('ctxRow').hidden = !(one && one.type === 'player');
+    const anc = growAnchor();
+    $('ctxRow').hidden = !anc;
+    if (anc) $('ctxRow').querySelector('small').textContent = sel.length === 1 ? '列を選択' : nextGrow(byId(anc)).short + 'を選択';
     $('ctx3d').hidden = !(one && one.type === 'player');
     $('ctxLead').hidden = !sel.every(it => it.type === 'player');
     $('ctxLead').classList.toggle('on', sel.every(it => it.lead));
@@ -2160,13 +2219,20 @@
       if (one && document.activeElement !== $('ctxName')) $('ctxName').value = one.name || '';
     }
   }
+  // まとめて選ぶときの「起点の人」：最後にタップした人（選んでいる人の中にいて、選んでいるのが全員奏者のとき）
+  function growAnchor() {
+    const sel = selected();
+    if (!sel.length || !sel.every(it => it.type === 'player')) return null;
+    if (S.selAnchor && S.sel.has(S.selAnchor)) return S.selAnchor;
+    return sel.length === 1 ? sel[0].id : null;
+  }
   ctxBar.addEventListener('pointerdown', e => e.stopPropagation());
   ctxBar.querySelectorAll('[data-ctx]').forEach(b => {
     b.onclick = () => {
       const a = b.getAttribute('data-ctx');
       const sel = selected();
       if (a === 'edit') { $('ctxEdit').hidden = !$('ctxEdit').hidden; positionCtxBar(); if (!$('ctxEdit').hidden) $('ctxLabel').focus(); return; }
-      if (a === 'row') { selectRowOf(sel[0].id); renderOverlay(); renderProps(); return; }
+      if (a === 'row') { growSelection(growAnchor() || sel[0].id); renderOverlay(); renderProps(); positionCtxBar(); return; }
       if (a === 'view3d') { SS.view3d.open(sel[0].id); return; }
       if (a === 'lead') {
         // 首席の★：1人なら なし → ★首席 → ★コンマス（ヴァイオリン1のとき）→ なし。何人かなら まとめて付ける／外す
@@ -2344,7 +2410,7 @@
   let tidyVariant = null; // ✨整える：いくつか試すときの、その回の試し方
   function tidyOpts() {
     const o = { symmetric: $('optSymmetric').checked, evenRows: $('optEvenRows').checked, minGap: opts().seatR * 2 + 14 };
-    if (tidyVariant) { if (tidyVariant.evenRows === false) o.evenRows = false; if (tidyVariant.symmetric === false) o.symmetric = false; }
+    if (tidyVariant) { if (tidyVariant.evenRows === false) o.evenRows = false; if (tidyVariant.symmetric === false) o.symmetric = false; if (tidyVariant.oneRow) o.oneRow = true; }
     return o;
   }
 
@@ -2460,7 +2526,8 @@
    * - 打楽器などの奏者は、自分の楽器といっしょ（楽器をそのままにしたときは、奏者も楽器のそばの席へ）
    * 半分以上の人を席に戻せないとき（手で大きく作りかえた図）は null を返す（ふつうの整え方にする）
    */
-  function snapToAuto() {
+  // only：この人たち（id の Set）だけを席に戻す（選んだ人だけ整えるとき）。ほかの人・楽器・段は動かさない
+  function snapToAuto(only) {
     const d = doc();
     if (!d.ensemble || !d.items.some(it => it.auto && it.type === 'player')) return null;
     let r;
@@ -2529,12 +2596,14 @@
         else off.set(p, Math.hypot(vs[i].x, vs[i].y) <= 100 ? zero : null); // null：わざと大きく動かした人はそのまま
       });
     });
-    const snapped = players.filter(p => off.get(p));
-    if (snapped.length < players.length * 0.5) return null;
+    const mine = only ? players.filter(p => only.has(p.id)) : players;
+    const snapped = mine.filter(p => off.get(p));
+    if (!mine.length || snapped.length < mine.length * 0.5) return null;
     // 3) 動かす
     cur.forEach(it => {
       const o = off.get(it), b = slotOf.get(it);
       if (!o || !b) return;
+      if (only && !only.has(it.id)) return;
       it.x = b.x + o.x; it.y = b.y + o.y;
       if (o === zero || it.type === 'player') it.rot = b.rot || 0;
       it.ax = b.ax; it.ay = b.ay; it.ar = b.ar; // 自動の席も、今の並べ方のものに
@@ -2542,10 +2611,10 @@
     });
     d.autoKey = autoKeyOf(d, d.ensemble);
     // 席に戻さなかった人：まわりと重ならないように少しずつ離す（席に戻した人は動かさない）
-    const loose = players.filter(p => !off.get(p)).concat(d.items.filter(it => it.type === 'player' && !it.auto));
-    if (loose.length) { G.fixOverlap(loose, opts().seatR * 2 + 8, snapped); fitInStage(loose); }
+    const loose = mine.filter(p => !off.get(p)).concat(only ? [] : d.items.filter(it => it.type === 'player' && !it.auto));
+    if (loose.length) { G.fixOverlap(loose, opts().seatR * 2 + 8, only ? d.items.filter(it => it.type === 'player' && !loose.includes(it)) : snapped); fitInStage(loose); }
     // パートごと動かした人・席に戻さなかった人：段のふちにかかっていれば、段の上へきちんと（または床へ）
-    const shifted = players.filter(p => off.get(p) && off.get(p) !== zero);
+    const shifted = mine.filter(p => off.get(p) && off.get(p) !== zero);
     settleOnTiers(shifted.concat(loose));
     nudgePlayers(loose.filter(p => !onExtension(p)));
     return { snapped: snapped.length, kept: loose.filter(p => p.auto).length, groupMoved };
@@ -2561,9 +2630,24 @@
    */
   function tidyAuto(list, silent) {
     list = list || targetsPlayers();
-    if (list.length < 2) { if (!silent) toast('整える奏者がいません'); return; }
     const d = doc(), st = d.stage, R = SS.render;
     const whole = !selected().length;
+    // 選んだ人だけ（自動で並べた図）：その人たちだけ、自動の並べ方の席に戻す。ほかの人は動かさない
+    if (!whole && list.length) {
+      const sn = snapToAuto(new Set(list.map(p => p.id)));
+      if (sn) {
+        if (!silent) toast(`選んだ${list.length}人を、自動の並びの席に整えました${sn.kept ? `（大きく動かした${sn.kept}人は、その場所のまま）` : ''}`, true);
+        return;
+      }
+    }
+    // 選んだのが打楽器・ピアノなど楽器についている人だけ：楽器のそばで、重ならない所へ
+    if (!whole && list.length && list.every(attachedToInstrument)) {
+      nudgePlayers(list.filter(p => !onExtension(p)));
+      settleOnTiers(list);
+      if (!silent) toast(`楽器についている${list.length}人を、楽器のそばの重ならない所に整えました`, true);
+      return;
+    }
+    if (list.length < 2) { if (!silent) toast('整える奏者がいません'); return; }
     // 自動で並べた図：自動の並べ方の席に戻す（手で大きく作りかえた図は、ふつうの整え方）
     if (whole) {
       const sn = snapToAuto();
@@ -2584,7 +2668,8 @@
     const snap = d.items.map(it => ({ it, x: it.x, y: it.y, rot: it.rot }));
     const restore = () => snap.forEach(o => { o.it.x = o.x; o.it.y = o.y; o.it.rot = o.rot; });
     const warnN = () => SS.checks(d).reduce((a, w) => a + (w.spots ? w.spots.length : 1), 0);
-    const VARIANTS = [{}, { evenRows: false }, { evenRows: false, symmetric: false }, { keepShape: true }];
+    // 選んだ人だけのときは、まず「1列」とみなして（同じ所に前後2人いるときだけ分ける）
+    const VARIANTS = (whole ? [] : [{ oneRow: true }, { oneRow: true, symmetric: false }]).concat([{}, { evenRows: false }, { evenRows: false, symmetric: false }, { keepShape: true }]);
     let best = null;
     for (const v of VARIANTS) {
       restore(); tidyVariant = v;
@@ -2596,6 +2681,8 @@
     restore(); tidyVariant = best.v;
     try { tidyGeo(list, silent); } finally { tidyVariant = null; }
     nudgeAttached();
+    // 選んだ人だけのとき：段の上の打楽器などと重なった人は、少しずらして重ならない所へ
+    if (!whole && best.n > 0) nudgePlayers(list.filter(p => !onExtension(p)));
   }
 
   // 楽器についている人が、自分の楽器やまわりと重なっているとき：その人だけを少しずつ（6〜30cm）動かして、⚠ が減る所へ
@@ -2678,11 +2765,18 @@
       }
     }
     // 3) 床の人
-    const shape = floor.length >= 2 ? G.guessShape(floor, c) : 'line';
+    const oneRow = !!(tidyVariant && tidyVariant.oneRow);
+    const sd = a => { const m = G.mean(a); return Math.sqrt(G.mean(a.map(v => (v - m) ** 2))); };
+    // 1列とみなすとき：指揮者からの距離がそろっていれば扇形、前後の位置がそろっていれば横一列
+    const shape = floor.length < 2 ? 'line' : oneRow ? (sd(floor.map(p => G.polar(p, c).r)) <= sd(floor.map(p => p.y)) ? 'arc' : 'line') : G.guessShape(floor, c);
     let n = 0;
-    if (floor.length >= 2 && !keepShape) n += shape === 'arc' ? G.tidyArc(floor, c, tidyOpts()) : G.tidyLine(floor, c, tidyOpts());
+    // 選んだ人だけ扇形にするときは、床の全員から扇の横ののび（横長の扇）を決める（選んだ列だけ丸くならないように）
+    const arcOpt = () => { const o = tidyOpts(); if (!whole) { const all = players().filter(p => !onExtension(p) && !tiers.some(t => SS.hinaContains(t, p.x, p.y, 0))); o.ex = all.length >= 6 ? G.fitEx(all, c) : 1; } return o; };
+    if (floor.length >= 2 && !keepShape) n += shape === 'arc' ? G.tidyArc(floor, c, arcOpt()) : G.tidyLine(floor, c, tidyOpts());
     if (shape === 'arc' && !keepShape) { opts().arcCurve = 1; opts().arcBase = null; syncArcCurve(); }
     const minD = opts().seatR * 2 + 8;
+    // 整えない人（選んでいない人・打楽器など）とは重ならないように（その人たちは動かさない）
+    const fixedOthers = players().filter(p => !list.includes(p) && !onExtension(p));
     const inside = p => R.insideStage(st, p, 26) || onExtension(p);
     let squeezed = false;
     if (floor.length >= 2 && !floor.every(inside)) {
@@ -2704,7 +2798,7 @@
     const lowered = new Set();
     for (let k = 0; k < 3; k++) {
       floor.forEach(p => tiers.forEach(t => { if (onTierOrEdge(p, t) && G.pushOffTier(p, t, 30)) lowered.add(p); }));
-      G.fixOverlap(floor, minD);
+      G.fixOverlap(floor, minD, fixedOthers);
     }
     // 5) 段の上の人（打楽器・鍵盤の人は列にせず、段の中へ入れるだけ）
     let tight = 0;
@@ -2720,7 +2814,7 @@
     for (let k = 0; k < 6; k++) {
       fitInStage(floor);
       floor.forEach(p => tiers.forEach(t => { if (onTierOrEdge(p, t) && G.pushOffTier(p, t, 30)) lowered.add(p); }));
-      G.fixOverlap(floor, minD);
+      G.fixOverlap(floor, minD, fixedOthers);
     }
     fitInStage(floor);
     if (silent) return;
@@ -3540,8 +3634,8 @@
     $('modeBox').classList.toggle('active', m === 'box');
     $('modeLasso').classList.toggle('active', m === 'lasso');
     $('modePan').classList.toggle('active', m === 'pan');
-    if (m === 'box') toast('ドラッグで四角く囲んだ人を選びます（ひな壇は選びません）');
-    if (m === 'lasso') toast('指やマウスで自由に囲んだ人を選びます（ひな壇は選びません）');
+    if (m === 'box') toast('ドラッグで四角く囲んだ人を選びます（ひな壇は選びません）。人をタップすると1人ずつ足す・外すができます');
+    if (m === 'lasso') toast('指やマウスで自由に囲んだ人を選びます（ひな壇は選びません）。人をタップすると1人ずつ足す・外すができます');
     svg.classList.toggle('panning', m === 'pan');
   }
   $('modeSelect').onclick = () => setMode('select');
@@ -4861,10 +4955,10 @@
         <li><b>ひな形</b>：左の「ひな形」から近い編成を選ぶこともできます。</li>
         <li><b>マイひな形</b>：「ひな形」の一番上の「＋ 今の配置をマイひな形に保存」で、今の配置に名前をつけて取っておけます。次からはカードを押すだけ。このブラウザの中にだけ保存されます（ほかの機械では「💾 保存/開く」のファイルで）。</li>
         <li><b>動かす</b>：奏者や楽器をドラッグ。ほかの人と位置がそろうと<b>ピンクのガイド線</b>が出て、ぴったり合います。何もないところをドラッグすると<b>範囲でまとめて選択</b>できます。</li>
-        <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列をまとめて選択。右の「選択中」タブの「複製・削除・同じパートを選ぶ」は1つ以上、「位置合わせ」は2つ以上選んだときに出ます。</li>
+        <li><b>選ぶと操作バーが出ます</b>：✏️名前・パート入力／回転／指揮者の方を向く／複製／削除。<b>2回タップ</b>でその列（同じ段・同じ列の人）をまとめて選択。続けてタップするか、操作バーの「⋯」を押すたびに<b>パート → 楽器の仲間（木管・金管・弦など）→ 全員</b>と広がります。<b>⬚・➰ のときは、人をタップすると1人ずつ足す・外す</b>ができます（スマホでも）。右の「選択中」タブの「複製・削除・同じパートを選ぶ」は1つ以上、「位置合わせ」は2つ以上選んだときに出ます。</li>
         <li><b>部品を足す</b>：「部品」で押してから、置きたい場所をタップ。楽器は実寸（cm）です。</li>
         <li><b>並べ直しても、手で動かした所は残る</b>：パートごとまとめて動かした所（ホルンを右へ、など）や、マリンバと奏者を動かした所は、▲▼で人数を変えて並べ直したあとも同じだけずらします（⚠ が増える所はずらしません）。ホール・編成の種類・並び方を変えたときは、はじめから並べます。</li>
-        <li><b>✨ きれいに整える</b>：ざっくり置いたあと押すと、列を自動で見つけて<b>扇形（または横一列）・等間隔・指揮者向き</b>にそろえます。かんたん編成・ひな形で作った図では、ずれた人を<b>自動の並べ方の席</b>へ戻します（パートごと動かした所はその場所のまま形を整え、1m以上動かした人はそのまま）。手で作った図では、いくつかの整え方を試して ⚠ がいちばん少ないものを使います。打楽器・ピアノなど楽器についている人は、楽器のそばのままです。</li>
+        <li><b>✨ きれいに整える</b>：ざっくり置いたあと押すと、列を自動で見つけて<b>扇形（または横一列）・等間隔・指揮者向き</b>にそろえます。かんたん編成・ひな形で作った図では、ずれた人を<b>自動の並べ方の席</b>へ戻します（パートごと動かした所はその場所のまま形を整え、1m以上動かした人はそのまま）。手で作った図では、いくつかの整え方を試して ⚠ がいちばん少ないものを使います。<b>人を選んでから押すと、選んだ人だけ</b>を整えます（自動で並べた図なら選んだ人を席に戻し、手で作った図なら選んだ人を1列にそろえます。ほかの人は動かしません）。打楽器・ピアノなど楽器についている人は、楽器のそばのままです。</li>
         <li><b>まとめて作る</b>：「もっと…」→「一括作成」で「8,10,12」のように人数を入れると扇形の席が一気にできます。パート名や名前もまとめて入れられます。</li>
         <li><b>トレース</b>：「もっと…」→「トレース」で、いま使っている配置図の画像（写真・スクショ）を読み込むと、<b>ステージの枠を自動で見つけて</b>四隅合わせ（トリミング・ゆがみ補正）をし、椅子の位置を自動で読み取ります。</li>
         <li><b>舞台図面として配る</b>：上の「📤 書き出す」で <b>画像（PNG・SVG）・PDF・印刷</b> をえらべます。<b>用紙（A4・A3、縦・横）と縮尺（1/50・1/100・1/200・用紙に合わせる）</b>をえらぶと、紙の上の長さが実際の寸法どおりになります（1/100 なら 1m が 1cm）。図には<b>上手・下手・客席・センター</b>、スケールバー、右下に<b>情報欄</b>（公演名・会場・日付・版・作った人・縮尺・メモ）が入ります。情報欄の中身は、この画面の「図面の情報欄」で入れます。舞台が用紙に入らないときは、入る縮尺を教えてくれます。印刷は倍率「100%」で。</li>

@@ -18,7 +18,7 @@ const URL = process.argv[2] || 'http://localhost:8765/index.html';
   const check = (ok, msg) => { if (!ok) ng++; console.log((ok ? 'OK ' : 'NG ') + msg); };
   const fresh = async () => {
     await p.goto(URL);
-    await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stagesetting.helped', '1'); });
+    await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stagesetting.helped', '1'); window.addEventListener('pagehide', () => { localStorage.clear(); localStorage.setItem('stagesetting.helped', '1'); }); }); // 開き直すときの自動保存で、前の図が残らないように
     await p.reload();
     await p.waitForTimeout(800);
   };
